@@ -21,7 +21,10 @@ from workflows.kernel_cache import (
     KERNEL_CACHE_CONTAINER_DIR,
     KERNEL_CACHE_MANIFEST_CONTAINER_PATH,
 )
+from workflows.model_spec import MODEL_SPEC_CATALOG_FILES, load_templates_from_yaml
+from workflows.utils import get_repo_root_path
 
+MODEL_SPECS_DIR = get_repo_root_path() / "workflows" / "model_specs"
 DOWNLOAD_SCRIPT = Path(tt_weights_download.__file__)
 DOWNLOAD_SCRIPT_IN_IMAGE = "/home/container_app_user/tt_weights_download.py"
 BASE_IMAGE = "registry.example/media-server:1.0-aaa-bbb-1"
@@ -166,11 +169,14 @@ NOT_IMAGE_FILES = {
     "tt-metal-cache4242/kernels/reader/111/brisc/brisc.elf.log": b"log",
     "tt-metal-cache4242/kernels/writer/222/ncrisc/ncrisc.9001_77.o": b"temp",
 }
+# Variables that the spec of a made-up model names as changing its kernels.
+MODEL_VARIABLES = ("EXAMPLE_MODEL_TOPOLOGY", "EXAMPLE_MODEL_OUTPUT")
+RECORDED_VARIABLES = (*BUILD_KEY_ENV_VARS, *MODEL_VARIABLES)
 SET_VARIABLES = {
     "TT_METAL_INSPECTOR": "0",
     "TT_MM_THROTTLE_PERF": "5",
-    "MINIMAX_H3_TOPOLOGY": "linear",
-    "MINIMAX_H3_VAE_OUTPUT": "yuv420",
+    "EXAMPLE_MODEL_TOPOLOGY": "linear",
+    "EXAMPLE_MODEL_OUTPUT": "yuv420",
 }
 KERNEL_MANIFEST = {
     "schema_version": 1,
@@ -181,7 +187,7 @@ KERNEL_MANIFEST = {
     "files": 3,
     "bytes": 14,
     "compiled_kernels_in_log": 2,
-    "build_key_env": {**dict.fromkeys(BUILD_KEY_ENV_VARS), **SET_VARIABLES},
+    "build_key_env": {**dict.fromkeys(RECORDED_VARIABLES), **SET_VARIABLES},
 }
 
 
@@ -217,12 +223,13 @@ def test_kernel_cache_manifest_content_and_env_order(
     docker.image_env = ["TT_MM_THROTTLE_PERF=4", "TT_METAL_INSPECTOR=1"]
     env = tmp_path / ".env"
     env.write_text(
-        "HF_TOKEN=hf_secret\nTT_MM_THROTTLE_PERF=5\nMINIMAX_H3_TOPOLOGY=ring"
+        "HF_TOKEN=hf_secret\nTT_MM_THROTTLE_PERF=5\nEXAMPLE_MODEL_TOPOLOGY=ring"
     )
-    env_vars = {"MINIMAX_H3_TOPOLOGY": "linear", "MINIMAX_H3_VAE_OUTPUT": "yuv420"}
+    env_vars = {"EXAMPLE_MODEL_TOPOLOGY": "linear", "EXAMPLE_MODEL_OUTPUT": "yuv420"}
     env_vars.update({"TT_METAL_INSPECTOR": 0, "TT_METAL_WATCHER": ""})
+    metadata = {"prebuilt_artifacts": {"kernel_build_env": list(MODEL_VARIABLES)}}
     spec_json = tmp_path / "runtime_model_spec.json"
-    spec_json.write_text(json.dumps({"env_vars": env_vars}))
+    spec_json.write_text(json.dumps({"env_vars": env_vars, "metadata": metadata}))
     argv, out = manifest_argv(kernel_cache, tmp_path, compiled=2)
 
     assert main(argv + ["--env-file", str(env), "--spec-json", str(spec_json)]) == 0
@@ -230,7 +237,49 @@ def test_kernel_cache_manifest_content_and_env_order(
     manifest = json.loads(out.read_text())
     assert manifest.pop("created_utc").endswith("Z")
     assert manifest == KERNEL_MANIFEST
+    assert list(manifest["build_key_env"]) == list(RECORDED_VARIABLES)
     assert "hf_secret" not in "".join(capsys.readouterr()) + out.read_text()
+
+
+def test_kernel_cache_manifest_records_only_the_model_variables_the_spec_names(
+    docker, kernel_cache, tmp_path, capsys
+):
+    env_vars = {"EXAMPLE_MODEL_TOPOLOGY": "linear", "TT_MM_THROTTLE_PERF": "5"}
+    spec_json = tmp_path / "runtime_model_spec.json"
+    spec_json.write_text(json.dumps({"env_vars": env_vars}))
+    argv, out = manifest_argv(kernel_cache, tmp_path, compiled=2)
+
+    assert main(argv + ["--spec-json", str(spec_json)]) == 0
+
+    recorded = {**dict.fromkeys(BUILD_KEY_ENV_VARS), "TT_MM_THROTTLE_PERF": "5"}
+    assert json.loads(out.read_text())["build_key_env"] == recorded
+    note = "no metadata.prebuilt_artifacts.kernel_build_env in"
+    assert note in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    "described, named",
+    [
+        ({"kernel_build_env": ["NOT A NAME"]}, "kernel_build_env"),
+        ({"kernel_build_env": "EXAMPLE_MODEL_TOPOLOGY"}, "kernel_build_env"),
+        ({"original_file": ["model_index.json"]}, "original_file"),
+        ({"original_files": ["../model_index.json"]}, "original_files"),
+        ({"original_shards": [{"index": "index.json"}]}, "original_shards"),
+    ],
+)
+def test_kernel_cache_manifest_refuses_spec_metadata_it_cannot_read(
+    docker, kernel_cache, tmp_path, capsys, described, named
+):
+    spec = {"env_vars": {}, "metadata": {"prebuilt_artifacts": described}}
+    spec_json = tmp_path / "runtime_model_spec.json"
+    spec_json.write_text(json.dumps(spec))
+    argv, out = manifest_argv(kernel_cache, tmp_path, compiled=2)
+
+    assert main(argv + ["--spec-json", str(spec_json)]) == 1
+
+    error = capsys.readouterr().err
+    assert error.endswith(f"this tool does not read as they are: {named}\n")
+    assert not out.exists()
 
 
 def test_kernel_cache_manifest_refuses_a_log_without_compile_lines(
@@ -282,6 +331,29 @@ def test_build_image_stages_cache_files_and_bakes_set_variables(
     assert env_lines == [f"ENV TT_METAL_CACHE={KERNEL_CACHE_CONTAINER_DIR}", *baked]
 
 
+def test_build_image_bakes_the_variables_a_manifest_records_in_its_order(
+    docker, kernel_cache, tmp_path
+):
+    """The manifest alone says which variables an image gets, whatever recorded them."""
+    recorded = {
+        "TT_METAL_INSPECTOR": "0",
+        "EXAMPLE_MODEL_TOPOLOGY": "linear",
+        "ANOTHER_MODEL_OPTION": 'a "quoted" $value',
+        "TT_METAL_WATCHER": None,
+    }
+    manifest = {**KERNEL_MANIFEST, "build_key_env": recorded}
+
+    assert main(build_image_argv(kernel_cache, tmp_path, manifest)) == 0
+
+    dockerfile = docker.build_context["Dockerfile"].decode()
+    env_lines = [line for line in dockerfile.splitlines() if line.startswith("ENV ")]
+    assert env_lines[1:] == [
+        'ENV TT_METAL_INSPECTOR="0"',
+        'ENV EXAMPLE_MODEL_TOPOLOGY="linear"',
+        'ENV ANOTHER_MODEL_OPTION="a \\"quoted\\" \\$value"',
+    ]
+
+
 @pytest.mark.parametrize(
     "failing, error",
     [
@@ -305,7 +377,7 @@ def run_lone_script(folder, cache, original, python_options=()):
     """Run a copy of the download script with no repo around it and no token."""
     copy = shutil.copyfile(DOWNLOAD_SCRIPT, folder / DOWNLOAD_SCRIPT.name)
     command = [sys.executable, "-I", *python_options, str(copy)]
-    command += ["--repo", WEIGHTS_REPO, "--revision", "main", "--variant", FL2VA]
+    command += ["--repo", WEIGHTS_REPO, "--revision", "main", "--variant", VARIANT]
     command += ["--dest-cache", str(cache), "--dest-original", str(original)]
     no_token = {name: value for name, value in os.environ.items() if name != "HF_TOKEN"}
     return subprocess.run(
@@ -353,6 +425,14 @@ def test_build_image_refuses_a_cache_folder_it_cannot_list(
         ({}, "is not a manifest this command reads: no base_image"),
         ({**KERNEL_MANIFEST, "schema_version": 2}, "has schema_version 2"),
         ({**KERNEL_MANIFEST, "base_image": "other"}, "was made for base image other"),
+        (
+            {**KERNEL_MANIFEST, "build_key_env": {"A=B\nRUN x": "1"}},
+            "does not map variable names to a value or null",
+        ),
+        (
+            {**KERNEL_MANIFEST, "build_key_env": {"TT_METAL_WATCHER": 10}},
+            "does not map variable names to a value or null",
+        ),
     ],
 )
 def test_build_image_refuses_another_manifest(
@@ -376,20 +456,27 @@ def test_check_log_fails_on_compiled_kernels(tmp_path, capsys, compiled, exit_co
     assert output[1:] == [f"k_{i}/{i}" for i in range(min(compiled, 20))]
 
 
-FL2VA, REF2VA = "minimax-h3-fl2va-lightx2v", "minimax-h3-ref2va-lightx2v"
+# Two variants of a made-up model. They share the text encoder and differ in the
+# transformer folder and in the adapter, a file from another repo.
+VARIANT, SIBLING = "example-model-one", "example-model-two"
+TRANSFORMER = {VARIANT: "transformer", SIBLING: "transformer_two"}
 CONTAINER_CACHE = "/home/container_app_user/cache_root/tt_dit_cache"
-MODEL_PATH = "/home/container_app_user/cache_root/weights/Example-Model"
 SOURCE_COMMIT = "c0ffee12" + "0" * 32
 SHARED = "model/text_encoder/mesh4x8_bf16"
 OWN = {
-    FL2VA: "model/transformer_lora-a/TP4_mesh4x8_bf16",
-    REF2VA: "model/transformer_ref_lora-b/TP4_mesh4x8_bf16",
+    VARIANT: "model/transformer_lora-a/TP4_mesh4x8_bf16",
+    SIBLING: "model/transformer_two_lora-b/TP4_mesh4x8_bf16",
 }
 NOT_LOADED = "model/vae_previous/mesh1x8_fp32"
+EXTRA_FILE_OUTSIDE = {
+    "repo": "example-org/adapters",
+    "local_subdir": "..",
+    "filename": "x",
+}
 CACHE_FILES = {
-    f"{OWN[FL2VA]}/blocks.0.weight.tensorbin": b"abc",
-    f"{OWN[FL2VA]}/blocks.0.bias.tensorbin": b"defgh",
-    f"{OWN[REF2VA]}/blocks.0.weight.tensorbin": b"ref",
+    f"{OWN[VARIANT]}/blocks.0.weight.tensorbin": b"abc",
+    f"{OWN[VARIANT]}/blocks.0.bias.tensorbin": b"defgh",
+    f"{OWN[SIBLING]}/blocks.0.weight.tensorbin": b"ref",
     f"{SHARED}/embed.weight.tensorbin": b"ijklmno",
     f"{NOT_LOADED}/conv.weight.tensorbin": b"stale",
 }
@@ -398,22 +485,53 @@ SHARDS = {
     "model.visual.blocks.0.weight": "model-00002-of-00002.safetensors",
 }
 INDEX = json.dumps({"weight_map": SHARDS}).encode()
-LOG = f"../{FL2VA}/server.log"
+LOG = f"../{VARIANT}/server.log"
 OTHER_LAYOUT = {"manifests/old.json": b'{"variant": "old"}'}
-OTHER_MODEL_SPEC = json.dumps({"env_vars": {"TT_DIT_CACHE_DIR": "/cache"}}).encode()
 NOT_READ_BY_A_CACHED_START = {
     "transformer/diffusion_pytorch_model.safetensors": b"big",
     "text_encoder/model-00001-of-00002.safetensors": b"big",
-    "lightx2v/another-adapter.safetensors": b"big",
+    "text_encoder/merges.txt": b"big",
+    "adapters/another-adapter.safetensors": b"big",
 }
 
 
+def model_spec(variant, **metadata):
+    """Runtime model spec JSON of a variant; metadata replaces keys of its metadata."""
+    described = {
+        "kernel_build_env": list(MODEL_VARIABLES),
+        "original_files": [
+            "model_index.json",
+            f"{TRANSFORMER[variant]}/config.json",
+            "vae/config.json",
+            "vae/*",
+            "audio_vae/*",
+            "text_encoder/*.json",
+            "tokenizer/**/*",
+        ],
+        "original_shards": [
+            {
+                "index": "text_encoder/model.safetensors.index.json",
+                "tensor_prefix": "model.visual.",
+            }
+        ],
+        "original_folders": [TRANSFORMER[variant], "text_encoder", "vae", "audio_vae"],
+    }
+    adapter = {"repo": "example-org/adapters", "local_subdir": "adapters"}
+    adapter["filename"] = f"{variant}.safetensors"
+    spec = {
+        "hf_weights_repo": "example-org/original-model",
+        "env_vars": {"TT_DIT_CACHE_DIR": CONTAINER_CACHE},
+        "metadata": {"hf_extra_files": [adapter], "prebuilt_artifacts": described},
+    }
+    spec["metadata"].update(metadata)
+    return json.dumps({"runtime_model_spec": spec}).encode()
+
+
 def original_subset(variant):
-    transformer = "transformer_ref" if variant == REF2VA else "transformer"
     return {
         "model_index.json": b"{}",
         "tokenizer/tokenizer.json": b"{}",
-        f"{transformer}/config.json": b"{}",
+        f"{TRANSFORMER[variant]}/config.json": b"{}",
         "text_encoder/config.json": b"{}",
         "text_encoder/preprocessor_config.json": b"{}",
         "text_encoder/model.safetensors.index.json": INDEX,
@@ -422,7 +540,7 @@ def original_subset(variant):
         "vae/diffusion_pytorch_model.safetensors": b"vae",
         "audio_vae/config.json": b"{}",
         "audio_vae/diffusion_pytorch_model.safetensors": b"audio",
-        f"lightx2v/{variant}.safetensors": variant.encode(),
+        f"adapters/{variant}.safetensors": variant.encode(),
     }
 
 
@@ -442,12 +560,12 @@ def cache_dir(tmp_path):
     return write_files(tmp_path / "volume" / "tt_dit_cache", {**CACHE_FILES, **markers})
 
 
-def upload_argv(cache_dir, variant=FL2VA, tt_metal_sha="a" * 40, server_sha="b" * 40):
+def upload_argv(cache_dir, variant=VARIANT, tt_metal_sha="a" * 40, server_sha="b" * 40):
     """Upload after a start of the variant: shared directory loaded, its own one written."""
     work = cache_dir.parent / variant
     files = {**original_subset(variant), **NOT_READ_BY_A_CACHED_START}
     for path in original_subset(variant):
-        if not path.startswith("lightx2v/"):
+        if not path.startswith("adapters/"):
             metadata = f".cache/huggingface/download/{path}.metadata"
             files[metadata] = f"{SOURCE_COMMIT}\netag\n0.0\n".encode()
     write_files(work / "weights", files)
@@ -456,13 +574,7 @@ def upload_argv(cache_dir, variant=FL2VA, tt_metal_sha="a" * 40, server_sha="b" 
         "INFO | Cache does not exist. Loading PyTorch state dict.\n"
         f"INFO | Writing cache to '{CONTAINER_CACHE}/{OWN[variant]}'.\n"
     )
-    env_vars = {
-        "TT_DIT_CACHE_DIR": CONTAINER_CACHE,
-        "MINIMAX_H3_MODEL_PATH": MODEL_PATH,
-        "MINIMAX_H3_LORA_PATH": f"{MODEL_PATH}/lightx2v/{variant}.safetensors",
-    }
-    spec = {"hf_weights_repo": "example-org/original-model", "env_vars": env_vars}
-    (work / "spec.json").write_text(json.dumps({"runtime_model_spec": spec}))
+    (work / "spec.json").write_bytes(model_spec(variant))
     argv = ["tt-weights", "upload", "--cache-dir", str(cache_dir), "--variant", variant]
     argv += ["--original-dir", str(work / "weights"), "--repo", WEIGHTS_REPO]
     argv += ["--server-log", str(work / "server.log")]
@@ -493,7 +605,7 @@ def test_upload_publishes_what_the_log_names_and_tags_it_by_its_source(
 ):
     hub = empty_hub
     argv = upload_argv(cache_dir) + option
-    weights = cache_dir.parent / FL2VA / "weights"
+    weights = cache_dir.parent / VARIANT / "weights"
     if not downloaded_with_hf:
         (weights / ".cache").rename(weights.parent / "moved")
 
@@ -501,11 +613,11 @@ def test_upload_publishes_what_the_log_names_and_tags_it_by_its_source(
 
     assert hub.private is True
     remote = dict(hub.files())
-    manifest = json.loads(remote.pop(f"manifests/{FL2VA}.json"))
-    assert remote == published(FL2VA)
-    left_out = f"the log does not name: {OWN[REF2VA]}, {NOT_LOADED}\n"
+    manifest = json.loads(remote.pop(f"manifests/{VARIANT}.json"))
+    assert remote == published(VARIANT)
+    left_out = f"the log does not name: {OWN[SIBLING]}, {NOT_LOADED}\n"
     assert left_out in capsys.readouterr().out
-    tag = f"{FL2VA}_src-{source[:8]}_mesh4x8_ttm-aaaaaaaa"
+    tag = f"{VARIANT}_src-{source[:8]}_mesh4x8_ttm-aaaaaaaa"
     assert hub.tags == {tag: hub.head}
     out = json.loads((weights.parent / "out.json").read_text())
     assert out == {**manifest, "repo": WEIGHTS_REPO, "tag": tag, "commit": hub.head}
@@ -513,18 +625,18 @@ def test_upload_publishes_what_the_log_names_and_tags_it_by_its_source(
     sha256 = {path: hashlib.sha256(data).hexdigest() for path, data in remote.items()}
     assert manifest == {
         "schema_version": 1,
-        "variant": FL2VA,
+        "variant": VARIANT,
         "source": {"repo": "example-org/original-model", "revision": source},
         "mesh_shape": "4x8",
         "tt_metal_sha": "a" * 40,
         "server_sha": "b" * 40,
         "cache_directories": [
             {"path": SHARED, "files": 1, "bytes": 7},
-            {"path": OWN[FL2VA], "files": 2, "bytes": 8},
+            {"path": OWN[VARIANT], "files": 2, "bytes": 8},
         ],
         "original_files": [
             {"path": p, "bytes": len(d), "sha256": sha256[f"original_subset/{p}"]}
-            for p, d in sorted(original_subset(FL2VA).items())
+            for p, d in sorted(original_subset(VARIANT).items())
         ],
         "original_folders": ["transformer", "text_encoder", "vae", "audio_vae"],
     }
@@ -542,7 +654,7 @@ def test_upload_asks_for_the_source_revision_it_cannot_read(
     empty_hub, cache_dir, capsys, record, found
 ):
     argv = upload_argv(cache_dir)
-    records = cache_dir.parent / FL2VA / "weights/.cache/huggingface/download"
+    records = cache_dir.parent / VARIANT / "weights/.cache/huggingface/download"
     (records / "model_index.json.metadata").write_bytes(record)
 
     assert main(argv) == 1
@@ -562,8 +674,8 @@ def test_upload_reads_only_the_directories_the_log_names(empty_hub, cache_dir):
     finally:
         locked.chmod(0o755)
 
-    remote = set(empty_hub.files()) - {f"manifests/{FL2VA}.json"}
-    assert remote == set(published(FL2VA))
+    remote = set(empty_hub.files()) - {f"manifests/{VARIANT}.json"}
+    assert remote == set(published(VARIANT))
 
 
 def test_upload_refuses_a_cache_dir_that_is_not_a_directory(
@@ -580,16 +692,16 @@ def test_upload_refuses_a_cache_dir_that_is_not_a_directory(
 
 def test_upload_stores_shared_paths_once_and_replaces_only_its_own(hub, cache_dir):
     hub.sent.clear()
-    assert main(upload_argv(cache_dir, REF2VA)) == 0
-    assert set(hub.sent) == set(published(REF2VA)) - set(published(FL2VA))
-    own = cache_dir / OWN[REF2VA]
+    assert main(upload_argv(cache_dir, SIBLING)) == 0
+    assert set(hub.sent) == set(published(SIBLING)) - set(published(VARIANT))
+    own = cache_dir / OWN[SIBLING]
     (own / "blocks.0.weight.tensorbin").rename(own / "blocks.0.scale.tensorbin")
-    nested = f"tt_dit_cache/{OWN[REF2VA]}/host_coords_r0-3_c0-7/a.tensorbin"
+    nested = f"tt_dit_cache/{OWN[SIBLING]}/host_coords_r0-3_c0-7/a.tensorbin"
     hub.files()[nested] = b"a multi-host capture of the same component"
-    assert main(upload_argv(cache_dir, REF2VA, tt_metal_sha="c" * 40)) == 0
+    assert main(upload_argv(cache_dir, SIBLING, tt_metal_sha="c" * 40)) == 0
     remote = {path for path in hub.files() if not path.startswith("manifests/")}
-    renamed = {path.replace("0.weight", "0.scale") for path in published(REF2VA)}
-    assert remote == renamed | set(published(FL2VA)) | {nested}
+    renamed = {path.replace("0.weight", "0.scale") for path in published(SIBLING)}
+    assert remote == renamed | set(published(VARIANT)) | {nested}
 
 
 def test_upload_does_not_tag_a_commit_that_holds_other_content(
@@ -611,7 +723,7 @@ def test_upload_does_not_tag_a_commit_that_holds_other_content(
 
 
 def test_replace_shared_removes_the_manifests_that_list_the_path(hub, cache_dir):
-    assert main(upload_argv(cache_dir, REF2VA)) == 0
+    assert main(upload_argv(cache_dir, SIBLING)) == 0
     tagged = {tag: dict(hub.files(tag)) for tag in hub.tags}
     (cache_dir / SHARED / "embed.weight.tensorbin").write_bytes(b"converted anew")
     argv = upload_argv(cache_dir, tt_metal_sha="c" * 40) + ["--replace-shared"]
@@ -621,7 +733,7 @@ def test_replace_shared_removes_the_manifests_that_list_the_path(hub, cache_dir)
     head = hub.files()
     assert head[f"tt_dit_cache/{SHARED}/embed.weight.tensorbin"] == b"converted anew"
     manifests = {path for path in head if path.startswith("manifests/")}
-    assert manifests == {f"manifests/{FL2VA}.json"}
+    assert manifests == {f"manifests/{VARIANT}.json"}
     assert tagged.items() <= {tag: hub.files(tag) for tag in hub.tags}.items()
 
 
@@ -634,11 +746,11 @@ def remove(path):
 
 
 def upload_again(hub, cache_dir, capsys, tt_metal, change):
-    """Exit code and output of a second FL2VA upload, made after a change and next to REF2VA.
+    """Exit code and output of a second VARIANT upload, made after a change and next to SIBLING.
 
     The Hub must be left as it was.
     """
-    assert main(upload_argv(cache_dir, REF2VA)) == 0
+    assert main(upload_argv(cache_dir, SIBLING)) == 0
     argv = upload_argv(cache_dir, tt_metal_sha=tt_metal * 40, server_sha="d" * 40)
     change(cache_dir, hub)
     before = (hub.head, dict(hub.tags))
@@ -654,17 +766,17 @@ UPLOADS_UNDER_THE_TAG = {
         "already holds this content at",
     ),
     "added-tensor": (
-        write(f"{OWN[FL2VA]}/x.tensorbin", b""),
+        write(f"{OWN[VARIANT]}/x.tensorbin", b""),
         1,
         "with other content (cache_directories); tags are not moved",
     ),
     "tensor-of-the-same-size": (
-        write(f"{OWN[FL2VA]}/blocks.0.weight.tensorbin", b"XYZ"),
+        write(f"{OWN[VARIANT]}/blocks.0.weight.tensorbin", b"XYZ"),
         1,
-        f"with other content ({OWN[FL2VA]}); tags are not moved",
+        f"with other content ({OWN[VARIANT]}); tags are not moved",
     ),
     "original-file-of-the-same-size": (
-        write(f"../{FL2VA}/weights/vae/config.json", b"[]"),
+        write(f"../{VARIANT}/weights/vae/config.json", b"[]"),
         1,
         "with other content (original_files); tags are not moved",
     ),
@@ -688,7 +800,7 @@ def test_upload_under_an_existing_tag_needs_the_same_content(
 UPLOADS_REFUSED = {
     "shared-directory-changed": (
         write(f"{SHARED}/x.tensorbin", b""),
-        f"the manifest of {REF2VA} lists",
+        f"the manifest of {SIBLING} lists",
     ),
     "temp-file": (write(f"{SHARED}/x.tmp.42.0", b""), "1 temp file(s)"),
     "no-marker": (remove(f"{SHARED}/cache_dict.json"), "no cache_dict.json"),
@@ -696,9 +808,20 @@ UPLOADS_REFUSED = {
         lambda cache_dir, hub: (cache_dir / SHARED / "link").symlink_to("/"),
         "symbolic links",
     ),
-    "spec-of-another-model": (
-        write(f"../{FL2VA}/spec.json", OTHER_MODEL_SPEC),
-        "MiniMax-H3 only",
+    "spec-without-the-metadata": (
+        write(f"../{VARIANT}/spec.json", model_spec(VARIANT, prebuilt_artifacts={})),
+        "no metadata.prebuilt_artifacts.original_files in the model spec",
+    ),
+    "spec-with-an-extra-file-outside": (
+        write(
+            f"../{VARIANT}/spec.json",
+            model_spec(VARIANT, hf_extra_files=[EXTRA_FILE_OUTSIDE]),
+        ),
+        "names files outside the checkpoint folder: ../x",
+    ),
+    "index-without-the-prefix": (
+        write(f"../{VARIANT}/weights/text_encoder/model.safetensors.index.json", b"{}"),
+        "no model.visual.* weights in",
     ),
     "log-names-no-directory": (write(LOG, b"ready"), "names no directory under"),
     "log-names-a-missing-directory": (
@@ -706,11 +829,11 @@ UPLOADS_REFUSED = {
         "gone: missing or empty",
     ),
     "log-names-a-path-outside": (
-        write(LOG, f"'{CONTAINER_CACHE}/../{FL2VA}/weights/vae'".encode()),
+        write(LOG, f"'{CONTAINER_CACHE}/../{VARIANT}/weights/vae'".encode()),
         "weights/vae: outside",
     ),
     "original-file-missing": (
-        remove(f"../{FL2VA}/weights/vae/config.json"),
+        remove(f"../{VARIANT}/weights/vae/config.json"),
         "reads: vae/config.json",
     ),
     "repo-not-private": (
@@ -736,6 +859,27 @@ def test_upload_that_is_refused_does_not_change_the_hub(
     assert exit_code == 1
 
 
+@pytest.mark.parametrize("catalog", ["dev", "prod"])
+def test_the_tool_reads_the_metadata_of_every_catalog_spec_that_has_it(
+    tmp_path, catalog
+):
+    spec_json = tmp_path / "runtime_model_spec.json"
+    for name in MODEL_SPEC_CATALOG_FILES:
+        path = MODEL_SPECS_DIR / catalog / name
+        for template in load_templates_from_yaml(path, env=catalog):
+            for spec in template.expand_to_specs():
+                described = spec.metadata.get("prebuilt_artifacts")
+                if described is None:
+                    continue
+                serialized = {"runtime_model_spec": spec.get_serialized_dict()}
+                spec_json.write_text(json.dumps(serialized))
+                read = prebuilt_artifacts.spec_prebuilt_artifacts(spec_json)
+                assert read == described and described["original_files"]
+                extra_files = spec.metadata.get("hf_extra_files", [])
+                read = prebuilt_artifacts.spec_extra_files(spec_json)
+                assert len(read) == len(extra_files)
+
+
 RECORDS = "tt_dit_cache/.tt_weights_complete"
 
 
@@ -746,7 +890,7 @@ class NoHub:
         raise AssertionError(f"the Hub was asked for {name}")
 
 
-def download(dest, variant=FL2VA, revision="main", repo=WEIGHTS_REPO):
+def download(dest, variant=VARIANT, revision="main", repo=WEIGHTS_REPO):
     argv = ["--repo", repo, "--revision", revision, "--variant", variant]
     argv += ["--dest-cache", str(dest / "tt_dit_cache")]
     return tt_weights_download.main(argv + ["--dest-original", str(dest / "weights")])
@@ -761,35 +905,35 @@ def hub_reasons(capsys):
 def test_download_marks_one_variant_and_keeps_it_when_another_fails(
     hub, cache_dir, tmp_path
 ):
-    assert main(upload_argv(cache_dir, REF2VA)) == 0
-    nested = f"tt_dit_cache/{OWN[FL2VA]}/host_coords_r0-3_c0-7/a.tensorbin"
+    assert main(upload_argv(cache_dir, SIBLING)) == 0
+    nested = f"tt_dit_cache/{OWN[VARIANT]}/host_coords_r0-3_c0-7/a.tensorbin"
     hub.files()[nested] = b"a multi-host capture of the same component"
     dest = tmp_path / "deployment"
 
     assert download(dest) == 0
 
-    assert sorted(hub.fetched) == sorted(published(FL2VA))
-    expected = published(FL2VA, original="weights")
-    for directory in (OWN[FL2VA], SHARED):
+    assert sorted(hub.fetched) == sorted(published(VARIANT))
+    expected = published(VARIANT, original="weights")
+    for directory in (OWN[VARIANT], SHARED):
         expected[f"tt_dit_cache/{directory}/cache_dict.json"] = b""
     files = tree(dest)
-    record = json.loads(files.pop(f"{RECORDS}/{FL2VA}.json"))
+    record = json.loads(files.pop(f"{RECORDS}/{VARIANT}.json"))
     assert files == expected
     named = [record[name] for name in ("repo", "variant", "revision", "commit")]
-    assert named == [WEIGHTS_REPO, FL2VA, "main", hub.head]
-    assert record["manifest"] == json.loads(hub.files()[f"manifests/{FL2VA}.json"])
+    assert named == [WEIGHTS_REPO, VARIANT, "main", hub.head]
+    assert record["manifest"] == json.loads(hub.files()[f"manifests/{VARIANT}.json"])
 
     hub.fetched.clear()
-    del hub.files()[f"tt_dit_cache/{OWN[REF2VA]}/blocks.0.weight.tensorbin"]
+    del hub.files()[f"tt_dit_cache/{OWN[SIBLING]}/blocks.0.weight.tensorbin"]
     shutil.rmtree(dest / RECORDS)
     assert download(dest) == 0
-    assert download(dest, REF2VA) == 1
+    assert download(dest, SIBLING) == 1
 
-    assert not set(hub.fetched) & set(published(FL2VA))
+    assert not set(hub.fetched) & set(published(VARIANT))
     applied = {p: d for p, d in tree(dest).items() if ".tt_weights_" not in p}
     assert applied == expected
-    assert json.loads((dest / RECORDS / f"{FL2VA}.json").read_text()) == record
-    assert not (dest / RECORDS / f"{REF2VA}.json").exists()
+    assert json.loads((dest / RECORDS / f"{VARIANT}.json").read_text()) == record
+    assert not (dest / RECORDS / f"{SIBLING}.json").exists()
 
 
 def test_download_refuses_a_destination_another_download_holds(hub, tmp_path, capsys):
@@ -812,21 +956,21 @@ def test_download_refuses_a_directory_with_other_files_and_changes_nothing(
     assert download(dest) == 0
     hub.fetched.clear()
     other = {"renamed.tensorbin": b"converted by another tt-metal commit"}
-    write_files(dest / "tt_dit_cache" / OWN[FL2VA], other)
+    write_files(dest / "tt_dit_cache" / OWN[VARIANT], other)
     before = tree(dest)
 
     assert download(dest) == 1
 
     error = capsys.readouterr().err
-    assert f"{OWN[FL2VA]}: 1 file(s), for example renamed.tensorbin" in error
+    assert f"{OWN[VARIANT]}: 1 file(s), for example renamed.tensorbin" in error
     assert (tree(dest), hub.fetched) == (before, [])
 
 
 @pytest.mark.parametrize("unsafe", ["../outside", "/outside", ""])
 def test_download_refuses_a_manifest_with_an_unsafe_path(hub, tmp_path, capsys, unsafe):
-    manifest = json.loads(hub.files()[f"manifests/{FL2VA}.json"])
+    manifest = json.loads(hub.files()[f"manifests/{VARIANT}.json"])
     manifest["cache_directories"][0]["path"] = unsafe
-    hub.files()[f"manifests/{FL2VA}.json"] = json.dumps(manifest).encode()
+    hub.files()[f"manifests/{VARIANT}.json"] = json.dumps(manifest).encode()
     dest = tmp_path / "deployment"
 
     assert download(dest) == 1
@@ -838,7 +982,7 @@ def test_download_refuses_a_manifest_with_an_unsafe_path(hub, tmp_path, capsys, 
 @pytest.mark.parametrize(
     "path, content",
     [
-        (f"tt_dit_cache/{OWN[FL2VA]}/blocks.0.bias.tensorbin", None),
+        (f"tt_dit_cache/{OWN[VARIANT]}/blocks.0.bias.tensorbin", None),
         ("original_subset/vae/config.json", b"[]"),
     ],
 )
@@ -873,7 +1017,7 @@ def test_download_into_a_complete_destination_needs_no_hub_and_no_token(
     assert download(dest, revision=hub.head) == 0
 
     complete = (
-        f"complete: {dest / 'tt_dit_cache'} holds {FL2VA} of {WEIGHTS_REPO} at "
+        f"complete: {dest / 'tt_dit_cache'} holds {VARIANT} of {WEIGHTS_REPO} at "
         f"commit {hub.head}; 2 cache directories and 12 original files re-checked "
         "against the saved manifest; the Hub was not contacted"
     )
@@ -899,7 +1043,7 @@ def test_the_lone_download_script_checks_a_complete_destination(hub, tmp_path):
 def test_download_of_another_revision_asks_the_hub(hub, tmp_path, capsys):
     dest = tmp_path / "deployment"
     assert download(dest) == 0
-    record = dest / RECORDS / f"{FL2VA}.json"
+    record = dest / RECORDS / f"{VARIANT}.json"
     (tag,) = hub.tags
     capsys.readouterr()
 
@@ -942,7 +1086,7 @@ def test_download_leaves_the_markers_it_keeps_alone(hub, tmp_path, monkeypatch, 
 
 CHANGES_AFTER_A_DOWNLOAD = {
     "tensor-removed": (
-        f"tt_dit_cache/{OWN[FL2VA]}/blocks.0.bias.tensorbin",
+        f"tt_dit_cache/{OWN[VARIANT]}/blocks.0.bias.tensorbin",
         None,
         "does not hold the recorded file names and sizes",
     ),
@@ -962,12 +1106,12 @@ CHANGES_AFTER_A_DOWNLOAD = {
         "is missing or not the recorded file",
     ),
     "original-file-removed": (
-        f"weights/lightx2v/{FL2VA}.safetensors",
+        f"weights/adapters/{VARIANT}.safetensors",
         None,
         "is missing or not the recorded file",
     ),
     "record-cut-short": (
-        f"{RECORDS}/{FL2VA}.json",
+        f"{RECORDS}/{VARIANT}.json",
         b"{",
         "is not a record this script reads",
     ),
@@ -998,9 +1142,9 @@ def test_download_repairs_a_recorded_destination_that_changed(
 
 
 def test_download_restores_an_original_folder_that_holds_no_file(hub, tmp_path, capsys):
-    manifest = json.loads(hub.files()[f"manifests/{FL2VA}.json"])
+    manifest = json.loads(hub.files()[f"manifests/{VARIANT}.json"])
     manifest["original_folders"].append("empty")
-    hub.files()[f"manifests/{FL2VA}.json"] = json.dumps(manifest).encode()
+    hub.files()[f"manifests/{VARIANT}.json"] = json.dumps(manifest).encode()
     dest = tmp_path / "deployment"
     assert download(dest) == 0
     (dest / "weights/empty").rmdir()
@@ -1015,43 +1159,43 @@ def test_download_restores_an_original_folder_that_holds_no_file(hub, tmp_path, 
 def test_download_ignores_the_record_of_another_repo_or_variant(
     hub, cache_dir, tmp_path, capsys
 ):
-    assert main(upload_argv(cache_dir, REF2VA)) == 0
+    assert main(upload_argv(cache_dir, SIBLING)) == 0
     dest = tmp_path / "deployment"
     assert download(dest) == 0
-    record = dest / RECORDS / f"{FL2VA}.json"
-    copied = shutil.copyfile(record, record.with_name(f"{REF2VA}.json"))
+    record = dest / RECORDS / f"{VARIANT}.json"
+    copied = shutil.copyfile(record, record.with_name(f"{SIBLING}.json"))
     hub.fetched.clear()
     capsys.readouterr()
 
     assert download(dest, repo="example-org/another-tt-weights") == 0
     assert json.loads(record.read_text())["repo"] == "example-org/another-tt-weights"
-    assert download(dest, REF2VA) == 0
+    assert download(dest, SIBLING) == 0
 
-    recorded = f"records {FL2VA} of {WEIGHTS_REPO}"
+    recorded = f"records {VARIANT} of {WEIGHTS_REPO}"
     assert hub_reasons(capsys) == [f"{record} {recorded}", f"{copied} {recorded}"]
-    assert set(hub.fetched) == set(published(REF2VA)) - set(published(FL2VA))
-    assert json.loads(copied.read_text())["variant"] == REF2VA
+    assert set(hub.fetched) == set(published(SIBLING)) - set(published(VARIANT))
+    assert json.loads(copied.read_text())["variant"] == SIBLING
 
 
 def test_download_that_replaces_tensors_removes_the_records(
     hub, cache_dir, tmp_path, capsys
 ):
-    assert main(upload_argv(cache_dir, REF2VA)) == 0
+    assert main(upload_argv(cache_dir, SIBLING)) == 0
     dest = tmp_path / "deployment"
     assert download(dest) == 0
     shared = f"tt_dit_cache/{SHARED}/embed.weight.tensorbin"
     hub.files()[shared] = hub.files()[shared][::-1]
     capsys.readouterr()
 
-    assert download(dest, REF2VA) == 0
-    assert os.listdir(dest / RECORDS) == [f"{REF2VA}.json"]
+    assert download(dest, SIBLING) == 0
+    assert os.listdir(dest / RECORDS) == [f"{SIBLING}.json"]
     assert download(dest) == 0
 
     cache = dest / "tt_dit_cache"
     no_record = "has no record of a complete download of"
     assert hub_reasons(capsys) == [
-        f"{cache} {no_record} {REF2VA}",
-        f"{cache} {no_record} {FL2VA}",
+        f"{cache} {no_record} {SIBLING}",
+        f"{cache} {no_record} {VARIANT}",
     ]
     assert (dest / shared).read_bytes() == hub.files()[shared]
 
@@ -1060,7 +1204,7 @@ def test_download_that_fills_a_removed_directory_removes_the_records(
     hub, cache_dir, tmp_path, capsys
 ):
     (tag,) = hub.tags
-    assert main(upload_argv(cache_dir, REF2VA)) == 0
+    assert main(upload_argv(cache_dir, SIBLING)) == 0
     shared = f"tt_dit_cache/{SHARED}/embed.weight.tensorbin"
     hub.files()[shared] = hub.files(tag)[shared][::-1]
     dest = tmp_path / "deployment"
@@ -1068,21 +1212,21 @@ def test_download_that_fills_a_removed_directory_removes_the_records(
     shutil.rmtree(dest / "tt_dit_cache" / SHARED)
     capsys.readouterr()
 
-    assert download(dest, REF2VA) == 0
-    assert os.listdir(dest / RECORDS) == [f"{REF2VA}.json"]
+    assert download(dest, SIBLING) == 0
+    assert os.listdir(dest / RECORDS) == [f"{SIBLING}.json"]
     assert (dest / shared).read_bytes() == hub.files()[shared]
     assert download(dest, revision=tag) == 0
 
     cache = dest / "tt_dit_cache"
     no_record = "has no record of a complete download of"
     assert hub_reasons(capsys) == [
-        f"{cache} {no_record} {REF2VA}",
-        f"{cache} {no_record} {FL2VA}",
+        f"{cache} {no_record} {SIBLING}",
+        f"{cache} {no_record} {VARIANT}",
     ]
     assert (dest / shared).read_bytes() == hub.files(tag)[shared]
 
 
-WEIGHTS = {"repo": WEIGHTS_REPO, "variant": FL2VA, "tag": "t", "commit": "1" * 40}
+WEIGHTS = {"repo": WEIGHTS_REPO, "variant": VARIANT, "tag": "t", "commit": "1" * 40}
 RELEASE_OPTIONS = {
     "--image": KC_IMAGE,
     "--image-digest": "sha256:2222",

@@ -442,7 +442,8 @@ def variant_argument(value: str) -> str:
     """A variant slug. It names the manifest of the variant and starts its tag."""
     if not VARIANT_SLUG.fullmatch(value):
         raise argparse.ArgumentTypeError(
-            "a variant is a lowercase slug such as minimax-h3-fl2va-lightx2v"
+            "a variant is a lowercase slug of letters and digits joined by "
+            "single hyphens, in the form <model>-<task>"
         )
     return value
 
@@ -472,8 +473,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--variant",
         type=variant_argument,
         required=True,
-        help="model variant to fetch: the name of its manifest in the repo, such "
-        "as minimax-h3-fl2va-lightx2v",
+        help="model variant to fetch; the repo holds its manifest as "
+        f"{MANIFEST_FOLDER}/<variant>.json",
     )
     parser.add_argument(
         "--dest-cache",
@@ -486,8 +487,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--dest-original",
         type=path_argument,
         required=True,
-        help="checkpoint directory of the server (MINIMAX_H3_MODEL_PATH); the "
-        "files it still reads from the original checkpoint go here",
+        help="the folder the server reads the original checkpoint from; the "
+        "files it still reads from that checkpoint go here",
     )
     return parser
 

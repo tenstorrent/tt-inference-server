@@ -13,17 +13,27 @@ one such start this tool packages both, so later starts load them instead:
                                                        shared by the variants of the model
     release-file                                       one JSON file that names both
 
-kernel-cache and release-file work for any media-server model; the manifest
-records BUILD_KEY_ENV_VARS, two of which are MiniMax-H3's. tt-weights upload
-supports MiniMax-H3 only: it knows which files of that checkpoint a start with
-converted weights still reads (the MINIMAX_H3_* block) and assumes tt_dit's
-cache layout. scripts/tt_weights_download.py fetches what was uploaded, for any
-model; build-image puts that file into the image.
+What the tool has to know of a model is in its model spec (workflows/model_specs/),
+under metadata.prebuilt_artifacts:
+
+    kernel_build_env    env var names of the model that change the compiled kernels
+    original_files      globs, relative to the checkpoint folder, of the files a
+                        start with converted weights still reads
+    original_shards     {index, tensor_prefix} entries: the index file and the
+                        safetensors shards that, by that index, hold tensors
+                        with the prefix are read too
+    original_folders    folders that must exist in the destination, even when empty
+
+kernel-cache and release-file work for any media-server model; without
+kernel_build_env the manifest records BUILD_KEY_ENV_VARS only. tt-weights upload
+needs original_files, also publishes the files of metadata.hf_extra_files and
+assumes tt_dit's cache layout. scripts/tt_weights_download.py fetches what was
+uploaded, for any model; build-image puts that file into the image.
 
 Run it from the repo root: python3 scripts/prebuilt_artifacts.py <command> --help
 tt-weights upload needs huggingface_hub and takes the token from HF_TOKEN.
-What a deployment sets is in tt-media-server/README.md, section "MiniMax-H3
-image with prebuilt kernels and weights".
+What a deployment sets is in tt-media-server/README.md, section "Image with
+prebuilt kernels and weights".
 """
 
 from __future__ import annotations
@@ -76,18 +86,17 @@ from workflows.kernel_cache import (
     KERNEL_CACHE_MANIFEST_CONTAINER_PATH,
 )
 
-# Environment variables that change tt-metal's build key or kernel hashes: the
-# ones this deployment is known to set, four of tt-metal and the media server
-# and two of MiniMax-H3. Another model adds its own here. tt-metal hashes more
-# options than these; a failing check-log is the sign that one is missing.
+# Environment variables of tt-metal and the media server that change tt-metal's
+# build key or kernel hashes: the ones a deployment is known to set. A model
+# names its own in its spec (kernel_build_env). tt-metal hashes more options
+# than these; a failing check-log is the sign that one is missing.
 BUILD_KEY_ENV_VARS = (
     "TT_METAL_INSPECTOR",
     "TT_METAL_RISCV_DEBUG_INFO",
     "TT_MM_THROTTLE_PERF",
-    "MINIMAX_H3_TOPOLOGY",
-    "MINIMAX_H3_VAE_OUTPUT",
     "TT_METAL_WATCHER",
 )
+ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 KERNEL_CACHE_DOCKERFILE = project_root / "tt-media-server" / "Dockerfile.kernel-cache"
 # build-image stages this file; it is the only tool file in the image.
 DOWNLOAD_SCRIPT = project_root / "scripts" / "tt_weights_download.py"
@@ -113,35 +122,8 @@ MESH_SHAPE = re.compile(r"mesh(\d+x\d+)_")
 # Manifest fields that say when and by which server commit an upload was made,
 # not what it holds. A tag is reused when everything else is equal.
 MANIFEST_RUN_FIELDS = ("created_utc", "server_sha")
-
-# MiniMax-H3 checkpoint layout, used by tt-weights upload only: what a server
-# with a complete converted cache still reads from the original checkpoint
-# directory (MINIMAX_H3_MODEL_PATH), besides the LoRA file (MINIMAX_H3_LORA_PATH).
-# Correct the lists here only.
-
-# Maps each text encoder weight to the shard that holds it.
-MINIMAX_H3_TEXT_ENCODER_INDEX = "text_encoder/model.safetensors.index.json"
-# Globs relative to the checkpoint directory; each must match a file. The audio
-# VAE weights are listed for the audio encoder: only a request whose reference
-# has a soundtrack loads it, so a capture run without one publishes no converted
-# copy and the server converts it from these.
-MINIMAX_H3_ORIGINAL_SUBSET = (
-    "model_index.json",
-    "vae/config.json",
-    "vae/*",
-    "audio_vae/*.json",
-    "audio_vae/*.safetensors",
-    "text_encoder/config.json",
-    MINIMAX_H3_TEXT_ENCODER_INDEX,
-    "text_encoder/*.json",
-    "tokenizer/**/*",
-)
-# config.json is read from each of these folders that the checkpoint holds.
-MINIMAX_H3_TRANSFORMER_FOLDERS = ("transformer", "transformer_ref")
-# The text encoder shards that hold weights with this prefix are read.
-MINIMAX_H3_VISION_TOWER_PREFIX = "model.visual."
-# Folders that must exist, next to the transformer folder(s).
-MINIMAX_H3_REQUIRED_FOLDERS = ("text_encoder", "vae", "audio_vae")
+# Key of a model spec's metadata that holds what this tool has to know of the model.
+SPEC_METADATA_KEY = "prebuilt_artifacts"
 
 
 def utc_now() -> str:
@@ -230,8 +212,11 @@ def image_env(image: str) -> dict:
     return dict(entry.split("=", 1) for entry in entries or [] if "=" in entry)
 
 
-def env_file_values(path: Path) -> dict:
-    """KEY=VALUE lines of a docker --env-file; values are literal, as docker reads them."""
+def env_file_values(path: Path, recorded: list[str]) -> dict:
+    """KEY=VALUE lines of a docker --env-file; values are literal, as docker reads them.
+
+    A recorded variable must be given with its value.
+    """
     values = {}
     for line in Path(path).read_text(encoding="utf-8").splitlines():
         line = line.lstrip()
@@ -240,7 +225,7 @@ def env_file_values(path: Path) -> dict:
         key, separator, value = line.partition("=")
         if separator:
             values[key] = value
-        elif key.strip() in BUILD_KEY_ENV_VARS:
+        elif key.strip() in recorded:
             raise CliError(
                 f"{path} takes {key.strip()} from the environment of the docker "
                 f"command, so its value in the capture run is not known; write it "
@@ -263,13 +248,112 @@ def spec_env_values(path: Path) -> dict:
     return {key: str(value) for key, value in env_vars.items() if str(value)}
 
 
+def spec_metadata(path: Path) -> dict:
+    """metadata of a runtime model spec JSON; empty when the spec has none."""
+    metadata = read_model_spec(path).get("metadata")
+    return metadata if isinstance(metadata, dict) else {}
+
+
+def env_name(value) -> bool:
+    return isinstance(value, str) and bool(ENV_NAME.fullmatch(value))
+
+
+def relative_path(value) -> bool:
+    """True for a path or glob that stays inside the folder it is relative to."""
+    if not isinstance(value, str) or value.startswith("/"):
+        return False
+    parts = PurePosixPath(value).parts
+    return bool(parts) and ".." not in parts
+
+
+def shard_rule(value) -> bool:
+    """True for an original_shards entry: an index file and a tensor name prefix."""
+    return (
+        isinstance(value, dict)
+        and value.keys() == {"index", "tensor_prefix"}
+        and relative_path(value["index"])
+        and isinstance(value["tensor_prefix"], str)
+        and bool(value["tensor_prefix"])
+    )
+
+
+# The fields of metadata.prebuilt_artifacts and the check an item of each passes.
+SPEC_METADATA_FIELDS = {
+    "kernel_build_env": env_name,
+    "original_files": relative_path,
+    "original_shards": shard_rule,
+    "original_folders": relative_path,
+}
+
+
+def spec_prebuilt_artifacts(path: Path) -> dict:
+    """metadata.prebuilt_artifacts of a runtime model spec JSON; empty when the spec has none.
+
+    The module docstring says what each field holds. Raises on any other field
+    and on a field that is not a list of the items it takes.
+    """
+    described = spec_metadata(path).get(SPEC_METADATA_KEY, {})
+    if not isinstance(described, dict):
+        raise CliError(f"metadata.{SPEC_METADATA_KEY} of {path} is not a mapping")
+    wrong = [
+        name
+        for name, items in described.items()
+        if name not in SPEC_METADATA_FIELDS
+        or not isinstance(items, list)
+        or not all(map(SPEC_METADATA_FIELDS[name], items))
+    ]
+    if wrong:
+        raise CliError(
+            f"metadata.{SPEC_METADATA_KEY} of the model spec {path} has fields "
+            f"this tool does not read as they are: {', '.join(wrong)}"
+        )
+    return described
+
+
+def spec_extra_files(path: Path) -> list[str]:
+    """Paths, relative to the checkpoint folder, of the files of metadata.hf_extra_files.
+
+    Host setup fetches each from another repo into <local_subdir>/<filename>.
+    """
+    try:
+        files = [
+            (PurePosixPath(extra["local_subdir"]) / extra["filename"]).as_posix()
+            for extra in spec_metadata(path).get("hf_extra_files", [])
+        ]
+    except (KeyError, TypeError) as error:
+        raise CliError(
+            f"metadata.hf_extra_files of the model spec {path} is not a list of "
+            "entries with local_subdir and filename"
+        ) from error
+    outside = [file for file in files if not relative_path(file)]
+    if outside:
+        raise CliError(
+            f"metadata.hf_extra_files of the model spec {path} names files "
+            f"outside the checkpoint folder: {', '.join(outside)}"
+        )
+    return files
+
+
 def read_kernel_manifest(path: Path, base_image: str) -> dict:
-    """The kernel manifest at path; an error when it describes another base image."""
+    """The kernel manifest at path; an error when it describes another base image.
+
+    build_key_env maps the variables the capture run recorded to their values,
+    None for an unset one.
+    """
     manifest = manifest_fields(read_json(path), KERNEL_MANIFEST_FIELDS, path)
     if manifest["base_image"] != base_image:
         raise CliError(
             f"the kernel manifest {path} was made for base image "
             f"{manifest['base_image']}, not {base_image}"
+        )
+    build_key_env = manifest["build_key_env"]
+    if not isinstance(build_key_env, dict) or not all(
+        env_name(name) and (value is None or isinstance(value, str))
+        for name, value in build_key_env.items()
+    ):
+        raise CliError(
+            f"build_key_env of the kernel manifest {path} does not map variable "
+            "names to a value or null"
         )
     return manifest
 
@@ -309,10 +393,20 @@ def kernel_cache_manifest(args) -> None:
             "start from a warm one."
         )
 
+    # Recorded: BUILD_KEY_ENV_VARS, then the variables the model spec names.
+    recorded = list(BUILD_KEY_ENV_VARS)
+    if spec_json:
+        of_model = spec_prebuilt_artifacts(spec_json).get("kernel_build_env")
+        if of_model is None:
+            step(
+                f"env: no metadata.{SPEC_METADATA_KEY}.kernel_build_env in "
+                f"{spec_json}; no variable of the model is recorded"
+            )
+        recorded += [name for name in of_model or [] if name not in recorded]
     layers = [image_env(base_image)]
     not_given = []
     if env_file:
-        layers.append(env_file_values(env_file))
+        layers.append(env_file_values(env_file, recorded))
     else:
         not_given.append("--env-file")
     if spec_json:
@@ -324,9 +418,9 @@ def kernel_cache_manifest(args) -> None:
             f"env: no {' or '.join(not_given)} given; what the capture run set "
             "there is not in the manifest"
         )
-    build_key_env = dict.fromkeys(BUILD_KEY_ENV_VARS)
+    build_key_env = dict.fromkeys(recorded)
     for layer in layers:
-        for name in BUILD_KEY_ENV_VARS:
+        for name in recorded:
             if name in layer:
                 build_key_env[name] = layer[name]
     step(
@@ -356,14 +450,13 @@ def kernel_cache_manifest(args) -> None:
 
 
 def render_kernel_cache_dockerfile(build_key_env: dict) -> str:
-    """Dockerfile.kernel-cache plus the build-key variables of the capture run.
+    """Dockerfile.kernel-cache plus the variables a kernel manifest records, in its order.
 
     A deployment that sets none of them then starts with the values the cache was
     compiled for, and hits it.
     """
     lines = [KERNEL_CACHE_DOCKERFILE.read_text(encoding="utf-8").rstrip("\n"), ""]
-    for name in BUILD_KEY_ENV_VARS:
-        value = build_key_env.get(name)
+    for name, value in build_key_env.items():
         if value is None:
             continue
         if any(ord(char) < 32 for char in value):
@@ -509,55 +602,33 @@ def variant_cache_directories(
     return directories
 
 
-def minimax_h3_lora_file(env_vars: dict) -> str | None:
-    """The LoRA file of a MiniMax-H3 model spec, relative to the checkpoint directory; None without one.
-
-    The env_vars of another model are refused.
-    """
-    if "MINIMAX_H3_MODEL_PATH" not in env_vars:
-        raise CliError("tt-weights upload supports MiniMax-H3 only")
-    lora = PurePosixPath(env_vars.get("MINIMAX_H3_LORA_PATH", ""))
-    model_path = PurePosixPath(env_vars["MINIMAX_H3_MODEL_PATH"])
-    if not lora.name:
-        return None
-    if model_path not in lora.parents:
-        raise CliError(
-            "MINIMAX_H3_LORA_PATH is not inside MINIMAX_H3_MODEL_PATH in the model spec"
-        )
-    return lora.relative_to(model_path).as_posix()
-
-
-def minimax_h3_original_subset(
-    original_dir: Path, lora: str | None
+def original_subset(
+    original_dir: Path, described: dict, extra_files: list[str]
 ) -> tuple[list[dict], list[str]]:
-    """Path, bytes and sha256 of the MINIMAX_H3_ORIGINAL_SUBSET files, and the folders that must exist."""
-    transformers = [
-        folder
-        for folder in MINIMAX_H3_TRANSFORMER_FOLDERS
-        if (original_dir / folder / "config.json").is_file()
-    ]
-    wanted = [
-        *MINIMAX_H3_ORIGINAL_SUBSET,
-        *(f"{folder}/config.json" for folder in transformers),
-    ]
-    either_config = " or ".join(
-        f"{folder}/config.json" for folder in MINIMAX_H3_TRANSFORMER_FOLDERS
-    )
-    missing = [] if transformers else [either_config]
-    index = original_dir / MINIMAX_H3_TEXT_ENCODER_INDEX
-    if index.is_file():
+    """Path, bytes and sha256 of the original files a model spec names, and the folders that must exist.
+
+    The files are those the original_files globs match, each index of
+    original_shards with the shards it gives for the prefix, and the extra
+    files. Every glob and every named file must match a file.
+    """
+    wanted = list(described["original_files"])
+    for rule in described.get("original_shards", []):
+        index, prefix = PurePosixPath(rule["index"]), rule["tensor_prefix"]
+        wanted.append(glob.escape(index.as_posix()))
+        if not (original_dir / index).is_file():
+            continue
+        weight_map = read_json(original_dir / index).get("weight_map", {})
         shards = {
-            shard
-            for name, shard in read_json(index).get("weight_map", {}).items()
-            if name.startswith(MINIMAX_H3_VISION_TOWER_PREFIX)
+            (index.parent / str(shard)).as_posix()
+            for name, shard in weight_map.items()
+            if name.startswith(prefix)
         }
         if not shards:
-            raise CliError(f"no {MINIMAX_H3_VISION_TOWER_PREFIX}* weights in {index}")
-        wanted += [f"text_encoder/{glob.escape(shard)}" for shard in sorted(shards)]
-    if lora:
-        wanted.append(glob.escape(lora))
+            raise CliError(f"no {prefix}* weights in {original_dir / index}")
+        wanted += [glob.escape(shard) for shard in sorted(shards)]
+    wanted += [glob.escape(file) for file in extra_files]
 
-    files = set()
+    files, missing = set(), []
     for pattern in wanted:
         matches = [path for path in original_dir.glob(pattern) if path.is_file()]
         files.update(matches)
@@ -587,7 +658,7 @@ def minimax_h3_original_subset(
         }
         for path in sorted(files)
     ]
-    return entries, [*transformers, *MINIMAX_H3_REQUIRED_FOLDERS]
+    return entries, list(described.get("original_folders", []))
 
 
 def downloaded_revision(original_dir: Path, files: list[str]) -> str:
@@ -693,7 +764,15 @@ def upload_plan(
 def describe_variant(args) -> dict:
     """The manifest of one variant: what its server start used, and where that came from."""
     env_vars = spec_env_values(args.spec_json)
-    lora = minimax_h3_lora_file(env_vars)
+    described = spec_prebuilt_artifacts(args.spec_json)
+    if "original_files" not in described:
+        raise CliError(
+            f"no metadata.{SPEC_METADATA_KEY}.original_files in the model spec "
+            f"{args.spec_json}: it lists the files of the original checkpoint a "
+            "start with converted weights still reads, and without it nothing "
+            "says what to publish"
+        )
+    extra_files = spec_extra_files(args.spec_json)
     if "TT_DIT_CACHE_DIR" not in env_vars:
         raise CliError(f"no TT_DIT_CACHE_DIR in the env_vars of {args.spec_json}")
     directories = variant_cache_directories(
@@ -707,7 +786,7 @@ def describe_variant(args) -> dict:
             "the cache directory names must carry one mesh shape, found "
             + (", ".join(meshes) or "none")
         )
-    originals, folders = minimax_h3_original_subset(args.original_dir, lora)
+    originals, folders = original_subset(args.original_dir, described, extra_files)
     step(
         f"scan: {len(directories)} cache directories, "
         f"{sum(entry['files'] for entry in directories)} files, "
@@ -715,7 +794,10 @@ def describe_variant(args) -> dict:
         f"{len(originals)} original files, "
         f"{gigabytes(sum(entry['bytes'] for entry in originals))}"
     )
-    checkpoint_files = [entry["path"] for entry in originals if entry["path"] != lora]
+    # The extra files come from other repos; the source revision is not theirs.
+    checkpoint_files = [
+        entry["path"] for entry in originals if entry["path"] not in extra_files
+    ]
     source_repo = read_model_spec(args.spec_json).get("hf_weights_repo")
     if not source_repo:
         step(
@@ -989,7 +1071,8 @@ def build_parser() -> argparse.ArgumentParser:
     manifest.add_argument(
         "--spec-json",
         type=path_argument,
-        help="runtime model spec JSON of the capture run, for its env_vars",
+        help="runtime model spec JSON of the capture run, for its env_vars and "
+        "the variables of the model its metadata names",
     )
     manifest.add_argument(
         "--out", type=path_argument, required=True, help="manifest file to write"
@@ -1050,7 +1133,8 @@ def build_parser() -> argparse.ArgumentParser:
         upload_tt_weights,
         "publish the converted weights of one model variant",
         f"Sends the cache directories the server log names, the files a start "
-        f"still reads from the original checkpoint and the manifest of the variant "
+        f"still reads from the original checkpoint (the model spec names them "
+        f"under metadata.{SPEC_METADATA_KEY}) and the manifest of the variant "
         f"to branch {WEIGHTS_BRANCH}, then tags the commit "
         f"<variant>_src-<source revision>_mesh<RxC>_ttm-<tt-metal commit>. Send "
         f"every kind of request the deployment serves before the upload: a "
@@ -1068,14 +1152,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--original-dir",
         type=path_argument,
         required=True,
-        help="host directory of the original checkpoint (MINIMAX_H3_MODEL_PATH)",
+        help="host directory the server read the original checkpoint from",
     )
     upload.add_argument(
         "--variant",
         type=variant_argument,
         required=True,
-        help="lowercase name of the model variant, such as "
-        "minimax-h3-fl2va-lightx2v; it names the manifest and starts the tag",
+        help="lowercase name of the model variant, such as <model>-<task>; it "
+        "names the manifest and starts the tag",
     )
     upload.add_argument(
         "--server-log",
@@ -1087,7 +1171,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--spec-json",
         type=path_argument,
         required=True,
-        help="runtime model spec JSON of that start",
+        help="runtime model spec JSON of that start; its metadata names the "
+        "original files to publish",
     )
     upload.add_argument(
         "--repo",
