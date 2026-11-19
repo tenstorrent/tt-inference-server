@@ -912,6 +912,34 @@ def test_download_of_another_revision_asks_the_hub(hub, tmp_path, capsys):
     assert json.loads(record.read_text())["revision"] == tag
 
 
+def test_download_leaves_the_markers_it_keeps_alone(hub, tmp_path, monkeypatch, capsys):
+    """The kept markers are read-only files whose times this user cannot set."""
+    dest = tmp_path / "deployment"
+    assert download(dest) == 0
+    before = tree(dest)
+    shutil.rmtree(dest / RECORDS)
+    markers = sorted(dest.rglob("cache_dict.json"))
+    for marker in markers:
+        marker.chmod(0o444)
+    stats = [(marker.stat().st_ino, marker.stat().st_mtime_ns) for marker in markers]
+    set_times = os.utime
+
+    def utime(path, *args, **kwargs):
+        if Path(path) in markers:
+            raise PermissionError(f"{path} belongs to another user")
+        return set_times(path, *args, **kwargs)
+
+    monkeypatch.setattr(os, "utime", utime)
+    hub.fetched.clear()
+    capsys.readouterr()
+
+    assert download(dest) == 0
+
+    assert "keep: 2 cache directories and 12 original files" in capsys.readouterr().out
+    assert [(m.stat().st_ino, m.stat().st_mtime_ns) for m in markers] == stats
+    assert (tree(dest), hub.fetched) == (before, [])
+
+
 CHANGES_AFTER_A_DOWNLOAD = {
     "tensor-removed": (
         f"tt_dit_cache/{OWN[FL2VA]}/blocks.0.bias.tensorbin",

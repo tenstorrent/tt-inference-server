@@ -405,8 +405,11 @@ def download_tt_weights(
         shutil.move(staging / ORIGINAL_SUBSET_FOLDER / entry["path"], target)
     for folder in folders:
         (dest_original / folder).mkdir(parents=True, exist_ok=True)
+    # A kept marker can be a file this user may not write: only a missing one is made.
     for entry in listed:
-        (dest_cache / entry["path"] / CACHE_MARKER).touch()
+        marker = dest_cache / entry["path"] / CACHE_MARKER
+        if not marker.exists():
+            marker.touch()
     shutil.rmtree(staging.parent, ignore_errors=True)
     step(f"mark: {len(listed)} directories complete in {dest_cache}")
 
