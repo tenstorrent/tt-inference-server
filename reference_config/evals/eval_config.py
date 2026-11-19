@@ -13621,6 +13621,17 @@ _eval_config_list = [
                     published_score_ref="https://huggingface.co/zai-org/GLM-5.3-Flash",
                     gpu_reference_score=None,
                     gpu_reference_score_ref=None,
+                    # ci-nightly runs the first 10 questions (0.05 of 198). No GPU control fits this model on hand; the
+                    # reference is the TT stack's own full-set score (served glm53_flash_1m, all 198 questions, thinking,
+                    # T 1.0 / top-p 0.95: 86.87, tt-metal 8bf49e5cddb), so the gate needs 8 / 10 at tolerance 0.05.
+                    # The 2026-11-19 release run (tt-metal aa822f5df1e) scored 9 / 10 on this subset.
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=86.87,
+                            ref="TT full-set GPQA Diamond (198 questions), served glm53_flash_1m, tt-metal 8bf49e5cddb; not a GPU control",
+                            tolerance=0.05,
+                        ),
+                    },
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -13665,6 +13676,17 @@ _eval_config_list = [
                     published_score_ref="https://huggingface.co/zai-org/GLM-5.3-Flash",
                     gpu_reference_score=None,
                     gpu_reference_score_ref=None,
+                    # ci-nightly runs the five tasks of task_names_map. No GPU control fits this model on hand and the
+                    # card's 84.3 is another harness, so the subset's reference is the TT stack's own score there: 3 / 5
+                    # (60) in the 2026-11-19 release run (terminus-2, tt-metal 5cc6ac5624b); the gate needs 2 / 5 at
+                    # tolerance 0.05.
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=60.0,
+                            ref="TT-measured on the five ci-nightly tasks (terminus-2), release run 2026-11-19, tt-metal 5cc6ac5624b; the card's 84.3 is Terminal-Bench 2.1 in Claude Code",
+                            tolerance=0.05,
+                        ),
+                    },
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["accuracy"],
@@ -13723,6 +13745,16 @@ _eval_config_list = [
                     published_score_ref="https://huggingface.co/zai-org/GLM-5.3-Flash",
                     gpu_reference_score=None,
                     gpu_reference_score_ref=None,
+                    # ci-nightly runs 6 problems (0.05 of the v6 window). No published or GPU LiveCodeBench number: the
+                    # reference is this subset's score in the 2026-11-19 release run (2 / 6, tt-metal aa822f5df1e), so the
+                    # gate needs 1 / 6 at tolerance 0.05.
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=33.33,
+                            ref="TT-measured on this 6-problem ci-nightly subset, release run 2026-11-19, tt-metal aa822f5df1e; not a GPU control",
+                            tolerance=0.05,
+                        ),
+                    },
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["acc,none"],

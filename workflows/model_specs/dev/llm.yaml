@@ -8026,7 +8026,8 @@ templates:
       default_impl: true  # the release default: tt-shield's on-dispatch runs the default profile
       # The first boot builds the tile cache from the checkpoint (174 GB of reference-format tiles) and writes the
       # permuted expert copies: an ESTIMATE of up to 4 h (not yet timed on a cold host); a warm cache boots in
-      # ~12-15 min (the stack build ~5.5 min + the prefill-bucket, decode and speculative-step captures).
+      # ~16 min (2026-11-19 release runs: 931 / 961 s -- the stack build ~4 min + the prefill-bucket, decode and
+      # speculative-step captures).
       tensor_cache_timeout: 14400.0
       env_vars:
         # Generic serving-class selection (plugin TT_MODEL_CLASS_OVERRIDES): the plugin's built-in map registers

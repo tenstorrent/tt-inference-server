@@ -8553,7 +8553,13 @@
                     "glm53_flash_1m: 1,040,000 / 896 x 1 = the served run (tt-metal 33279e5bbfa, greedy, speculation on): a cold 1 M",
                     "prefill 229.5 s, 113.5 tok/s per user. Its 2 / 4 / 8-user points are not expressible as rows: their TTFTs were",
                     "prefix-cache hits and their users decoded together, while the benchmark salts the prefix cache (cold prompts), so",
-                    "each later user's 229.5 s prefill runs beside the earlier users' decode."
+                    "each later user's 229.5 s prefill runs beside the earlier users' decode.",
+                    "The glm53_flash_1m measured tier (the target gate, tolerance 0.2): two TIS release runs on 2026-11-19 (ci-nightly,",
+                    "tt-metal aa822f5df1e and 5cc6ac5624b, vllm-tt-plugin 97c8883), each metric the conservative value of the two (TTFT",
+                    "the larger, throughputs the smaller): concurrency-8 TTFT moved 25 % between them (queue order), TPOT up to 10 % (MTP",
+                    "acceptance on random prompts). Gated points: 128 / 128 x 1 and x 8 (the profile's max users), 2,048 x 1, 8,192 x 1,",
+                    "32,768 x 1 and 1,040,000 / 896 x 1. The 1 M row's tput is the request's output rate over its TTFT + decode (3.8",
+                    "tok/s), not users x tput_user: one cold 1 M request spends ~229 s of its ~235 s in the prefill."
                 ]
             },
             {
@@ -8817,9 +8823,109 @@
                     "theoretical": {
                         "ttft_ms": 229500,
                         "tput_user": 113.5,
-                        "tput": 113.5
+                        "tput": 3.8
                     },
-                    "measured": null
+                    "measured": {
+                        "ttft_ms": 227561.1,
+                        "tput_user": 117.2,
+                        "tput": 3.8,
+                        "tolerance": 0.2
+                    }
+                }
+            },
+            {
+                "impl": "glm53_flash_1m",
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 241.5,
+                        "tput_user": 107.5,
+                        "tput": 90.0,
+                        "tolerance": 0.2
+                    }
+                }
+            },
+            {
+                "impl": "glm53_flash_1m",
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 8,
+                "num_prompts": 64,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 1009.3,
+                        "tput_user": 33.9,
+                        "tput": 222.9,
+                        "tolerance": 0.2
+                    }
+                }
+            },
+            {
+                "impl": "glm53_flash_1m",
+                "isl": 2048,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 4,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 602.2,
+                        "tput_user": 95.9,
+                        "tput": 66.4,
+                        "tolerance": 0.2
+                    }
+                }
+            },
+            {
+                "impl": "glm53_flash_1m",
+                "isl": 8192,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 2,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 1712.0,
+                        "tput_user": 101.6,
+                        "tput": 43.2,
+                        "tolerance": 0.2
+                    }
+                }
+            },
+            {
+                "impl": "glm53_flash_1m",
+                "isl": 32768,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 1,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 6417.2,
+                        "tput_user": 91.0,
+                        "tput": 16.4,
+                        "tolerance": 0.2
+                    }
                 }
             }
         ]
