@@ -27,6 +27,13 @@ class MaxJobsReachedException : public std::runtime_error {
   MaxJobsReachedException() : std::runtime_error("Maximum job limit reached") {}
 };
 
+/** Too many jobs that are not finished (the video queue limit, HTTP 429). */
+class ActiveJobLimitException : public std::runtime_error {
+ public:
+  ActiveJobLimitException()
+      : std::runtime_error("Request queue is full, please retry later") {}
+};
+
 class JobStillActiveException : public std::logic_error {
  public:
   JobStillActiveException()
@@ -92,13 +99,22 @@ class VideoJobStore {
     policies_[domain::video::kJobTypeVideo].resultRoot = std::move(root);
   }
 
-  /** Registers a new QUEUED job. Throws MaxJobsReachedException when full. */
+  /**
+   * Registers a new QUEUED job. The limits are checked under the same lock that
+   * inserts the job, so concurrent requests cannot all pass a check made before
+   * any of them is stored. Same order as Python: more than `maxActive` jobs that
+   * are not finished throws ActiveJobLimitException (0 = no limit), then a full
+   * table throws MaxJobsReachedException.
+   */
   Json::Value create(uint32_t taskId, std::string model,
                      Json::Value requestParameters,
                      std::string jobType = domain::video::kJobTypeVideo,
-                     std::string orgId = {}) {
+                     std::string orgId = {}, size_t maxActive = 0) {
     std::lock_guard<std::mutex> lock(mutex_);
     evictExpiredLocked();
+    if (maxActive > 0 && activeCountLocked() >= maxActive) {
+      throw ActiveJobLimitException{};
+    }
     if (jobs_.size() >= maxJobs_) throw MaxJobsReachedException{};
     domain::video::VideoJob job;
     job.taskId = taskId;
@@ -131,10 +147,7 @@ class VideoJobStore {
    */
   size_t activeCount() const {
     std::lock_guard<std::mutex> lock(mutex_);
-    return static_cast<size_t>(
-        std::count_if(jobs_.begin(), jobs_.end(), [](const auto& kv) {
-          return !domain::video::isTerminal(kv.second.status);
-        }));
+    return activeCountLocked();
   }
 
   /** Drops a job that never reached the worker (submit threw). */
@@ -432,6 +445,13 @@ class VideoJobStore {
     Json::Value arr(Json::arrayValue);
     for (const auto& entry : it->second.*member) arr.append(entry);
     return arr;
+  }
+
+  size_t activeCountLocked() const {
+    return static_cast<size_t>(
+        std::count_if(jobs_.begin(), jobs_.end(), [](const auto& kv) {
+          return !domain::video::isTerminal(kv.second.status);
+        }));
   }
 
   /** True when a result path may be stored for the job type: inside the

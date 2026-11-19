@@ -7,6 +7,7 @@
 #include <json/json.h>
 #include <unistd.h>
 
+#include <atomic>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -250,6 +251,57 @@ TEST(VideoJobStoreTest, EraseFreesTheSlotAndMaxJobsIsEnforced) {
   store.create(3, "tt-wan2.2", params("three"));
   EXPECT_TRUE(store.get(3).has_value());
   EXPECT_EQ(store.list().size(), 2u);
+}
+
+TEST(VideoJobStoreTest, ActiveLimitCountsOnlyJobsThatAreNotFinished) {
+  using tt::domain::video::kJobTypeVideo;
+  using tt::services::ActiveJobLimitException;
+  VideoJobStore store(10, 0);
+  store.create(1, "m", params("one"), kJobTypeVideo, {}, 2);
+  store.create(2, "m", params("two"), kJobTypeVideo, {}, 2);
+  EXPECT_THROW(store.create(3, "m", params("three"), kJobTypeVideo, {}, 2),
+               ActiveJobLimitException);
+  EXPECT_FALSE(store.get(3).has_value());
+
+  store.complete(1, "mock://video/1", "");  // finished: frees a place
+  store.create(3, "m", params("three"), kJobTypeVideo, {}, 2);
+  EXPECT_TRUE(store.get(3).has_value());
+
+  // 0 = no limit; the active check comes before the table size check
+  VideoJobStore full(1, 0);
+  full.create(1, "m", params("one"));
+  EXPECT_THROW(full.create(2, "m", params("two"), kJobTypeVideo, {}, 1),
+               ActiveJobLimitException);
+  EXPECT_THROW(full.create(2, "m", params("two")), MaxJobsReachedException);
+}
+
+TEST(VideoJobStoreTest, ConcurrentCreatesNeverExceedTheActiveLimit) {
+  using tt::domain::video::kJobTypeVideo;
+  using tt::services::ActiveJobLimitException;
+  constexpr int kThreads = 64;
+  constexpr size_t kLimit = 5;
+  VideoJobStore store(1000, 0);
+  std::atomic<int> accepted{0};
+  std::atomic<int> rejected{0};
+  std::atomic<bool> go{false};
+  std::vector<std::thread> threads;
+  for (int i = 1; i <= kThreads; ++i) {
+    threads.emplace_back([&, i] {
+      while (!go.load()) std::this_thread::yield();
+      try {
+        store.create(static_cast<uint32_t>(i), "m", params("p"), kJobTypeVideo,
+                     {}, kLimit);
+        ++accepted;
+      } catch (const ActiveJobLimitException&) {
+        ++rejected;
+      }
+    });
+  }
+  go = true;
+  for (auto& thread : threads) thread.join();
+  EXPECT_EQ(accepted.load(), static_cast<int>(kLimit));
+  EXPECT_EQ(rejected.load(), kThreads - static_cast<int>(kLimit));
+  EXPECT_EQ(store.activeCount(), kLimit);
 }
 
 TEST(VideoJobStoreTest, ExpiredTerminalJobIsEvictedOnTheNextCreate) {

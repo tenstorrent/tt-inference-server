@@ -209,9 +209,15 @@ Json::Value VideoService::createJob(domain::VideoGenerateRequest request) {
   }
   const uint32_t taskId = request.task_id;
   // Python order (_enforceAdmissionLimits): outstanding jobs vs queue size
-  // (429) first, then stored records vs max jobs (503, thrown by create()).
-  if (jobs.activeCount() >= maxQueueSize) throw QueueFullException{};
-  auto metadata = jobs.create(taskId, servedModelName(), request.toJson());
+  // (429) first, then stored records vs max jobs (503). Both are checked in
+  // create(), under the store lock, so two requests cannot both pass the check.
+  Json::Value metadata;
+  try {
+    metadata = jobs.create(taskId, servedModelName(), request.toJson(),
+                           domain::video::kJobTypeVideo, {}, maxQueueSize);
+  } catch (const ActiveJobLimitException&) {
+    throw QueueFullException{};
+  }
   try {
     submitRequestAsync(std::move(request),
                        [this, taskId](domain::video::VideoResponse&& r) {
