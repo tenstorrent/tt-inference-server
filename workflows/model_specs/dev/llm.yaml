@@ -7663,9 +7663,9 @@ templates:
 #                          packed short prefills; asynchronous
 #   glm53_flash_128k_mm    glm53_flash_128k with image input (the vision tower
 #                          on the same mesh; no video)
-# The others are text only. Every request samples on the device (the head's
-# top-10 sampler inside the traced decode step: greedy, temperature / top-p,
-# top-k <= 10). vLLM's prefix cache (GLM53_STACK_PREFIX: a hit resumes from the
+# The others are text only. Greedy and sampled requests with top-k 1..10 (the
+# profiles' default, override_generation_config) sample on the device (the head's
+# top-10 sampler inside the traced decode step). vLLM's prefix cache (GLM53_STACK_PREFIX: a hit resumes from the
 # stack's device snapshot at the longest shared 8192-token chunk boundary,
 # glm53_flash_1m's at the previous prompt's end; usage reports cached_tokens);
 # chunked prefill on the stack's 8192-token bucket grid, one chunk per engine
@@ -7743,7 +7743,7 @@ templates:
         trace_region_size: 8589934592  # 8 GiB: the decode trace + the per-context prefill traces at 1 M (galaxy_defaults.trace_mb)
         l1_small_size: 32768
         worker_l1_size: 1280896  # the stack's L1 budget (the megakernel's circular buffers)
-        sample_on_device_mode: all  # every row on the head's device sampler (top-10 on the 8x4: max_device_top_k 10)
+        sample_on_device_mode: all  # rows with top-k 1..10 on the head's device sampler (max_device_top_k 10 on the 8x4)
         # vLLM cuts a long prompt on the stack's 8192-token prefill bucket, so every chunk starts on the bucket grid and
         # the tail chunk's padding ends at most one bucket past the prompt (a chunk cut on a finer grid can pad past the
         # cache: [1047424, 1049472) on a 1 M cache of 1049088 rows killed the engine); the TP prefill resumes on it
@@ -7767,6 +7767,11 @@ templates:
         enable-auto-tool-choice: true
         tool-call-parser: glm47
         reasoning-parser: glm45
+        # The plugin routes a whole step to its host sampler (full vocabulary) when any sampled row's top-k is unset or
+        # above the stack's device sampler bound (max_device_top_k 10 on the 8x4), and such a step decodes without
+        # speculation. GLM's generation config sets no top-k, so this bounded default keeps requests that omit top_k on
+        # the device; one request with an explicit top-k above 10 (or 0 / -1) moves the steps it shares to the host.
+        override_generation_config: '{"top_k": 10}'
   status: EXPERIMENTAL
   has_builtin_warmup: true
   env_vars:
@@ -7837,7 +7842,7 @@ templates:
         trace_region_size: 8589934592  # 8 GiB: the decode trace + the per-context prefill traces at 1 M (galaxy_defaults.trace_mb)
         l1_small_size: 32768
         worker_l1_size: 1280896  # the stack's L1 budget (the megakernel's circular buffers)
-        sample_on_device_mode: all  # every row on the head's device sampler (top-10 on the 8x4: max_device_top_k 10)
+        sample_on_device_mode: all  # rows with top-k 1..10 on the head's device sampler (max_device_top_k 10 on the 8x4)
         # vLLM cuts a long prompt on the stack's 8192-token prefill bucket, so every chunk starts on the bucket grid and
         # the tail chunk's padding ends at most one bucket past the prompt (a chunk cut on a finer grid can pad past the
         # cache: [1047424, 1049472) on a 1 M cache of 1049088 rows killed the engine); the TP prefill resumes on it
@@ -7867,6 +7872,11 @@ templates:
         enable-auto-tool-choice: true
         tool-call-parser: glm47
         reasoning-parser: glm45
+        # The plugin routes a whole step to its host sampler (full vocabulary) when any sampled row's top-k is unset or
+        # above the stack's device sampler bound (max_device_top_k 10 on the 8x4), and such a step decodes without
+        # speculation. GLM's generation config sets no top-k, so this bounded default keeps requests that omit top_k on
+        # the device; one request with an explicit top-k above 10 (or 0 / -1) moves the steps it shares to the host.
+        override_generation_config: '{"top_k": 10}'
   status: EXPERIMENTAL
   has_builtin_warmup: true
   env_vars:
@@ -7953,7 +7963,7 @@ templates:
         trace_region_size: 8589934592  # 8 GiB: the decode trace + the per-context prefill traces at 1 M (galaxy_defaults.trace_mb)
         l1_small_size: 32768
         worker_l1_size: 1280896  # the stack's L1 budget (the megakernel's circular buffers)
-        sample_on_device_mode: all  # every row on the head's device sampler (top-10 on the 8x4: max_device_top_k 10)
+        sample_on_device_mode: all  # rows with top-k 1..10 on the head's device sampler (max_device_top_k 10 on the 8x4)
         # vLLM cuts a long prompt on the stack's 8192-token prefill bucket, so every chunk starts on the bucket grid and
         # the tail chunk's padding ends at most one bucket past the prompt (a chunk cut on a finer grid can pad past the
         # cache: [1047424, 1049472) on a 1 M cache of 1049088 rows killed the engine); the TP prefill resumes on it
@@ -7983,6 +7993,11 @@ templates:
         enable-auto-tool-choice: true
         tool-call-parser: glm47
         reasoning-parser: glm45
+        # The plugin routes a whole step to its host sampler (full vocabulary) when any sampled row's top-k is unset or
+        # above the stack's device sampler bound (max_device_top_k 10 on the 8x4), and such a step decodes without
+        # speculation. GLM's generation config sets no top-k, so this bounded default keeps requests that omit top_k on
+        # the device; one request with an explicit top-k above 10 (or 0 / -1) moves the steps it shares to the host.
+        override_generation_config: '{"top_k": 10}'
   status: EXPERIMENTAL
   has_builtin_warmup: true
   env_vars:
@@ -8126,7 +8141,7 @@ templates:
         trace_region_size: 8589934592  # 8 GiB: the decode trace + the per-context prefill traces at 1 M (galaxy_defaults.trace_mb)
         l1_small_size: 32768
         worker_l1_size: 1280896  # the stack's L1 budget (the megakernel's circular buffers)
-        sample_on_device_mode: all  # every row on the head's device sampler (top-10 on the 8x4: max_device_top_k 10)
+        sample_on_device_mode: all  # rows with top-k 1..10 on the head's device sampler (max_device_top_k 10 on the 8x4)
         # vLLM cuts a long prompt on the stack's 8192-token prefill bucket, so every chunk starts on the bucket grid and
         # the tail chunk's padding ends at most one bucket past the prompt; the TP prefill resumes on it
         prefill_chunk_alignment: 8192
@@ -8164,6 +8179,11 @@ templates:
         enable-auto-tool-choice: true
         tool-call-parser: glm47
         reasoning-parser: glm45
+        # The plugin routes a whole step to its host sampler (full vocabulary) when any sampled row's top-k is unset or
+        # above the stack's device sampler bound (max_device_top_k 10 on the 8x4), and such a step decodes without
+        # speculation. GLM's generation config sets no top-k, so this bounded default keeps requests that omit top_k on
+        # the device; one request with an explicit top-k above 10 (or 0 / -1) moves the steps it shares to the host.
+        override_generation_config: '{"top_k": 10}'
   status: EXPERIMENTAL
   has_builtin_warmup: true
   env_vars:
@@ -8227,7 +8247,7 @@ templates:
         trace_region_size: 3221225472  # 3 GiB: the decode trace + the per-context prefill traces at 128 K (galaxy_defaults.trace_mb)
         l1_small_size: 32768
         worker_l1_size: 1280896  # the stack's L1 budget (the megakernel's circular buffers)
-        sample_on_device_mode: all  # every row on the head's device sampler (top-10 on the 8x4: max_device_top_k 10)
+        sample_on_device_mode: all  # rows with top-k 1..10 on the head's device sampler (max_device_top_k 10 on the 8x4)
         # vLLM cuts a long prompt on the stack's 8192-token prefill bucket, so every chunk starts on the bucket grid and
         # the tail chunk's padding ends at most one bucket past the prompt (a chunk cut on a finer grid can pad past the
         # cache: [1047424, 1049472) on a 1 M cache of 1049088 rows killed the engine); the TP prefill resumes on it
@@ -8248,6 +8268,11 @@ templates:
         enable-auto-tool-choice: true
         tool-call-parser: glm47
         reasoning-parser: glm45
+        # The plugin routes a whole step to its host sampler (full vocabulary) when any sampled row's top-k is unset or
+        # above the stack's device sampler bound (max_device_top_k 10 on the 8x4), and such a step decodes without
+        # speculation. GLM's generation config sets no top-k, so this bounded default keeps requests that omit top_k on
+        # the device; one request with an explicit top-k above 10 (or 0 / -1) moves the steps it shares to the host.
+        override_generation_config: '{"top_k": 10}'
   status: EXPERIMENTAL
   has_builtin_warmup: true
   env_vars:
@@ -8324,7 +8349,7 @@ templates:
         trace_region_size: 3221225472  # 3 GiB: the decode trace + the per-context prefill traces at 128 K (galaxy_defaults.trace_mb)
         l1_small_size: 32768
         worker_l1_size: 1280896  # the stack's L1 budget (the megakernel's circular buffers)
-        sample_on_device_mode: all  # every row on the head's device sampler (top-10 on the 8x4: max_device_top_k 10)
+        sample_on_device_mode: all  # rows with top-k 1..10 on the head's device sampler (max_device_top_k 10 on the 8x4)
         # vLLM cuts a long prompt on the stack's 8192-token prefill bucket, so every chunk starts on the bucket grid and
         # the tail chunk's padding ends at most one bucket past the prompt (a chunk cut on a finer grid can pad past the
         # cache: [1047424, 1049472) on a 1 M cache of 1049088 rows killed the engine); the TP prefill resumes on it
@@ -8345,6 +8370,11 @@ templates:
         enable-auto-tool-choice: true
         tool-call-parser: glm47
         reasoning-parser: glm45
+        # The plugin routes a whole step to its host sampler (full vocabulary) when any sampled row's top-k is unset or
+        # above the stack's device sampler bound (max_device_top_k 10 on the 8x4), and such a step decodes without
+        # speculation. GLM's generation config sets no top-k, so this bounded default keeps requests that omit top_k on
+        # the device; one request with an explicit top-k above 10 (or 0 / -1) moves the steps it shares to the host.
+        override_generation_config: '{"top_k": 10}'
         # images only; one item's 972 tokens at most (max_image_tokens 1024 resizes larger images) and up to 4 per
         # prompt fit the 8192-token chunk whole (the plugin keeps an image item in one chunk; vLLM's encoder-budget
         # check at boot counts the processor's 7921-token profile item against max_num_batched_tokens 8208)

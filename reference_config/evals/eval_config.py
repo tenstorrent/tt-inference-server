@@ -13652,6 +13652,9 @@ _eval_config_list = [
                 },
                 # stream=false is REQUIRED: lm-eval's local-chat-completions
                 # streaming parser raises KeyError 'message' on every response.
+                # top_k 10: lm-eval's GPQA task default is 40, above the stack's device sampler bound, so its requests would
+                # move every step they share to the plugin's host sampler; 10 = max_device_top_k (8x4), the top-k the
+                # release references were measured with.
                 gen_kwargs={
                     "stream": "false",
                     "max_gen_toks": 64 * 1024,
@@ -13659,6 +13662,7 @@ _eval_config_list = [
                     "do_sample": "true",
                     "temperature": 1.0,
                     "top_p": 0.95,
+                    "top_k": 10,
                 },
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 0.05,
@@ -13734,7 +13738,7 @@ _eval_config_list = [
             ),
             EvalTask(
                 # LiveCodeBench (coding) on the chat endpoint with server-side thinking, GLM's sampling
-                # (temperature 1.0 / top_p 0.95, no top_k) and the 128 K eval context; scored on the "v6" window
+                # (temperature 1.0 / top_p 0.95; top_k 10, below) and the 128 K eval context; scored on the "v6" window
                 # via doc_ids (LIVECODEBENCH_V6_DOC_IDS) as the Gemma 4 entries are. The model card publishes no
                 # LiveCodeBench number (.eval_results/GLM-5.3-Flash.yaml holds Terminal-Bench 2.1, DeepSWE and
                 # HLE only); GPU references are not measured yet.
@@ -13768,6 +13772,8 @@ _eval_config_list = [
                     "max_length": 131072,
                     "timeout": 7200,
                 },
+                # top_k 10: the task sets none; pinned so the eval does not depend on the server's override_generation_config
+                # (10 = max_device_top_k on the 8x4, the top-k the release references were measured with).
                 gen_kwargs={
                     "stream": "false",
                     "max_gen_toks": 64 * 1024,
@@ -13775,6 +13781,7 @@ _eval_config_list = [
                     "do_sample": "true",
                     "temperature": 1.0,
                     "top_p": 0.95,
+                    "top_k": 10,
                 },
                 doc_ids=LIVECODEBENCH_V6_DOC_IDS,
                 limit_samples_map={

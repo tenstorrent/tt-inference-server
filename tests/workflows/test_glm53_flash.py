@@ -69,6 +69,9 @@ def test_admission_is_resident_and_the_pool_is_one_context_per_user(impl_id):
     assert int(dms.vllm_args["max_model_len"]) == dms.max_context
     assert dms.max_tokens_all_users_override == max_num_seqs * dms.max_context
     assert dms.max_tokens_all_users == dms.max_tokens_all_users_override
+    # the bounded top-k default that keeps requests omitting top_k on the stack's device sampler (max_device_top_k 10):
+    # without it the plugin samples every such request's steps on the host
+    assert json.loads(dms.vllm_args["override_generation_config"])["top_k"] == 10
 
 
 @pytest.mark.parametrize("impl_id", GLM53_IMPLS)
