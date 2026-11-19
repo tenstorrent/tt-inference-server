@@ -208,9 +208,9 @@ templates:
     - device: P300X2  # QB2 (2x P300, 4-chip TP mesh)
       # Decode batch ceiling is 32 (metal batch-32 demo). Prefill is still
       # micro-batched ≤4 users inside the generator.
-      # Max users = the AgentX peak on a QB2 block (max_num_seqs 32): 4 users 3,225 tok/s, 8 users 5,685 (prefix hit
-      # 82.9 %), 12 users 2,405 (hit 19.5 %: the 759,675-token pool no longer holds the sessions' prefixes).
-      max_concurrency: 8
+      # Max users 6: the most users whose AgentX prefix hit stays within 4 points of theoretical (6 users 93.4 / 95.6 %,
+      # 4,432 tok/s; 8 users 88.8 / 96.5 %: queued sessions lose their prefix in the 759,675-token pool).
+      max_concurrency: 6
       # Metal policy (generator_trace 31B/_QB2): auto-bounded at ≥64k; at
       # ISL≥128k + bounded → chunk 2048 (coherency). Serve 256k with that path.
       # Scheduler tokens must match the resolved metal chunk (2048 here).
@@ -267,7 +267,7 @@ templates:
         sample_on_device_mode: decode_only
       vllm_args:
         max_num_seqs: 32  # scheduler cap above max users (8): AgentX sessions fan out to 10-13 requests in flight, and the plugin sizes the KV pool as GEMMA4_MAX_TOKENS_ALL_USERS + max_num_seqs x (block + 8 x sliding window), the pool the max-users runs measured
-        prefix_cache_retention_interval: 4096  # a sliding-window prefix checkpoint every 4096 tokens: at 1024 (<= the 1024 window) every cached prefix keeps all its sliding-window blocks; at 4096 a quarter of them (MiMo-V2.6-Flash: 1.26M -> 2.7M prefix tokens per engine); prompt ends and shared-prefix junctions stay exact
+        prefix_cache_retention_interval: 16384  # fewer cached sliding-window checkpoints churn this entry's small pool: AgentX prefix hit at 6 users 93.4 % (16384) vs 90.5 % (0); at 8 users 82.9 % (4096), 87.2 % (16384)
         # Default to the device sampler's top-k limit. Requests can override this value.
         override_generation_config: '{"top_k": 32}'
         async_scheduling: true  # the MTP contract class declares supports_async_decode / supports_async_spec_decode; the measured tables above were taken with asynchronous scheduling on both sides
