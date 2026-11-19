@@ -16,11 +16,8 @@
 
 namespace tt::domain::video {
 
-/** Python `JobTypes` (config/constants.py). The store is generic over the job
- *  type so training can reuse it later; only "video" is served today. */
+/** Python `JobTypes.VIDEO` (config/constants.py): the only job type served. */
 inline constexpr const char* kJobTypeVideo = "video";
-inline constexpr const char* kJobTypeTraining = "training";
-inline constexpr const char* kJobTypeAdapterMerge = "adapter_merge";
 
 /** Which worker process holds a job (Python `Job.assigned_worker_identity`,
  *  `(worker_id, pid)`). Needed later to stop or replace that worker. */
@@ -65,8 +62,6 @@ inline bool isTerminal(JobStatus status) {
 /** One async video job. The job id is the decimal task id. */
 struct VideoJob {
   uint32_t taskId = 0;
-  std::string jobType = kJobTypeVideo;
-  std::string orgId;  // empty = none (Python `Job.org_id`)
   std::string uuid;   // public id; empty = use the decimal task id
   std::string model;
   Json::Value requestParameters;
@@ -78,11 +73,6 @@ struct VideoJob {
   std::string errorCode;
   std::string errorMessage;
   std::optional<WorkerIdentity> worker;  // set when a worker claims it
-  // Python `job_metrics`, `job_logs`, `job_checkpoints` (used by training;
-  // empty for video, so they cost nothing there).
-  std::vector<Json::Value> metrics;
-  std::vector<Json::Value> logs;
-  std::vector<Json::Value> checkpoints;
 
   std::string id() const {
     return uuid.empty() ? std::to_string(taskId) : uuid;
@@ -123,12 +113,11 @@ struct VideoJob {
   Json::Value toPublicJson() const {
     Json::Value json;
     json["id"] = id();
-    json["job_type"] = jobType;
+    json["job_type"] = kJobTypeVideo;
     json["status"] = toString(status);
     json["created_at"] = static_cast<Json::Int64>(createdAt);
     json["model"] = model;
     json["request_parameters"] = publicRequestParameters();
-    if (!orgId.empty()) json["org_id"] = orgId;
     if (completedAt != 0) {
       json["completed_at"] = static_cast<Json::Int64>(completedAt);
     }

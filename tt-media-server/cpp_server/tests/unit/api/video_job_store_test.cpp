@@ -254,29 +254,27 @@ TEST(VideoJobStoreTest, EraseFreesTheSlotAndMaxJobsIsEnforced) {
 }
 
 TEST(VideoJobStoreTest, ActiveLimitCountsOnlyJobsThatAreNotFinished) {
-  using tt::domain::video::kJobTypeVideo;
   using tt::services::ActiveJobLimitException;
   VideoJobStore store(10, 0);
-  store.create(1, "m", params("one"), kJobTypeVideo, {}, 2);
-  store.create(2, "m", params("two"), kJobTypeVideo, {}, 2);
-  EXPECT_THROW(store.create(3, "m", params("three"), kJobTypeVideo, {}, 2),
+  store.create(1, "m", params("one"), 2);
+  store.create(2, "m", params("two"), 2);
+  EXPECT_THROW(store.create(3, "m", params("three"), 2),
                ActiveJobLimitException);
   EXPECT_FALSE(store.get(3).has_value());
 
   store.complete(1, "mock://video/1", "");  // finished: frees a place
-  store.create(3, "m", params("three"), kJobTypeVideo, {}, 2);
+  store.create(3, "m", params("three"), 2);
   EXPECT_TRUE(store.get(3).has_value());
 
   // 0 = no limit; the active check comes before the table size check
   VideoJobStore full(1, 0);
   full.create(1, "m", params("one"));
-  EXPECT_THROW(full.create(2, "m", params("two"), kJobTypeVideo, {}, 1),
+  EXPECT_THROW(full.create(2, "m", params("two"), 1),
                ActiveJobLimitException);
   EXPECT_THROW(full.create(2, "m", params("two")), MaxJobsReachedException);
 }
 
 TEST(VideoJobStoreTest, ConcurrentCreatesNeverExceedTheActiveLimit) {
-  using tt::domain::video::kJobTypeVideo;
   using tt::services::ActiveJobLimitException;
   constexpr int kThreads = 64;
   constexpr size_t kLimit = 5;
@@ -289,8 +287,8 @@ TEST(VideoJobStoreTest, ConcurrentCreatesNeverExceedTheActiveLimit) {
     threads.emplace_back([&, i] {
       while (!go.load()) std::this_thread::yield();
       try {
-        store.create(static_cast<uint32_t>(i), "m", params("p"), kJobTypeVideo,
-                     {}, kLimit);
+        store.create(static_cast<uint32_t>(i), "m", params("p"),
+                     kLimit);
         ++accepted;
       } catch (const ActiveJobLimitException&) {
         ++rejected;
@@ -836,38 +834,9 @@ TEST(HttpRange, UnsatisfiableIgnoredAndMultiRange) {
   EXPECT_EQ(parseByteRange("bytes=5", 1000).kind, ByteRange::Kind::None);
 }
 
-// ---- Prepared for training (what Python's JobManager already does) ----------
+// ---- Worker identity and the result file -------------------------------------
 
-using tt::services::ForceDeleteNotAllowedException;
-using tt::services::JobTypePolicy;
-namespace dv = tt::domain::video;
-
-TEST(JobStoreTraining, JobTypeAndOrgAreInThePublicJson) {
-  VideoJobStore store(10, 0);
-  auto video = store.create(1, "m", Json::Value(Json::objectValue));
-  EXPECT_EQ(video["job_type"].asString(), "video");
-  EXPECT_FALSE(video.isMember("org_id"));
-  auto training = store.create(2, "m", Json::Value(Json::objectValue),
-                               dv::kJobTypeTraining, "org-a");
-  EXPECT_EQ(training["job_type"].asString(), "training");
-  EXPECT_EQ(training["org_id"].asString(), "org-a");
-}
-
-TEST(JobStoreTraining, OrgFilterHidesOtherOrganisations) {
-  VideoJobStore store(10, 0);
-  store.create(1, "m", Json::Value(Json::objectValue), dv::kJobTypeVideo, "a");
-  store.create(2, "m", Json::Value(Json::objectValue), dv::kJobTypeVideo, "b");
-  EXPECT_TRUE(store.get(1, "a").has_value());
-  EXPECT_FALSE(store.get(1, "b").has_value());
-  EXPECT_TRUE(store.get(1).has_value());  // no filter
-  EXPECT_EQ(store.list("a").size(), 1U);
-  EXPECT_EQ(store.list().size(), 2U);
-  EXPECT_FALSE(store.cancel(2, "a").has_value());
-  EXPECT_TRUE(store.cancel(2, "b").has_value());
-  EXPECT_FALSE(store.remove(2, "a"));  // not visible: behaves as unknown
-}
-
-TEST(JobStoreTraining, WorkerIdentityIsKeptUntilTheJobCompletes) {
+TEST(VideoJobStoreWorker, WorkerIdentityIsKeptUntilTheJobCompletes) {
   VideoJobStore store(10, 0);
   store.create(1, "m", Json::Value(Json::objectValue));
   EXPECT_FALSE(store.assignedWorker(1).has_value());
@@ -879,64 +848,7 @@ TEST(JobStoreTraining, WorkerIdentityIsKeptUntilTheJobCompletes) {
   EXPECT_FALSE(store.assignedWorker(1).has_value());
 }
 
-TEST(JobStoreTraining, ReportProgressKeepsALongJobFromGoingStale) {
-  VideoJobStore store(10, 0);
-  store.create(1, "m", Json::Value(Json::objectValue), dv::kJobTypeTraining);
-  store.markInProgress(1);
-  std::this_thread::sleep_for(std::chrono::seconds(2));
-  store.reportProgress(1);  // a metric arrived
-  EXPECT_EQ(store.sweep(1).stuck, 0U);
-  std::this_thread::sleep_for(std::chrono::seconds(2));
-  EXPECT_EQ(store.sweep(1).stuck, 1U);  // silent for longer than the limit
-}
-
-TEST(JobStoreTraining, TrainingResultsAreNotAutoCleanedButVideoIs) {
-  VideoJobStore store(10, 1);  // retention 1 s
-  store.create(1, "m", Json::Value(Json::objectValue), dv::kJobTypeTraining);
-  store.create(2, "m", Json::Value(Json::objectValue),
-               dv::kJobTypeAdapterMerge);
-  store.create(3, "m", Json::Value(Json::objectValue), dv::kJobTypeVideo);
-  for (uint32_t id : {1U, 2U, 3U}) {
-    store.markInProgress(id);
-    store.complete(id, "mock://x", "");
-  }
-  std::this_thread::sleep_for(std::chrono::seconds(3));
-  EXPECT_EQ(store.sweep(0).evicted,
-            1U);  // only the video job (Python: exempt types)
-  EXPECT_TRUE(store.get(1).has_value());
-  EXPECT_TRUE(store.get(2).has_value());
-  EXPECT_FALSE(store.get(3).has_value());
-}
-
-TEST(JobStoreTraining, DirectoryResultsAreRemovedOnlyInsideTheTypeRoot) {
-  namespace fs = std::filesystem;
-  const fs::path root = "/tmp/tt-train-root";
-  const fs::path outside = "/tmp/tt-train-outside";
-  fs::remove_all(root);
-  fs::remove_all(outside);
-  fs::create_directories(root / "adapter-1" / "sub");
-  fs::create_directories(outside / "adapter-2");
-  std::ofstream(root / "adapter-1" / "sub" / "w.bin") << "x";
-  std::ofstream(outside / "adapter-2" / "w.bin") << "x";
-
-  VideoJobStore store(10, 0);
-  store.setJobTypePolicy(dv::kJobTypeTraining,
-                         JobTypePolicy{false, root, true, true});
-  for (uint32_t id : {1U, 2U}) {
-    store.create(id, "m", Json::Value(Json::objectValue), dv::kJobTypeTraining);
-    store.markInProgress(id);
-  }
-  store.complete(1, (root / "adapter-1").string(), "");
-  store.complete(2, (outside / "adapter-2").string(), "");
-  EXPECT_TRUE(store.remove(1));
-  EXPECT_TRUE(store.remove(2));
-  EXPECT_FALSE(fs::exists(root / "adapter-1"));    // whole directory removed
-  EXPECT_TRUE(fs::exists(outside / "adapter-2"));  // outside the root: kept
-  fs::remove_all(root);
-  fs::remove_all(outside);
-}
-
-TEST(JobStoreTraining, VideoNeverRemovesADirectory) {
+TEST(VideoJobStoreWorker, RemoveNeverDeletesADirectory) {
   namespace fs = std::filesystem;
   const fs::path dir = "/tmp/tt-video-dir-result";
   fs::remove_all(dir);
@@ -950,40 +862,4 @@ TEST(JobStoreTraining, VideoNeverRemovesADirectory) {
   EXPECT_TRUE(
       fs::exists(dir / "x"));  // plain remove() cannot delete a non-empty dir
   fs::remove_all(dir);
-}
-
-TEST(JobStoreTraining, ForceDeleteOnlyForTypesThatAllowIt) {
-  VideoJobStore store(10, 0);
-  store.create(1, "m", Json::Value(Json::objectValue), dv::kJobTypeTraining);
-  store.create(2, "m", Json::Value(Json::objectValue), dv::kJobTypeVideo);
-  store.markInProgress(1, 0, 100);
-  store.markInProgress(2, 0, 101);
-  EXPECT_THROW(store.remove(1), JobStillActiveException);  // no force
-  EXPECT_THROW(store.remove(2, "", true), ForceDeleteNotAllowedException);
-  ASSERT_TRUE(store.assignedWorker(1).has_value());  // read it first
-  EXPECT_TRUE(store.remove(1, "", true));            // training: allowed
-  EXPECT_FALSE(store.get(1).has_value());
-  EXPECT_TRUE(store.get(2).has_value());
-}
-
-TEST(JobStoreTraining, MetricsLogsAndCheckpointsAreKeptPerJob) {
-  VideoJobStore store(10, 0);
-  store.create(1, "m", Json::Value(Json::objectValue), dv::kJobTypeTraining);
-  Json::Value m1;
-  m1["loss"] = 0.5;
-  Json::Value m2;
-  m2["loss"] = 0.4;
-  EXPECT_TRUE(store.appendMetric(1, m1));
-  EXPECT_TRUE(store.appendMetric(1, m2));
-  EXPECT_TRUE(store.appendLog(1, Json::Value("started")));
-  EXPECT_TRUE(store.appendCheckpoint(1, Json::Value("step-100")));
-  EXPECT_FALSE(store.appendMetric(99, m1));  // unknown job
-  ASSERT_TRUE(store.metrics(1).has_value());
-  EXPECT_EQ(store.metrics(1)->size(), 2U);
-  EXPECT_EQ((*store.metrics(1))[1]["loss"].asDouble(), 0.4);
-  EXPECT_EQ(store.logs(1)->size(), 1U);
-  EXPECT_EQ((*store.checkpoints(1))[0].asString(), "step-100");
-  EXPECT_FALSE(store.metrics(99).has_value());
-  // they are not part of the public job JSON (separate routes in Python)
-  EXPECT_FALSE(store.get(1)->isMember("metrics"));
 }
