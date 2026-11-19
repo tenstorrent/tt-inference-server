@@ -163,6 +163,8 @@ class TtmlTrainingLoraRunner(BaseDeviceRunner):
                 f"Request device '{request.device_type}' does not match "
                 f"server device '{self.settings.device}'"
             )
+        if request.model.lora is None:
+            return "Full fine-tuning is not supported yet; model.lora must be set"
         if request.dataset.id.lower() not in DATASET_IDS:
             return (
                 f"Unsupported dataset.id '{request.dataset.id}'; "
@@ -185,10 +187,11 @@ class TtmlTrainingLoraRunner(BaseDeviceRunner):
     def _job_config(self, request: TrainingRequest) -> SFTTrainerConfig:
         optimizer = request.optimizer
         save_strategy = request.checkpoint.save_strategy
+        lora = request.model.lora
         return SFTTrainerConfig(
             model=ModelConfig(
                 name=self.model_name,
-                lora=LoraConfig(**request.model.lora.model_dump()),
+                lora=LoraConfig(**lora.model_dump()) if lora is not None else None,
             ),
             dataset=self._dataset_config(request),
             # One optimizer over every trainable weight (the adapters).

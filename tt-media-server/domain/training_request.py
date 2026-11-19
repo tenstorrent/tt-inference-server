@@ -34,7 +34,8 @@ class LoraOptions(_Options):
 
 
 class ModelOptions(_Options):
-    lora: LoraOptions = Field(default_factory=LoraOptions)
+    # null trains every weight (full fine-tuning), as in ttml.
+    lora: Optional[LoraOptions] = Field(default_factory=LoraOptions)
 
 
 class CustomDatasetOptions(_Options):

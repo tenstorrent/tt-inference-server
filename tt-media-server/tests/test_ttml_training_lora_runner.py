@@ -320,6 +320,10 @@ class TestValidate:
         with pytest.raises(ValueError, match="Unsupported optimizer.type"):
             runner._validate(_request(optimizer={"type": "sgd"}))
 
+    def test_rejects_full_fine_tuning(self, runner):
+        with pytest.raises(ValueError, match="Full fine-tuning is not supported"):
+            runner._validate(_request(model={"lora": None}))
+
 
 class TestTrainingRequest:
     def test_progress_heartbeat_is_throttled(self):
@@ -349,6 +353,13 @@ class TestTrainingRequest:
     def test_custom_options_require_a_train_path(self):
         with pytest.raises(ValidationError, match="train_dataset_path"):
             _request(dataset={"id": "custom", "custom_options": {"template": "alpaca"}})
+
+    def test_trains_lora_by_default(self):
+        assert _request().model.lora.r == 4
+        assert _request(model={}).model.lora.r == 4
+
+    def test_lora_can_be_null(self):
+        assert _request(model={"lora": None}).model.lora is None
 
     def test_built_in_datasets_need_no_custom_options(self):
         assert _request().dataset.custom_options is None
