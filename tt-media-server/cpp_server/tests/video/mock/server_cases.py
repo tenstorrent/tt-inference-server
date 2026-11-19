@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-"""Checks that need the real server (tt_media_server_cpp), not the stub.
+"""Checks that need the real server (tt_media_server_cpp), not only the HTTP contract.
 
 Run against a server started with MODEL_RUNNER_TYPE=video_mock.
 tests/video/mock/run_server_tests.sh starts the server once per --phase:

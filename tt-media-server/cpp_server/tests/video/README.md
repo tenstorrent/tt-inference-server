@@ -4,7 +4,7 @@ The tests are split into folders by what they need to run.
 
 | Folder | What it needs | What is in it |
 |---|---|---|
-| `mock/` | only a build of the server, no device | a local HTTP stub, contract cases and server tests that use the mock runner. Guide: `mock/README.md` |
+| `mock/` | only a build of the server, no device | contract cases and server tests that run against the server with the mock runner. Guide: `mock/README.md` |
 | `real_device/` | a real server with a device and the model loaded | tests of cancel, the job queue, download and sync mode, grouped by topic. Guide: `real_device/README.md` |
 | (this folder) | | `run_device_tests.sh` (the contract checks against a real server with a device, uses `mock/contract_cases.py`) |
 

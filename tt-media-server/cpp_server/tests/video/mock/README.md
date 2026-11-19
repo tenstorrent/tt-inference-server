@@ -1,6 +1,6 @@
 # Mock tests of the video service (no device)
 
-Tests that work without a device: a local HTTP stub, contract cases and server
+Tests that work without a device: contract cases, server tests and worker crash
 tests that run against the server with the mock runner. The unit tests are C++ tests in
 `tests/unit/api/`, and the tests on a real device are in
 `tests/video/real_device/`.
@@ -9,12 +9,9 @@ tests that run against the server with the mock runner. The unit tests are C++ t
 
 | File | What it is |
 |---|---|
-| `video_mock_http.cpp` | HTTP stub: the same request parser and `VideoJobStore` as the service, without Drogon, workers or a device. A job finishes at once, the result is `mock://video/<task_id>` (not an mp4 file) |
-| `run_video_mock.sh` | compiles the stub, sends requests and prints each response, the stub log and what was checked (a manual demo) |
-| `run_contract_tests.sh` | starts the stub on port 18080 and runs `contract_cases.py`; with `VIDEO_BASE_URL` set it targets that server instead |
-| `contract_cases.py` | contract checks of the job API (async mode). Takes `--base-url`, so it can run against any server |
+| `contract_cases.py` | contract checks of the job API (async mode). Takes `--base-url`, so it runs against the mock-runner server and against a real server with a device |
 | `server_cases.py` | checks against a real `tt_media_server_cpp` with the mock runner, by phase |
-| `run_server_tests.sh` | starts the server with the mock runner once per phase (private shm names) and runs `server_cases.py` |
+| `run_server_tests.sh` | starts the server with the mock runner once per phase (private shm names) and runs `contract_cases.py` and `server_cases.py` |
 | `worker_crash_cases.py` | starts its own server with the mock runner, kills the worker with `SIGKILL` and checks the failed job, the restart, the restart limit and that a worker whose warmup fails exits |
 
 `contract_cases.py` checks the job API (async mode; sync mode is covered by
@@ -23,24 +20,16 @@ polling until the job is `completed`, the job list, `download`, `cancel`,
 `DELETE`, an unknown job 404 and body validation. `tests/video/run_device_tests.sh`
 uses the same checks against a real server with a device.
 
-Without a server (local stub):
-
-```bash
-./tests/video/mock/run_contract_tests.sh
-```
-
-The stub is built with the system jsoncpp, so `libjsoncpp-dev` must be installed
-(`pkg-config --cflags --libs jsoncpp` must work).
-
-## Server tests (401, 409, cancel, 429)
+## Server tests (contract, 401, 409, cancel, 429)
 
 `./tests/video/mock/run_server_tests.sh` starts a real `tt_media_server_cpp` with the
-mock runner (once per phase) and runs `server_cases.py`: 401, 409 on `DELETE` of
+mock runner (once per phase). The `contract` phase runs `contract_cases.py` with
+`--require-file`. The other phases run `server_cases.py`: 401, 409 on `DELETE` of
 an active job, cancel of a queued and a running job, sync mode (mp4), 429 when
 the queue is full, 503 at `MAX_JOBS` and during warmup, and the cancel/CLAIMED
 race. No device is needed. The script needs a built `./build/tt_media_server_cpp`.
 
-Phases (see `server_cases.py`): `main`, `sync-error`, `limits`, `warmup`,
+Phases of `server_cases.py`: `main`, `sync-error`, `limits`, `warmup`,
 `cancel-race`.
 
 ## Worker crash tests

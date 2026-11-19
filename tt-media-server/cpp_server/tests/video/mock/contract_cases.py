@@ -7,10 +7,11 @@
 POST /generations answers 202 with a job (id, status=queued); the client polls
 GET /generations/{id} and fetches the mp4 from /generations/{id}/download.
 
-The same cases run against a local HTTP stub of the service and against
-tt_media_server_cpp. --require-file is for the device runner: the finished job
-must download as a non-empty mp4 (the mock only has mock:// results, so its
-download is 404).
+The same cases run against tt_media_server_cpp with the mock runner
+(run_server_tests.sh) and with the device runner (run_device_tests.sh).
+--require-file makes the finished job download as a non-empty mp4: the mock
+runner writes one with TT_VIDEO_MOCK_WRITE_FILE=1, otherwise its result is
+mock:// and the download is 404.
 """
 
 import argparse

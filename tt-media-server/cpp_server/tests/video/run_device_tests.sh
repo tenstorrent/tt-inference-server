@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Run when tt_media_server_cpp is up and a Tenstorrent device can be opened.
-# The contract cases are the same as the stub (submit -> poll -> download). The
+# The contract cases are the same as with the mock runner (submit -> poll -> download). The
 # extra check requires the finished job to download as a non-empty mp4 produced
 # by the device runner. VIDEO_JOB_TIMEOUT (seconds, default 1800) bounds polling.
 set -euo pipefail
