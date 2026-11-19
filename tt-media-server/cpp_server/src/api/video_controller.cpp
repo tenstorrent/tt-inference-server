@@ -11,7 +11,6 @@
 #include <sstream>
 
 #include "config/settings.hpp"
-#include "domain/video/ordered_json.hpp"
 #include "domain/video/video_mode.hpp"
 #include "domain/video_generate_request.hpp"
 #include "services/service_container.hpp"
@@ -27,10 +26,8 @@ using Callback = std::function<void(const drogon::HttpResponsePtr&)>;
 
 drogon::HttpResponsePtr jsonBody(const Json::Value& value,
                                  drogon::HttpStatusCode status) {
-  auto resp = drogon::HttpResponse::newHttpResponse();
+  auto resp = drogon::HttpResponse::newHttpJsonResponse(value);
   resp->setStatusCode(status);
-  resp->setContentTypeCode(drogon::CT_APPLICATION_JSON);
-  resp->setBody(tt::domain::video::orderedJson(value));
   return resp;
 }
 

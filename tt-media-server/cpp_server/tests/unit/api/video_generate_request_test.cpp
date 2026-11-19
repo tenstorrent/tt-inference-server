@@ -9,7 +9,6 @@
 #include <stdexcept>
 #include <string>
 
-#include "domain/video/ordered_json.hpp"
 #include "domain/video/video_job.hpp"
 #include "domain/video/video_mode.hpp"
 #include "domain/video/video_response.hpp"
@@ -209,7 +208,7 @@ TEST(VideoResponseJsonTest, OmitsGenerationTimeUnlessPositive) {
   EXPECT_DOUBLE_EQ(json["generation_time"].asDouble(), 0.02);
 }
 
-TEST(VideoJobJsonOrder, MatchesPythonFieldOrderWithNullsAndDefaultSteps) {
+TEST(VideoJobJson, RequestParametersHaveEveryPythonFieldWithNullsAndDefaultSteps) {
   using tt::domain::video::JobStatus;
   using tt::domain::video::VideoJob;
 
@@ -223,10 +222,25 @@ TEST(VideoJobJsonOrder, MatchesPythonFieldOrderWithNullsAndDefaultSteps) {
   job.requestParameters["seed"] = 1;
   job.requestParameters["num_frames"] = 81;
 
-  const std::string text = tt::domain::video::orderedJson(job.toPublicJson());
-  EXPECT_EQ(
-      text,
-      R"({"id":"1","job_type":"video","status":"completed","created_at":10,"model":"tt-wan2.2","request_parameters":{"prompt":"a mountain stream","negative_prompt":null,"num_inference_steps":20,"seed":1,"aspect_ratio":null,"height":null,"width":null,"fps":null,"duration":null,"num_frames":81},"completed_at":20})");
+  const Json::Value json = job.toPublicJson();
+  EXPECT_EQ(json["id"].asString(), "1");
+  EXPECT_EQ(json["job_type"].asString(), "video");
+  EXPECT_EQ(json["status"].asString(), "completed");
+  EXPECT_EQ(json["created_at"].asInt64(), 10);
+  EXPECT_EQ(json["completed_at"].asInt64(), 20);
+  EXPECT_FALSE(json.isMember("error"));
+
+  const Json::Value& params = json["request_parameters"];
+  EXPECT_EQ(params["prompt"].asString(), "a mountain stream");
+  EXPECT_EQ(params["seed"].asInt(), 1);
+  EXPECT_EQ(params["num_frames"].asInt(), 81);
+  EXPECT_EQ(params["num_inference_steps"].asInt(),
+            tt::domain::kDefaultVideoInferenceSteps);
+  for (const char* unset : {"negative_prompt", "aspect_ratio", "height", "width",
+                            "fps", "duration"}) {
+    ASSERT_TRUE(params.isMember(unset)) << unset;
+    EXPECT_TRUE(params[unset].isNull()) << unset;
+  }
 }
 
 TEST(VideoModeTest, EnvDefaultsToAsyncAndRequestOverrides) {
@@ -247,22 +261,3 @@ TEST(VideoModeTest, EnvDefaultsToAsyncAndRequestOverrides) {
   ::unsetenv("USE_ASYNC_VIDEO");
 }
 
-TEST(VideoJobJsonOrder, ErrorAndDeleteKeepPythonKeysFirst) {
-  Json::Value error;
-  error["detail"] = "Video job not found";
-  error["error"]["message"] = "Video job not found";
-  error["error"]["type"] = "invalid_request_error";
-  error["error"]["param"] = Json::nullValue;
-  error["error"]["code"] = Json::nullValue;
-
-  EXPECT_EQ(
-      tt::domain::video::orderedJson(error),
-      R"({"detail":"Video job not found","error":{"message":"Video job not found","type":"invalid_request_error","param":null,"code":null}})");
-
-  Json::Value deleted;
-  deleted["deleted"] = true;
-  deleted["id"] = "1";
-  deleted["object"] = "video";
-  EXPECT_EQ(tt::domain::video::orderedJson(deleted),
-            R"({"id":"1","object":"video","deleted":true})");
-}

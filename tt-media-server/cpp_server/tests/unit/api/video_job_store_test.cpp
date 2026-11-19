@@ -17,7 +17,6 @@
 #include <thread>
 #include <vector>
 
-#include "domain/video/ordered_json.hpp"
 #include "domain/video/video_job.hpp"
 #include "domain/video/video_mode.hpp"
 #include "domain/video_generate_request.hpp"
@@ -26,7 +25,6 @@
 
 using tt::domain::VideoGenerateRequest;
 using tt::domain::video::JobStatus;
-using tt::domain::video::orderedJson;
 using tt::domain::video::VideoJob;
 using tt::services::JobStillActiveException;
 using tt::services::MaxJobsReachedException;
@@ -56,16 +54,6 @@ Json::Value params(const std::string& prompt) {
 
 std::string statusOf(const Json::Value& job) {
   return job["status"].asString();
-}
-
-void expectKeyOrder(const std::string& text,
-                    std::initializer_list<const char*> keys) {
-  size_t pos = 0;
-  for (const char* key : keys) {
-    const auto found = text.find(std::string("\"") + key + "\"", pos);
-    ASSERT_NE(found, std::string::npos) << key << " missing in " << text;
-    pos = found + 1;
-  }
 }
 
 }  // namespace
@@ -305,7 +293,7 @@ TEST(VideoJobStoreTest, ConcurrentCreatesAreAllVisible) {
   }
 }
 
-TEST(VideoJobJsonShapes, FailedAndListKeepPythonKeyOrder) {
+TEST(VideoJobJsonShapes, FailedJobAndExtraRequestParameters) {
   VideoJob failed;
   failed.taskId = 4;
   failed.model = "tt-wan2.2";
@@ -316,11 +304,16 @@ TEST(VideoJobJsonShapes, FailedAndListKeepPythonKeyOrder) {
   failed.errorMessage = "device exploded";
   failed.requestParameters["prompt"] = "fail";
 
-  const std::string one = orderedJson(failed.toPublicJson());
-  EXPECT_EQ(
-      one,
-      R"({"id":"4","job_type":"video","status":"failed","created_at":10,"model":"tt-wan2.2","request_parameters":{"prompt":"fail","negative_prompt":null,"num_inference_steps":20,"seed":null,"aspect_ratio":null,"height":null,"width":null,"fps":null,"duration":null,"num_frames":null},"completed_at":12,"error":{"code":"processing_error","message":"device exploded"}})");
+  const Json::Value one = failed.toPublicJson();
+  EXPECT_EQ(one["status"].asString(), "failed");
+  EXPECT_EQ(one["completed_at"].asInt64(), 12);
+  EXPECT_EQ(one["error"]["code"].asString(), "processing_error");
+  EXPECT_EQ(one["error"]["message"].asString(), "device exploded");
+  EXPECT_TRUE(one["request_parameters"]["seed"].isNull());
+  EXPECT_EQ(one["request_parameters"]["num_inference_steps"].asInt(), 20);
 
+  // A key the Python schema does not have is kept, and a set value wins over
+  // the default.
   VideoJob extra;
   extra.taskId = 5;
   extra.model = "tt-wan2.2";
@@ -328,34 +321,11 @@ TEST(VideoJobJsonShapes, FailedAndListKeepPythonKeyOrder) {
   extra.requestParameters["prompt"] = "boat";
   extra.requestParameters["num_inference_steps"] = 8;
   extra.requestParameters["guidance_scale"] = 5.0;
-  auto json = extra.toPublicJson();
-  json["org_id"] = "lab";
-  json["adapter_merge_job_ids"] = Json::Value(Json::arrayValue);
-
-  const std::string text = orderedJson(json);
-  expectKeyOrder(text,
-                 {"id", "job_type", "status", "created_at", "model",
-                  "request_parameters", "adapter_merge_job_ids", "org_id"});
-  EXPECT_NE(text.find("\"num_inference_steps\":8"), std::string::npos);
-  EXPECT_NE(text.find("\"guidance_scale\":5"), std::string::npos);
-  EXPECT_GT(text.find("\"guidance_scale\""), text.find("\"num_frames\""));
-
-  Json::Value list(Json::arrayValue);
-  list.append(failed.toPublicJson());
-  list.append(extra.toPublicJson());
-  const std::string listed = orderedJson(list);
-  EXPECT_EQ(listed.front(), '[');
-  EXPECT_EQ(listed.back(), ']');
-  EXPECT_LT(listed.find("\"id\":\"4\""), listed.find("\"id\":\"5\""));
-}
-
-TEST(VideoJobJsonShapes, VideoPathObjectPutsExtraKeysLast) {
-  Json::Value body;
-  body["generation_time"] = 1.5;
-  body["video_path"] = "/tmp/a.mp4";
-  body["worker"] = 0;
-  EXPECT_EQ(orderedJson(body),
-            R"({"video_path":"/tmp/a.mp4","generation_time":1.5,"worker":0})");
+  const Json::Value json = extra.toPublicJson();
+  EXPECT_EQ(json["request_parameters"]["num_inference_steps"].asInt(), 8);
+  EXPECT_EQ(json["request_parameters"]["guidance_scale"].asDouble(), 5.0);
+  EXPECT_TRUE(json["request_parameters"]["num_frames"].isNull());
+  EXPECT_FALSE(json.isMember("completed_at"));
 }
 
 TEST(VideoModeTokens, EveryPythonTokenAndAGarbageValue) {

@@ -19,7 +19,6 @@
 #include <sstream>
 #include <string>
 
-#include "domain/video/ordered_json.hpp"
 #include "domain/video/video_mode.hpp"
 #include "domain/video_generate_request.hpp"
 #include "services/video_job_store.hpp"
@@ -79,6 +78,12 @@ void reply(int fd, int status, const std::string& reason,
   sendAll(fd, out.str());
 }
 
+std::string compactJson(const Json::Value& value) {
+  Json::StreamWriterBuilder builder;
+  builder["indentation"] = "";
+  return Json::writeString(builder, value);
+}
+
 std::string jsonError(const std::string& message) {
   Json::Value body;
   body["detail"] = message;
@@ -86,7 +91,7 @@ std::string jsonError(const std::string& message) {
   body["error"]["type"] = "invalid_request_error";
   body["error"]["param"] = Json::nullValue;
   body["error"]["code"] = Json::nullValue;
-  return tt::domain::video::orderedJson(body);
+  return compactJson(body);
 }
 
 void trace(const std::string& line) {
@@ -163,7 +168,7 @@ void handle(int fd, const std::string& request) {
   }
   const std::string kGen = "/v1/videos/generations";
   const auto asJson = [](const Json::Value& value) {
-    return tt::domain::video::orderedJson(value);
+    return compactJson(value);
   };
   const auto notFound = [&](const std::string& what) {
     reply(fd, 404, "Not Found", jsonError(what), "application/json");

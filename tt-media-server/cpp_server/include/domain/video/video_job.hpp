@@ -6,10 +6,13 @@
 #include <json/json.h>
 
 #include <cstdint>
+#include <cstring>
 #include <ctime>
 #include <optional>
 #include <string>
 #include <vector>
+
+#include "domain/video_generate_request.hpp"
 
 namespace tt::domain::video {
 
@@ -85,6 +88,37 @@ struct VideoJob {
     return uuid.empty() ? std::to_string(taskId) : uuid;
   }
 
+  /** Python `VideoGenerateRequest.model_dump()`: every field is present and an
+   *  unset optional is null. The shape validator fills a missing
+   *  num_inference_steps with the default (20) before the job is stored, so the
+   *  default is applied here as well for a job that was built without it. Keys
+   *  this server adds on top of the Python schema are kept. */
+  Json::Value publicRequestParameters() const {
+    static const char* const kFields[] = {
+        "prompt",   "negative_prompt", "num_inference_steps", "seed",
+        "aspect_ratio", "height",      "width",               "fps",
+        "duration", "num_frames"};
+    Json::Value out(Json::objectValue);
+    for (const char* key : kFields) {
+      const bool set = requestParameters.isObject() &&
+                       requestParameters.isMember(key) &&
+                       !requestParameters[key].isNull();
+      if (set) {
+        out[key] = requestParameters[key];
+      } else if (std::strcmp(key, "num_inference_steps") == 0) {
+        out[key] = kDefaultVideoInferenceSteps;
+      } else {
+        out[key] = Json::nullValue;
+      }
+    }
+    if (requestParameters.isObject()) {
+      for (const auto& name : requestParameters.getMemberNames()) {
+        if (!out.isMember(name)) out[name] = requestParameters[name];
+      }
+    }
+    return out;
+  }
+
   /** Mirrors Python `Job.to_public_dict()`. */
   Json::Value toPublicJson() const {
     Json::Value json;
@@ -93,7 +127,7 @@ struct VideoJob {
     json["status"] = toString(status);
     json["created_at"] = static_cast<Json::Int64>(createdAt);
     json["model"] = model;
-    json["request_parameters"] = requestParameters;
+    json["request_parameters"] = publicRequestParameters();
     if (!orgId.empty()) json["org_id"] = orgId;
     if (completedAt != 0) {
       json["completed_at"] = static_cast<Json::Int64>(completedAt);
