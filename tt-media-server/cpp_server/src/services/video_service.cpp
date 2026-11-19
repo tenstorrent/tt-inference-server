@@ -66,7 +66,6 @@ domain::video::VideoResponse responseFromJson(uint32_t taskId,
 
 constexpr size_t kMaxJobs = 10000;
 constexpr int64_t kJobRetentionSeconds = 86400;  // Python job_retention_seconds
-constexpr int64_t kRestartWindowSeconds = 3600;
 
 int64_t envInt64(const char* name, int64_t fallback) {
   const char* value = std::getenv(name);
@@ -92,8 +91,6 @@ VideoService::VideoService(
                1, envInt64("MAX_JOBS", static_cast<int64_t>(kMaxJobs)))),
            envInt64("JOB_RETENTION_SECONDS", kJobRetentionSeconds)) {
   std::filesystem::create_directories(payloadDir);
-  maxWorkerRestarts_ = static_cast<size_t>(
-      std::max<int64_t>(0, envInt64("TT_VIDEO_WORKER_MAX_RESTARTS", 3)));
   startSweeper();
   if (videoConfig.runner_type == config::ModelRunnerType::VIDEO_DEVICE) {
     // Delete only inside the output dir, and drop mp4 files left by a previous
@@ -147,43 +144,6 @@ void VideoService::stopSweeper() {
   }
   sweeperCv_.notify_all();
   if (sweeper_.joinable()) sweeper_.join();
-}
-
-// A dead video worker is restarted (the shm task queue keeps the queued tasks,
-// the new worker takes them after its warmup) unless: it is a multihost launch
-// (all ranks run in lockstep, one cannot be replaced alone), restarts are
-// disabled (TT_VIDEO_WORKER_MAX_RESTARTS=0), or it already restarted that many
-// times within the last hour (a crash loop). Then the service fails as before
-// and the process exits so a supervisor can restart it.
-bool VideoService::tryRecoverWorker(size_t workerIdx) {
-  if (maxWorkerRestarts_ == 0 || !workerManager()) return false;
-  if (envInt64("OMPI_COMM_WORLD_SIZE", 1) > 1) return false;
-  {
-    std::lock_guard<std::mutex> lock(restartMutex_);
-    const auto now = std::chrono::steady_clock::now();
-    while (!restartTimes_.empty() &&
-           now - restartTimes_.front() >
-               std::chrono::seconds(kRestartWindowSeconds)) {
-      restartTimes_.pop_front();
-    }
-    if (restartTimes_.size() >= maxWorkerRestarts_) {
-      TT_LOG_ERROR(
-          "[VideoService] Worker {} died; {} restarts within the last hour, "
-          "giving up",
-          workerIdx, restartTimes_.size());
-      return false;
-    }
-    restartTimes_.push_back(now);
-  }
-  try {
-    workerManager()->restartWorker(workerIdx);
-  } catch (const std::exception& e) {
-    TT_LOG_ERROR("[VideoService] Restart of worker {} failed: {}", workerIdx,
-                 e.what());
-    return false;
-  }
-  TT_LOG_WARN("[VideoService] Worker {} died and was restarted", workerIdx);
-  return true;
 }
 
 std::string VideoService::runnerInUse() const {
@@ -282,18 +242,10 @@ void VideoService::removeCancelMarker(uint32_t taskId) const {
 }
 
 void VideoService::onTaskClaimed(
-    size_t workerIdx, const IpcResult& result,
+    size_t /*workerIdx*/, const IpcResult& result,
     std::chrono::steady_clock::time_point /*claimTime*/, double /*queueWaitMs*/,
     double /*shmEnqueueMs*/) {
-  // Remember which worker process holds the job (Python's
-  // `worker_assignment.identity`), for stopping or replacing it later.
-  int pid = 0;
-  if (auto* manager = workerManager()) {
-    if (auto* worker = manager->worker(workerIdx)) {
-      pid = static_cast<int>(worker->pid.load());
-    }
-  }
-  jobs.markInProgress(result.getTaskId(), static_cast<int>(workerIdx), pid);
+  jobs.markInProgress(result.getTaskId());
 }
 
 std::string VideoService::validateRequest(

@@ -834,21 +834,9 @@ TEST(HttpRange, UnsatisfiableIgnoredAndMultiRange) {
   EXPECT_EQ(parseByteRange("bytes=5", 1000).kind, ByteRange::Kind::None);
 }
 
-// ---- Worker identity and the result file -------------------------------------
+// ---- The result file ----------------------------------------------------------
 
-TEST(VideoJobStoreWorker, WorkerIdentityIsKeptUntilTheJobCompletes) {
-  VideoJobStore store(10, 0);
-  store.create(1, "m", Json::Value(Json::objectValue));
-  EXPECT_FALSE(store.assignedWorker(1).has_value());
-  store.markInProgress(1, 2, 4242);
-  ASSERT_TRUE(store.assignedWorker(1).has_value());
-  EXPECT_EQ(store.assignedWorker(1)->workerIdx, 2);
-  EXPECT_EQ(store.assignedWorker(1)->pid, 4242);
-  store.complete(1, "mock://video/1", "");
-  EXPECT_FALSE(store.assignedWorker(1).has_value());
-}
-
-TEST(VideoJobStoreWorker, RemoveNeverDeletesADirectory) {
+TEST(VideoJobStoreResult, RemoveNeverDeletesADirectory) {
   namespace fs = std::filesystem;
   const fs::path dir = "/tmp/tt-video-dir-result";
   fs::remove_all(dir);

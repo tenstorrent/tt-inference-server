@@ -19,13 +19,6 @@ namespace tt::domain::video {
 /** Python `JobTypes.VIDEO` (config/constants.py): the only job type served. */
 inline constexpr const char* kJobTypeVideo = "video";
 
-/** Which worker process holds a job (Python `Job.assigned_worker_identity`,
- *  `(worker_id, pid)`). Needed later to stop or replace that worker. */
-struct WorkerIdentity {
-  int workerIdx = -1;
-  int pid = 0;
-};
-
 /** Same states as Python `JobStatus` (utils/job_manager.py). */
 enum class JobStatus {
   QUEUED,
@@ -72,7 +65,6 @@ struct VideoJob {
   std::string resultPath;
   std::string errorCode;
   std::string errorMessage;
-  std::optional<WorkerIdentity> worker;  // set when a worker claims it
 
   std::string id() const {
     return uuid.empty() ? std::to_string(taskId) : uuid;

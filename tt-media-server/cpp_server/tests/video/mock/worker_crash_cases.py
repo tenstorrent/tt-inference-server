@@ -6,14 +6,14 @@
 
 Starts its own tt_media_server_cpp (private shm names and ports, a temporary
 output folder), kills the worker process with SIGKILL and checks what the
-service does:
+service does. A dead worker is not restarted: the service is marked failed and
+the server process exits with code 1, so a supervisor (systemd, Kubernetes)
+starts a fresh one. The job table lives in the server process, so no job is left
+waiting for a worker that is gone.
 
-  A. default restart limit: the job the dead worker had taken becomes `failed`
-     (`processing_error`), a new worker starts, the job that was waiting in the
-     queue is served by it, and a new job completes.
-  B. TT_VIDEO_WORKER_MAX_RESTARTS=1: the first crash is recovered, the second
-     one makes the server exit with code 1.
-  C. warmup failure of the device runner (a wrong TT_PYTHON_PATH, no chip is
+  A. kill -9 of the worker while a job runs and another one waits in the queue:
+     the server exits with code 1 and says why in its log.
+  B. warmup failure of the device runner (a wrong TT_PYTHON_PATH, no chip is
      opened): the worker process must exit, so that the service sees the dead
      worker and shuts the server down with code 1. Before the fix the worker
      logged "exiting after fatal error" but hung on exit (the Python GIL was
@@ -39,7 +39,6 @@ ROOT = Path(__file__).resolve().parents[3]
 BINARY = ROOT / "build" / "tt_media_server_cpp"
 KEY = "test"
 GENERATIONS = "/v1/videos/generations"
-FINAL = ("completed", "failed", "cancelled")
 
 results = []
 
@@ -49,7 +48,7 @@ def note(ok, name, detail=""):
     print(f"{'PASS' if ok else 'FAIL'}  {name} {detail}".rstrip(), flush=True)
 
 
-def start(port, tag, max_restarts, workdir, extra_env=None):
+def start(port, tag, workdir, extra_env=None):
     env = dict(
         os.environ,
         MODEL_SERVICE="video",
@@ -62,7 +61,6 @@ def start(port, tag, max_restarts, workdir, extra_env=None):
         TT_MEDIA_RESULT_QUEUE=f"wc{tag}_results",
         TT_WARMUP_SIGNALS_QUEUE=f"wc{tag}_warm",
         TT_WORKER_METRICS_SHM=f"/wc{tag}_metrics",
-        TT_VIDEO_WORKER_MAX_RESTARTS=str(max_restarts),
     )
     for key, value in (extra_env or {}).items():
         if value is None:
@@ -137,11 +135,6 @@ def worker(port):
     return None, None
 
 
-def new_worker_ready(port, old_pid):
-    pid, alive = worker(port)
-    return pid if pid and pid != old_pid and alive and model_ready(port) else None
-
-
 def job(port, jid):
     status, body = call(port, "GET", f"{GENERATIONS}/{jid}")
     return (body.get("status") if status == 200 else f"http{status}"), body
@@ -162,7 +155,7 @@ def wait_job(port, jid, wanted, timeout):
 def case_a(workdir):
     print("=== A. kill -9 of the worker while a job runs and another one waits ===")
     port = 18150
-    proc, _ = start(port, "a", 3, workdir)
+    proc, log = start(port, "a", workdir)
     try:
         note(bool(wait_until(lambda: model_ready(port), 60)), "server ready")
         pid0, _ = worker(port)
@@ -175,66 +168,28 @@ def case_a(workdir):
 
         os.kill(pid0, signal.SIGKILL)
         t0 = time.time()
-        s1, body1 = wait_job(port, id1, FINAL, 40)
-        err = body1.get("error") or {}
+        exited = wait_until(lambda: proc.poll() is not None, 30)
         note(
-            s1 == "failed" and err.get("code") == "processing_error",
-            "job 1 (taken by the dead worker) becomes failed/processing_error",
-            f"status={s1} code={err.get('code')} after {time.time() - t0:.1f}s",
+            bool(exited) and proc.returncode == 1,
+            "the server process exits with code 1 (nothing waits for the dead worker)",
+            f"exit code={proc.poll()} after {time.time() - t0:.1f}s",
         )
-        pid1 = wait_until(lambda: new_worker_ready(port, pid0), 60)
+        text = log.read_text(errors="replace")
         note(
-            pid1 is not None,
-            "a new worker process is started and the model is ready again",
-            f"old pid={pid0} new pid={pid1} after {time.time() - t0:.1f}s",
+            "fatal worker error" in text,
+            "the log says the server exits because of a fatal worker error",
         )
-        s2, _ = wait_job(port, id2, FINAL, 40)
-        note(
-            s2 == "completed",
-            "job 2 (still waiting in the queue) is served by the new worker",
-            f"status={s2}",
-        )
-        id3 = call(port, "POST", GENERATIONS, {"prompt": "job three"})[1]["id"]
-        s3, _ = wait_job(port, id3, FINAL, 40)
-        note(s3 == "completed", "a new job after the restart completes", f"status={s3}")
     finally:
         stop(proc)
 
 
 def case_b(workdir):
-    print("=== B. restart limit: TT_VIDEO_WORKER_MAX_RESTARTS=1, kill the worker twice ===")
+    print("=== B. the device runner fails its warmup: the worker must exit ===")
     port = 18151
-    proc, log = start(port, "b", 1, workdir)
-    try:
-        note(bool(wait_until(lambda: model_ready(port), 60)), "server ready")
-        pid0, _ = worker(port)
-        os.kill(pid0, signal.SIGKILL)
-        pid1 = wait_until(lambda: new_worker_ready(port, pid0), 60)
-        note(
-            pid1 is not None,
-            "first crash: the worker is restarted (within the limit)",
-            f"old={pid0} new={pid1}",
-        )
-        os.kill(pid1, signal.SIGKILL)
-        t0 = time.time()
-        exited = wait_until(lambda: proc.poll() is not None, 60)
-        note(
-            bool(exited) and proc.returncode == 1,
-            "second crash (over the limit): the server process exits with code 1",
-            f"exit code={proc.poll()} after {time.time() - t0:.1f}s",
-        )
-        note("giving up" in log.read_text(errors="replace"), "the log says the service gave up")
-    finally:
-        stop(proc)
-
-
-def case_c(workdir):
-    print("=== C. the device runner fails its warmup: the worker must exit ===")
-    port = 18152
     # MODEL_RUNNER_TYPE is removed so that the real VideoDeviceRunner is used; the
     # import of the Python runner fails first, so no device is touched.
     env = dict(TT_PYTHON_PATH="/nonexistent", MODEL_RUNNER_TYPE=None)
-    proc, log = start(port, "c", 0, workdir, env)
+    proc, log = start(port, "b", workdir, env)
     try:
         t0 = time.time()
         exited = wait_until(lambda: proc.poll() is not None, 30)
@@ -260,7 +215,6 @@ def main():
         workdir = Path(tmp)
         case_a(workdir)
         case_b(workdir)
-        case_c(workdir)
     failed = results.count(False)
     print(f"\n{len(results) - failed} PASS, {failed} FAIL")
     raise SystemExit(1 if failed else 0)

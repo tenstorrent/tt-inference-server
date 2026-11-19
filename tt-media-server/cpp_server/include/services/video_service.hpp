@@ -6,7 +6,6 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
-#include <deque>
 #include <filesystem>
 #include <memory>
 #include <mutex>
@@ -71,7 +70,6 @@ class VideoService
                      std::chrono::steady_clock::time_point claimTime,
                      double queueWaitMs, double shmEnqueueMs) override;
   void onStopped() override;
-  bool tryRecoverWorker(size_t workerIdx) override;
 
  private:
   std::string payloadPath(uint32_t taskId, const char* prefix) const;
@@ -91,11 +89,6 @@ class VideoService
   std::mutex sweeperMutex_;
   std::condition_variable sweeperCv_;
   bool sweeperStop_ = false;
-
-  // Automatic worker restart (not used for multihost launches).
-  size_t maxWorkerRestarts_ = 3;
-  std::mutex restartMutex_;
-  std::deque<std::chrono::steady_clock::time_point> restartTimes_;
 };
 
 }  // namespace tt::services

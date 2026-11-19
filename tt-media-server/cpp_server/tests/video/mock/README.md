@@ -12,7 +12,7 @@ tests that run against the server with the mock runner. The unit tests are C++ t
 | `contract_cases.py` | contract checks of the job API (async mode). Takes `--base-url`, so it runs against the mock-runner server and against a real server with a device |
 | `server_cases.py` | checks against a real `tt_media_server_cpp` with the mock runner, by phase |
 | `run_server_tests.sh` | starts the server with the mock runner once per phase (private shm names) and runs `contract_cases.py` and `server_cases.py` |
-| `worker_crash_cases.py` | starts its own server with the mock runner, kills the worker with `SIGKILL` and checks the failed job, the restart, the restart limit and that a worker whose warmup fails exits |
+| `worker_crash_cases.py` | starts its own server with the mock runner, kills the worker with `SIGKILL` and checks that the server exits, and that a worker whose warmup fails exits |
 
 `contract_cases.py` checks the job API (async mode; sync mode is covered by
 `server_cases.py`): `POST /v1/videos/generations` returns 202 and a job id,
@@ -39,10 +39,12 @@ python3 tests/video/mock/worker_crash_cases.py
 ```
 
 Starts its own server (ports 18150 and 18151, private shm names, a temporary
-output folder) and kills the worker with `SIGKILL`: the job the worker had taken
-becomes `failed` (`processing_error`), a new worker starts, the job waiting in the
-queue is served, and with `TT_VIDEO_WORKER_MAX_RESTARTS=1` the second crash makes the
-server exit with code 1. Case C starts the real device runner with a wrong `TT_PYTHON_PATH` (no chip is opened) and checks that the failed worker exits, so the server exits with code 1; it guards the fix of a GIL deadlock on that path. Needs a built `./build/tt_media_server_cpp`.
+output folder). Case A kills the worker with `SIGKILL` while one job runs and
+another waits: a dead worker is not restarted, so the server exits with code 1 (a
+supervisor starts a fresh one) and no job is left waiting for it. Case B starts
+the real device runner with a wrong `TT_PYTHON_PATH` (no chip is opened) and checks
+that the failed worker exits, so the server exits with code 1; it guards the fix of
+a GIL deadlock on that path. Needs a built `./build/tt_media_server_cpp`.
 
 ## Cancel in the queue (manually, no device)
 

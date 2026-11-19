@@ -237,15 +237,6 @@ class BaseAsyncService : public RequestPipeline<RequestType> {
 
   virtual void onStopped() {}
 
-  /** Called on the worker liveness thread when a worker died. Return true if
-   *  the worker was restarted and the service can keep serving. Default:
-   *  false (the service is marked failed). */
-  virtual bool tryRecoverWorker(size_t /*workerIdx*/) { return false; }
-
-  tt::worker::WorkerManager* workerManager() const {
-    return workerManager_.get();
-  }
-
   size_t currentQueueSize() const override {
     return inFlight_.load(std::memory_order_relaxed);
   }
@@ -422,13 +413,6 @@ class BaseAsyncService : public RequestPipeline<RequestType> {
 
     const std::string reason = "Worker process " + std::to_string(workerIdx) +
                                " exited while processing request";
-    // A service that can bring the worker back keeps running: only the tasks
-    // this worker had claimed are failed, the rest stay queued for the new
-    // worker. Otherwise the whole service fails as before.
-    if (tryRecoverWorker(workerIdx)) {
-      failClaimedBy(workerIdx, reason);
-      return;
-    }
     {
       std::lock_guard<std::mutex> lock(failureMutex_);
       if (failureReason_.empty()) {
@@ -445,26 +429,6 @@ class BaseAsyncService : public RequestPipeline<RequestType> {
       return failureReason_;
     }
     return "Worker process exited";
-  }
-
-  void failClaimedBy(size_t workerIdx, const std::string& error) {
-    std::vector<std::pair<uint32_t, Callback>> failed;
-    {
-      std::lock_guard<std::mutex> lock(pendingMutex_);
-      for (auto it = pendingResults_.begin(); it != pendingResults_.end();) {
-        if (it->second.claimedByWorker == static_cast<int>(workerIdx)) {
-          failed.emplace_back(it->first, std::move(it->second.onComplete));
-          it = pendingResults_.erase(it);
-          inFlight_.fetch_sub(1, std::memory_order_relaxed);
-        } else {
-          ++it;
-        }
-      }
-    }
-    for (auto& [taskId, cb] : failed) {
-      cleanupTask(taskId);
-      if (cb) cb(makeErrorResponse(taskId, error));
-    }
   }
 
   void drainPending(const std::string& error) {

@@ -121,29 +121,15 @@ class VideoJobStore {
 
   /**
    * Worker picked the task up. A cancel that raced in stays CANCELLING.
-   * `workerIdx`/`pid` record which worker holds it (Python
-   * `worker_assignment.identity`); -1 = not known.
    */
-  void markInProgress(uint32_t taskId, int workerIdx = -1, int pid = 0) {
+  void markInProgress(uint32_t taskId) {
     std::lock_guard<std::mutex> lock(mutex_);
     auto it = jobs_.find(taskId);
     if (it == jobs_.end()) return;
-    if (workerIdx >= 0) {
-      it->second.worker = domain::video::WorkerIdentity{workerIdx, pid};
-    }
     if (it->second.status == domain::video::JobStatus::QUEUED) {
       it->second.status = domain::video::JobStatus::IN_PROGRESS;
       it->second.progressAt = domain::video::nowSeconds();
     }
-  }
-
-  /** The worker that holds the job, if one claimed it and it is not done. */
-  std::optional<domain::video::WorkerIdentity> assignedWorker(
-      uint32_t taskId) const {
-    std::lock_guard<std::mutex> lock(mutex_);
-    auto it = jobs_.find(taskId);
-    if (it == jobs_.end()) return std::nullopt;
-    return it->second.worker;
   }
 
   struct SweepResult {
@@ -197,7 +183,6 @@ class VideoJobStore {
         orphanFile = videoPath;  // job was deleted while running
       } else {
         auto& job = it->second;
-        job.worker.reset();
         if (job.status == domain::video::JobStatus::FAILED &&
             job.errorCode == "stale_job") {
           orphanFile = videoPath;  // already failed by sweep(); drop the result
