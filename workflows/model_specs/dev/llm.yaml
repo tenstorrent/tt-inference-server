@@ -208,14 +208,18 @@ templates:
     - device: P300X2  # QB2 (2x P300, 4-chip TP mesh)
       # Decode batch ceiling is 32 (metal batch-32 demo). Prefill is still
       # micro-batched ≤4 users inside the generator.
-      max_concurrency: 32
+      # Max users 6: the most users whose AgentX prefix hit stays within 4 points of theoretical (6 users 93.4 / 95.6 %,
+      # 4,432 tok/s; 8 users 88.8 / 96.5 %: queued sessions lose their prefix in the 759,675-token pool).
+      max_concurrency: 6
       # Metal policy (generator_trace 31B/_QB2): auto-bounded at ≥64k; at
       # ISL≥128k + bounded → chunk 2048 (coherency). Serve 256k with that path.
       # Scheduler tokens must match the resolved metal chunk (2048 here).
       max_context: 262144  # 256 * 1024
-      default_impl: true  # validated tt-transformers entry (32 users, 256K); the gemma4_31b_qb2 class below needs an unmerged tt-metal branch
+      default_impl: true  # validated tt-transformers entry (6 users, 256K); the gemma4_31b_qb2 class below needs an unmerged tt-metal branch
       tensor_cache_timeout: 10800.0  # cold TT-cache conversion of the weights takes ~2 h 40 min on the QB2 runner; the readiness backstop adds 30 min
       env_vars:
+        GEMMA4_PREFILL_SDPA_SPLITK: "1"  # split-K global prefill SDPA (tt-metal #64930), taken from a 16K prefix where it pays on the chip; 16K continuation after a 64K prefix: 8686 -> 6908 ms on a 1x4 block (120-core chips; the stock op stays on 130-core ones)
+        GEMMA4_PRECISION_LM_HEAD: "bfp8"  # the lm_head in bfloat8_b (2K prose gate on the 31B 1x4 neutral): QB2 block decode step 30.5 -> 29.6 ms at 128, 33.2 -> 32.5 at 32K
         # Text + image + video: the multimodal serving class for the checkpoint's architecture (same text
         # path; adds the on-device vision tower and vLLM's multimodal processor) composed with the MTP
         # speculative contract class.
@@ -225,6 +229,7 @@ templates:
         # and plain decode is the fallback (rows above the cap, a declined step, or an unsupported request).
         GEMMA4_PREFILL_PAD_BUCKETS: "256,512,1024"  # Gemma 4 prefill padding: 129-256-token prompts pad to 256 and 257-512 to 512 instead of 1024 (tt_transformers default). A chat-templated 128-token benchmark prompt is ~144 tokens; measured 2026-10-31 on the 4-chip block with the plain class (same prefill path) vs the knob off: c1 TTFT 260 -> 140 ms, c8 1.74 -> 1.05 s; 128K/256K TTFT and decode unchanged.
         GEMMA4_SPEC_K_BY_ROWS: "5:5,8:3"  # drafts per step by live decode rows (max_rows:K), measured 2026-10-29 on the QB2 block: K=5 up to 5 rows (code +20..+49 %, prose +0..+20 % over plain), K=3 at 6-8 rows (code +25 %, prose +8 %); a K=1 record at 16 rows cannot pay (2 tokens a step at 2.7x the plain step: the policy marks it hopeless), so above 8 rows the step is the plain decode
+        GEMMA4_SPEC_SAMPLED_VERIFY: "1"  # the records draw the sampled rows' verify ids on the device sampler (tt-metal#64301 + vllm-tt-plugin#278): a request with a temperature above zero is speculated like a greedy one. Measured 2026-11-05 on the QB2 block, knob off -> on, fixed seeds: random 128/1K sampled c1 25.0 -> 35.6 tok/s/u, prose sampled c1 25.1 -> 37.2, prose sampled c8 176.9 -> 184.4 aggregate, greedy unchanged (57.9/61.7 -> 64.0/64.2); GPQA diamond ci-nightly subset 32/40 -> 35/40 (37/40 same per question), 0 engine errors
         GEMMA4_SPEC_MAX_ISL: "16384"  # the verify-width ladder ends at the 16K rung: a decode position above it has no captured width and runs the plain step. Measured 2026-11-03 on the QB2 block (greedy c1, 128 out, fixed records vs plain steps): the record step is ~2x the plain step at 4K but 3.1-3.9x at 32K and 4.1-5.6x at 128K while acceptance stays 2.3-3.5 tokens per step, so records win through 16K and lose from 32K up on every QB2 entry (32K / 128K: 12B -36 / -52 %, 26B -12 / -36 %, 31B -42 / -47 %). The release proofs that kept records there (41376385063, 41350202054) landed below the plain baseline (the v0.25 comparison: 12B 32K / 64K / 128K -27 / -28 / -44 %); with the cap the 12B rows measure +4.6 / +3.8 / +6.5 % over v0.25 on the box tree. The release benchmark child passes acceptance with the cap on all three entries.
         GEMMA4_PACKED_KV_WRITE_OP: "1"  # loop-free packed-verify KV write (custom op, bit-identical to the per-position loop)
         GEMMA4_SPEC_SHARDED_VERIFY_ARGMAX: "1"  # verify ids from the lm_head TP shards: no 16 MiB vocab all-gather per speculative round
@@ -261,7 +266,8 @@ templates:
         # >= 65536 are reachable (host sampling only sees device 0's vocab shard).
         sample_on_device_mode: decode_only
       vllm_args:
-        prefix_cache_retention_interval: 1024  # vLLM 0.30 default 0 hashes only the sliding groups' junction tails: a shorter prefix misses on its first visit; 1024 = first-visit hits (measured 2026-10-30: no decode cost, 128K hit 0.94 s TTFT)
+        max_num_seqs: 32  # scheduler cap above max users (6): AgentX sessions fan out to 10-13 requests in flight, and the plugin sizes the KV pool as GEMMA4_MAX_TOKENS_ALL_USERS + max_num_seqs x (block + 8 x sliding window), the pool the max-users runs measured
+        prefix_cache_retention_interval: 16384  # fewer cached sliding-window checkpoints churn this entry's small pool: AgentX prefix hit at 6 users 93.4 % (16384) vs 90.5 % (0); at 8 users 82.9 % (4096), 87.2 % (16384)
         # Default to the device sampler's top-k limit. Requests can override this value.
         override_generation_config: '{"top_k": 32}'
         async_scheduling: true  # the MTP contract class declares supports_async_decode / supports_async_spec_decode; the measured tables above were taken with asynchronous scheduling on both sides
@@ -343,11 +349,16 @@ templates:
     # BH Galaxy DP=4: four (1,8) column engines via standard-DP discovery
     # (TT_VISIBLE_DEVICES per rank, no descriptor override).
     - device: BLACKHOLE_GALAXY
-      max_concurrency: 128  # 32 x 4 engines
+      max_concurrency: 32  # whole box (8 per engine): AgentX 2026-11-16 with the pair-sharded KV c64 total 44.4K tok/s < c32 48.5K (prefill-bound, MTP off above 8 rows per engine)
       max_context: 262144
       default_impl: true
       tensor_cache_timeout: 7200.0  # cold TT-cache conversion of the weights; the readiness backstop adds 30 min
+      submesh_engines: true  # one vLLM engine per (1, 8) row behind the prefix-aware engine_proxy: a long agentic prefill on one row no longer stalls the other three rows' decode, and a follow-up turn lands on the row that holds its prefix
       env_vars:
+        GEMMA4_PREFILL_SDPA_SPLITK: "1"  # split-K global prefill SDPA (tt-metal #64930), taken from a 16K prefix where it pays on the chip; 16K continuation after a 64K prefix: 4922 -> 4068 ms per (1,8) row; AgentX c32 44,943 -> 50,046 total tok/s
+        GEMMA4_KV_PAIR_SHARD: "1"  # pair-sharded global KV (tt-metal #64930): each chip of a KV-head pair keeps half of every global-layer block, so the TT KV pool grows 1,275,526 -> 1,832,159 tokens per engine; AgentX 2026-11-16: c32 47,424 -> 48,497 total tok/s (prefix hit 91.3 -> 93.8 %), c64 15,882 -> 44,382 (unsharded, 64 sessions thrash the prefix cache)
+        TT_PROXY_SLACK: "4"  # engine_proxy: route to the engine holding the prompt's prefix unless it has more than 4 requests in flight above the least-loaded one (MiMo-V2.6-Flash measured slack 2 spilling prefix holders into full re-prefills)
+        GEMMA4_PREFILL_SDPA_NARROW: "wide"  # the sliding layers' prefill SDPA (4 Q heads per chip at TP8) on the whole grid at q = k = 128 instead of the op defaults: served 16K prefill chunk 3.87 -> 3.65 s at position 0 (AgentX c16, 2026-11-10); 2K prose gate on the 12B (same per-chip geometry) top-1 0.763 -> 0.772
         GEMMA4_SDPA_MAX_CORES_PER_HEAD: "32"  # stock decode SDPA core cap per (row, head): measured 2026-10-30/31 on the Galaxy finals vs the default 16: 12B 256K 36.0 vs 31.3 tok/s, 128K 39.0 vs 36.4; 31B 256K 20.9 vs 19.0, 128K 22.5 vs 21.3; short-context and multi-row points unchanged (the c128 spread was the host, present at cap 16 too)
         GEMMA4_PREFILL_PAD_BUCKETS: "256,512,1024"  # Gemma 4 prefill padding: 129-256-token prompts pad to 256 and 257-512 to 512 instead of 1024 (tt_transformers default). A chat-templated 128-token benchmark prompt is ~144 tokens; measured 2026-10-31 on the Galaxy DP=4 entry vs the knob off (same tree): 128/128 c1 TTFT 250 -> 134 ms, c8 365 -> 300 ms, c128 5.59 -> 3.05 s; 128K/256K TTFT and decode unchanged.
         # Text + image + video: the multimodal serving class for the checkpoint's architecture (same text
@@ -358,13 +369,17 @@ templates:
         # drafter on the plugin's speculative contract; vLLM schedules the drafts (speculative_config below)
         # and plain decode is the fallback (rows above the cap, a declined step, or an unsupported request).
         GEMMA4_SPEC_K_BY_ROWS: "5:5,8:3"  # drafts per step by live decode rows PER ENGINE (max_rows:K), measured 2026-10-29 on the full Galaxy (DP4): K=5 up to 5 rows (conc 4-20: prose +25..+50 %, code +40..+55 % over the plain step), K=3 at 6-8 rows (conc 32: +3..+27 %); a K=1 record at 16 rows lands at plain, so above 8 rows per engine (conc > 32) the step is the plain decode
+        GEMMA4_SPEC_SAMPLED_VERIFY: "1"  # the records draw the sampled rows' verify ids on the device sampler (tt-metal#64301 + vllm-tt-plugin#278): a request with a temperature above zero is speculated like a greedy one. Measured 2026-11-05 on this entry (DP4 of (1,8) engines), knob off -> on, fixed seeds: random 128/1K sampled c1 30.2 -> 46.9 tok/s/u, prose sampled c1 30.2 -> 37.8, prose c16 421.5 -> 444 aggregate (repeat 425.5 -> 417.2), prose c32 806 -> 776 (three-run repeat means 784.6 -> 786.1), greedy within the seed spread; GPQA diamond ci-nightly subset 31/40 -> 33/40, 0 engine errors, 0 refusals
         GEMMA4_SPEC_EXTRA_SHAPES: "5:3"  # a (5,3) record beside the (5,5), as measured on the QB2 block (chosen most at 2-5 rows); 4 shapes x 4 rungs = 16 records, the count the trace region was sized for
         GEMMA4_SPEC_MAX_ROWS: "8"  # per engine: above 8 live rows the model proposes nothing and the step is the plain decode
         GEMMA4_SPEC_WIDTH_RUNGS: "4"  # keep the 4 largest verify-width rungs per record (default 5, x4 from 2048): 4 shapes x 4 rungs = 16 records in the 1.2 GB trace region (trace_region_size below)
         GEMMA4_CCL_TOPOLOGY: "linear"  # the galaxy column ring is unmeasured
         GEMMA4_PAGE_BLOCK_SIZE: "64"
-        # 6 x 256K users per engine (24 per Galaxy); bfloat8_b KV halves pool bytes.
-        GEMMA4_MAX_TOKENS_ALL_USERS: "1523712"
+        # 7 x 256K users per engine (28 per Galaxy); bfloat8_b KV halves pool bytes. Sized to the DRAM a served
+        # engine leaves free (GEMMA4_LOG_DRAM after the warmup: 5.0 GiB/chip at 6 x 256K, ~1.9 GiB kept for the
+        # prefill transients). AgentX c32, 6 -> 7 x 256K (2026-11-12): prefix hit 85.7 -> 91.9 %, TTFT p90 24.4 -> 10.0 s,
+        # TPOT 100 -> 79 ms, total 37.2K -> 44.9K tok/s; 131K / 248K needles pass.
+        GEMMA4_MAX_TOKENS_ALL_USERS: "1835008"
         GEMMA4_KV_BFP8: "1"
         # Decode graphs for 1, 4, 8 and 32 residents: the fastest set measured (2-8 residents per
         # engine decode up to 2x faster than in the 32-row graph alone). RoPE is held identical
@@ -1168,11 +1183,16 @@ templates:
   inference_engine: VLLM
   device_model_specs:
     - device: P300X2  # QB2 (2x P300, 4-chip TP mesh)
-      max_concurrency: 32
+      # A 12B Galaxy engine is this 4-chip mesh with the same 1.63M-token KV pool; AgentX peaks there at 8 users per
+      # engine (2026-11-18: 64 users on 8 engines 132,949 tok/s, 128 users 55,410). On a QB2 block (max_num_seqs 32):
+      # 8 users 16,908, 12 users 14,481, 16 users 6,603 tok/s (the pool thrashes).
+      max_concurrency: 8
       max_context: 262144  # auto-bounded sliding + chunk 4096 at 256k (metal policy)
       default_impl: true
       tensor_cache_timeout: 5400.0  # cold TT-cache conversion of the weights; the readiness backstop adds 30 min
       env_vars:
+        GEMMA4_PREFILL_SDPA_SPLITK: "1"  # split-K global prefill SDPA (tt-metal #64930), taken from a 16K prefix where it pays on the chip; 16K continuation after a 64K prefix: 3613 -> 2921 ms on a 1x4 block
+        GEMMA4_PREFILL_SDPA_NARROW: "wide"  # the sliding layers prefill SDPA (narrow chips) on the whole grid at q = k = 128 (2K prose gate neutral on the 12B): QB2 block prefill 4K..32K -7..-12 %, Galaxy row -1..-5 %
         GEMMA4_PREFILL_PAD_BUCKETS: "256,512,1024"  # Gemma 4 prefill padding: 129-256-token prompts pad to 256 and 257-512 to 512 instead of 1024 (the shared policy); warmed at boot. Measured 2026-10-31 on this block (plain class, same prefill path): c1 TTFT 150 -> 85 ms, c8 1.03 -> 0.64 s, c32 4.0 -> 2.45 s, decode / extremes / prose unchanged, coherent at 256K/128K/short
         # Text + image + video + audio: the unified multimodal serving class for the checkpoint's architecture
         # (same text path; adds the on-device image/audio embedders and vLLM's multimodal processor) composed
@@ -1182,6 +1202,7 @@ templates:
         # drafter on the plugin's speculative contract; vLLM schedules the drafts (speculative_config below)
         # and plain decode is the fallback (rows above the cap, a declined step, or an unsupported request).
         GEMMA4_SPEC_K_BY_ROWS: "5:5,8:3"  # drafts per step by live decode rows (max_rows:K), measured 2026-10-29 on the QB2 block: the K=5 record is 1.8x the plain step and the drafter commits 2.2-3.3 tokens a step, so the policy serves plain unless the text accepts (+0..+8 % at 1-5 rows, +3..+8 % at 6-8 rows); a K=1 record at 16 rows cannot pay, so above 8 rows the step is the plain decode
+        GEMMA4_SPEC_SAMPLED_VERIFY: "1"  # the records draw the sampled rows' verify ids on the device sampler (tt-metal#64301 + vllm-tt-plugin#278): a request with a temperature above zero is speculated like a greedy one. Measured 2026-11-04 on the QB2 block, knob off -> on, fixed seeds: random 128/1K sampled c1 48.0 -> 79.6 / 65.0 tok/s/u (two seeds), prose sampled c1 48.5 -> 55.3, prose c8 335 -> 334 aggregate, greedy unchanged per prompt; GPQA diamond ci-nightly subset 27/40 -> 27/40 (40/40 same per question, 31/40 byte-identical), 0 engine errors
         GEMMA4_SPEC_MAX_ISL: "16384"  # the verify-width ladder ends at the 16K rung: a decode position above it has no captured width and runs the plain step. Measured 2026-11-03 on the QB2 block (greedy c1, 128 out, fixed records vs plain steps): the record step is ~2x the plain step at 4K but 3.1-3.9x at 32K and 4.1-5.6x at 128K while acceptance stays 2.3-3.5 tokens per step, so records win through 16K and lose from 32K up on every QB2 entry (32K / 128K: 12B -36 / -52 %, 26B -12 / -36 %, 31B -42 / -47 %). The release proofs that kept records there (41376385063, 41350202054) landed below the plain baseline (the v0.25 comparison: 12B 32K / 64K / 128K -27 / -28 / -44 %); with the cap the 12B rows measure +4.6 / +3.8 / +6.5 % over v0.25 on the box tree. The release benchmark child passes acceptance with the cap on all three entries.
         GEMMA4_PACKED_KV_WRITE_OP: "1"  # loop-free packed-verify KV write (custom op, bit-identical to the per-position loop)
         GEMMA4_SPEC_SHARDED_VERIFY_ARGMAX: "1"  # verify ids from the lm_head TP shards: no 16 MiB vocab all-gather per speculative round
@@ -1191,10 +1212,14 @@ templates:
         GEMMA4_SPEC_MAX_ROWS: "8"  # above 8 live rows the model proposes nothing and the step is the plain decode (no retry overhead)
         # P150x4 (1,4) mesh: the custom p300_x2 descriptor corrupted decode logits.
         MESH_DEVICE: "P150x4"
-        GEMMA4_CCL_TOPOLOGY: "linear"
+        GEMMA4_CCL_TOPOLOGY: "ring"  # ring over the loop-wired four chips with 2 links: prose c8 +13 %, c16 +10 %, greedy c1 +31 % vs linear with the same seeds on a Galaxy QB2 block (2026-11-06); GPQA subset 28/40 with the three knobs below (tt-inference-server#5538)
+        GEMMA4_CCL_NUM_LINKS: "2"  # see GEMMA4_CCL_TOPOLOGY
+        GEMMA4_PRECISION_LM_HEAD: "bfp8"  # lm_head weights in bfloat8_b: +2..3 % decode on the same block (2026-11-05), coherence and the GPQA subset unchanged
+        GEMMA4_DECODE_WARMUP_BATCHES: "1,4,8,16,32"  # resident decode traces per batch bucket (adds the 4- and 16-row buckets): prose c8 +4.6 % on the same block (2026-11-05)
         GEMMA4_PAGE_BLOCK_SIZE: "64"
-        # KV pool: 6 users at 256K. The single global KV head is replicated on every chip (8.7 KB per pool
-        # token per chip: 8 global layers x 512 x K,V x bfloat8_b), 23.3 GB of the 27.3 GB free after weights.
+        # KV pool: 2,410,432 global-layer tokens (9 users at 256K) plus max_num_seqs x (block + 8 x sliding window).
+        # The single global KV head is replicated on every chip (8.7 KB per pool token per chip: 8 global layers x
+        # 512 x K,V x bfloat8_b), 23.3 GB of the 27.3 GB free after weights.
         GEMMA4_MAX_TOKENS_ALL_USERS: "2410432"
         GEMMA4_KV_BFP8: "1"
         GEMMA4_VLLM_SINGLE_CHUNK: "0"
@@ -1211,7 +1236,8 @@ templates:
         l1_small_size: 24576  # all_gather semaphores into L1_SMALL; without it QB2 31B wedges at conc=32 (metal demo parity)
         sample_on_device_mode: decode_only
       vllm_args:
-        prefix_cache_retention_interval: 1024  # vLLM 0.30 default 0 hashes only the sliding groups' junction tails: a shorter prefix misses on its first visit; 1024 = first-visit hits (measured 2026-10-30: no decode cost, 128K hit 0.94 s TTFT)
+        max_num_seqs: 32  # scheduler cap above max users (8): AgentX sessions fan out to 10-13 requests in flight, and the plugin sizes the KV pool as GEMMA4_MAX_TOKENS_ALL_USERS + max_num_seqs x (block + 8 x sliding window), the pool the max-users runs measured
+        prefix_cache_retention_interval: 4096  # a sliding-window prefix checkpoint every 4096 tokens: at 1024 (<= the 1024 window) every cached prefix keeps all its sliding-window blocks; at 4096 a quarter of them (MiMo-V2.6-Flash: 1.26M -> 2.7M prefix tokens per engine); prompt ends and shared-prefix junctions stay exact
         # Default to the device sampler's top-k limit. Requests can override this value.
         override_generation_config: '{"top_k": 32}'
         async_scheduling: true  # the MTP contract class declares supports_async_decode / supports_async_spec_decode; the measured tables above were taken with asynchronous scheduling on both sides
@@ -1249,13 +1275,21 @@ templates:
     # chunks — gated/traced prefill wedges 12B under mixed prefill+decode
     # concurrency (G7, cross-platform); same known wave-boundary issue applies.
     - device: BLACKHOLE_GALAXY
-      # Whole-box concurrency: 32 users x 4 DP engines. max_num_seqs below
-      # pins the per-engine ceiling (default inference would give 128/engine).
-      max_concurrency: 128
+      # Whole-box concurrency: 8 users x 8 engines of 4 chips, the AgentX peak (2026-11-18: 64 users 132,949 tok/s,
+      # prefix hit 89.9 %; 128 users 55,410 tok/s, hit 31.5 %: the 1.63M-token pool per engine thrashes).
+      # max_num_seqs below pins the per-engine ceiling.
+      max_concurrency: 64
       max_context: 262144  # 256 * 1024 per engine (same budget as P150X8)
       default_impl: true
       tensor_cache_timeout: 5400.0  # cold TT-cache conversion of the weights; the readiness backstop adds 30 min
+      submesh_engines: true  # eight vLLM engines, one per (1, 4) half row (standard DP discovery at data_parallel_size 8), behind the prefix-aware engine_proxy: the global KV head sits on 4 chips per copy instead of 8 and twice the engines prefill and decode; per-engine settings from the 12B P300X2 entry (4-chip blocks)
       env_vars:
+        GEMMA4_PREFILL_SDPA_SPLITK: "1"  # split-K global prefill SDPA (tt-metal #64930), taken from a 16K prefix where it pays on the chip; 16K continuation after a 64K prefix: 3141 -> 1918 ms per (1,8) row (measured on the previous (1,8) engine layout)
+        GEMMA4_PREFILL_SDPA_NARROW: "wide"  # the sliding layers prefill SDPA (narrow chips) on the whole grid at q = k = 128 (2K prose gate neutral on the 12B): QB2 block prefill 4K..32K -7..-12 %, Galaxy row -1..-5 %
+        TT_PROXY_SLACK: "8"  # engine_proxy: route to the engine holding the prompt prefix unless it has more than 8 requests in flight above the least-loaded one; a spill re-prefills the whole context on an engine without it (AgentX 64 at slack 4: 84 spills, ~2 points of prefix hit)
+        TT_PROXY_INDEX_CHUNKS: "2097152"  # engine_proxy prefix index, 256-character chunk hashes (LRU): 8x the default 262144; at the default the index filled at AgentX 64 and forgot idle sessions, which went to the least-loaded engine and re-prefilled their whole context
+        GEMMA4_SDPA_GROUP_SPLIT: "1"  # decode SDPA of the global layers split over the chips holding the KV head (12B: 4, 26B: 2; tt-metal #64930), merged by log-sum-exp: traced plain step at 86K context, 12B 8 / 16 rows 36.2 -> 26.5 / 52.4 -> 31.4 ms, 26B 35.3 -> 30.8 / 46.6 -> 38.1 ms; 64-position HF gate top-1 12B 52 -> 54 / 64, 26B 48 -> 48 / 64
+        GEMMA4_PRECISION_LM_HEAD: "bfp8"  # the lm_head in bfloat8_b, as the 12B P300X2 entry
         GEMMA4_SDPA_MAX_CORES_PER_HEAD: "32"  # stock decode SDPA core cap per (row, head): measured 2026-10-30/31 on the Galaxy finals vs the default 16: 12B 256K 36.0 vs 31.3 tok/s, 128K 39.0 vs 36.4; 31B 256K 20.9 vs 19.0, 128K 22.5 vs 21.3; short-context and multi-row points unchanged (the c128 spread was the host, present at cap 16 too)
         GEMMA4_PREFILL_PAD_BUCKETS: "256,512,1024"  # Gemma 4 prefill padding: 129-256-token prompts pad to 256 and 257-512 to 512 instead of 1024 (tt_transformers default). A chat-templated 128-token benchmark prompt is ~144 tokens; measured 2026-10-31 on the Galaxy DP=4 entry vs the knob off (same tree): 128/128 c1 TTFT 137 -> 87 ms, c8 214 -> 173 ms, c128 2.82 -> 1.60 s with 38.2 -> 42.6 tok/s/user; 128K/256K TTFT and decode unchanged.
         # Text + image + video + audio: the unified multimodal serving class for the checkpoint's architecture
@@ -1265,22 +1299,25 @@ templates:
         # MTP speculative decoding by default (tt-metal models/demos/gemma4): the it-assistant KV-shared
         # drafter on the plugin's speculative contract; vLLM schedules the drafts (speculative_config below)
         # and plain decode is the fallback (rows above the cap, a declined step, or an unsupported request).
-        GEMMA4_SPEC_K_BY_ROWS: "5:5,8:3"  # drafts per step by live decode rows PER ENGINE (max_rows:K), measured 2026-10-29 on the full Galaxy (DP4): K=5 up to 5 rows (conc 4-20: +9..+25 % over the quiet plain entry), K=3 at 6-8 rows (conc 32: +11..+25 %); a K=1 record at 16 rows cannot pay, so above 8 rows per engine (conc > 32) the step is the plain decode
+        GEMMA4_SPEC_K_BY_ROWS: "5:5,8:3"  # as the 12B P300X2 entry (4-chip engines)
+        GEMMA4_SPEC_MAX_ISL: "16384"  # as the 12B P300X2 entry: on 4 chips the records lose from the 32K rung up
+        GEMMA4_PACKED_KV_WRITE_OP: "1"
+        GEMMA4_SPEC_SHARDED_VERIFY_ARGMAX: "1"
+        GEMMA4_SPEC_LEAN_SEED: "1"
+        GEMMA4_SPEC_ONE_UPLOAD: "1"
+        GEMMA4_CCL_ONESHOT: "0"  # off (tt-metal #64930 default on every mesh): the one-shot all-reduce writes into a per-call scratch on the peer chips with no receiver-ready handshake, so a lagging chip's live L1 can be overwritten
+        GEMMA4_SPEC_SAMPLED_VERIFY: "1"  # the records draw the sampled rows' verify ids on the device sampler (tt-metal#64301 + vllm-tt-plugin#278): a request with a temperature above zero is speculated like a greedy one. Measured 2026-11-05 on this entry (DP4 of (1,8) engines), knob off -> on, fixed seeds: random 128/1K sampled c1 60.5 -> 89.4 tok/s/u, prose sampled c1 60.6 -> 58.7, prose c16 873 -> 877 aggregate, prose c32 1562 -> 1544, greedy within the seed spread; GPQA diamond ci-nightly subset 35/40 -> 33/40 (36/40 same per question), 0 engine errors, 0 refusals
         GEMMA4_SPEC_EXTRA_SHAPES: "1:3,5:3"  # (1,3) and (5,3) records beside the table's, as measured on the QB2 block (the (1,3) at 1.56x the plain step is the record chosen most at one row); the trace budget is on trace_region_size below
         GEMMA4_SPEC_MAX_ROWS: "8"  # per engine: above 8 live rows the model proposes nothing and the step is the plain decode
-        GEMMA4_DECODE_WARMUP_BATCHES: "1,4,8,32"  # as on the 31B Galaxy entry (see its comment on seeding)
+        GEMMA4_DECODE_WARMUP_BATCHES: "1,4,8,16,32"  # as the 12B P300X2 entry
         GEMMA4_ROPE_PERUSER_B1: "1"
         # GEMMA4_SDPA_MAX_CORES_PER_HEAD above is the cap of 32, not the old =3 reproducibility pin
         # (dropped 2026-10-30 with the 31B entry, see its comment).
         GEMMA4_CCL_TOPOLOGY: "linear"
         GEMMA4_PAGE_BLOCK_SIZE: "64"
-        # 10 x 256K users per engine (40 per Galaxy; per user 2x the 31B pool: 8 full layers x 8 KV heads
-        # vs 10 x 16); bfloat8_b KV halves pool bytes. The ceiling is DRAM: the four decode graphs
-        # (1,4,8,32), the assistant drafter weights and the 1.2 GB trace region need ~1 GB per chip, which
-        # an 11-user pool (2883584) left no room for (shield 12B Galaxy boot OOM at 98 % DRAM), and a
-        # 3047424 pool failed the 131072-prompt benchmark points with Out of Memory on a 60 MB buffer
-        # (banks at 4.19 of 4.21 GB).
-        GEMMA4_MAX_TOKENS_ALL_USERS: "2621440"
+        # KV pool per 4-chip engine as the 12B P300X2 entry: 2,410,432 global-layer tokens (9 users at 256K per
+        # engine, 73 per Galaxy); bfloat8_b KV halves pool bytes.
+        GEMMA4_MAX_TOKENS_ALL_USERS: "2410432"  # per 4-chip engine, as the 12B P300X2 entry
         GEMMA4_KV_BFP8: "1"
         GEMMA4_VLLM_SINGLE_CHUNK: "0"
         # Prefix caching needs vLLM-managed sliding KV (hybrid kv-cache groups), so the
@@ -1292,16 +1329,16 @@ templates:
         GEMMA4_CHUNKED_PREFILL_TRACE: "0"
       override_tt_config:
         fabric_config: FABRIC_1D
-        trace_region_size: 1200000000  # ~320 MB plain decode traces (four warmup batches; measured on the Galaxy: 16 records filled 768 MB) + 20 speculative records at the 5 default rungs (no GEMMA4_SPEC_WIDTH_RUNGS here) x ~27 MB (12B TP8 measured) = ~860 MB per engine of the 1.2 GB region; the boot log's "[spec-serving] plan: ... of trace region" line is the check
+        trace_region_size: 1000000000  # as the 12B P300X2 entry (4-chip engines)
         l1_small_size: 24576  # all_gather semaphores into L1_SMALL (metal demo parity)
         # On-device decode sampling required on TP so token ids >= 65536 are
         # reachable (host sampling only sees device 0's vocab shard).
         sample_on_device_mode: decode_only
       vllm_args:
-        prefix_cache_retention_interval: 1024  # vLLM 0.30 default 0 hashes only the sliding groups' junction tails: a shorter prefix misses on its first visit; 1024 = first-visit hits (measured 2026-10-30: no decode cost, 128K hit 0.94 s TTFT)
+        prefix_cache_retention_interval: 4096  # a sliding-window prefix checkpoint every 4096 tokens: at 1024 (<= the 1024 window) the mask is dense and every cached prefix keeps all its sliding-window blocks (40 of 48 layers); at 4096 a quarter of them, ~2-2.6x the prefixes a 4-chip engine holds (MiMo-V2.6-Flash measured 1.26M -> 2.7M tokens per engine); prompt ends and shared-prefix junctions stay exact
         # Default to the device sampler's top-k limit. Requests can override this value.
         override_generation_config: '{"top_k": 32}'
-        data_parallel_size: 4
+        data_parallel_size: 8
         max_num_seqs: 32  # per-engine; max_concurrency above is whole-box
         async_scheduling: true  # the MTP contract class declares supports_async_decode / supports_async_spec_decode; the measured tables above were taken with asynchronous scheduling on both sides
         # "model_owned_drafter" is the plugin's sentinel: the model proposes and verifies on device.
@@ -3009,11 +3046,16 @@ templates:
     # max_num_seqs=1 + TT_LEAN_DECODE_WARMUP + 300MB. Serving max_concurrency=32
     # needs a larger trace region even with lean warmup.
     - device: P300X2
-      max_concurrency: 32
-      max_context: 262144  # the model's max_position_embeddings; the pool below holds 5 users at 256K
+      # A 26B Galaxy engine is this 4-chip mesh (the (1,4) line viewed as the (4,1) column mesh, one routed-expert
+      # copy) with the same KV pool; AgentX peaks there at 8 users per engine (2026-11-18: 64 users on 8 engines
+      # 109,774 tok/s, 96 users 80,056, 128 users 55,017). On a QB2 block (max_num_seqs 32): 8 users 17,191 tok/s,
+      # 12 users 16,531 at a lower 17.4 tok/s per user.
+      max_concurrency: 8
+      max_context: 262144  # the model's max_position_embeddings; the pool below holds 11 users at 256K
       default_impl: true  # the QB2 default (release scope); the single-user gemma4_26b_a4b_qb2 profile stays selectable with --impl gemma4-26b-a4b-qb2
       tensor_cache_timeout: 7200.0  # cold TT-cache conversion of the weights takes ~95 min on the QB2 runner; the readiness backstop adds 30 min
       env_vars:
+        GEMMA4_PREFILL_SDPA_SPLITK: "1"  # split-K global prefill SDPA (tt-metal #64930), taken from a 16K prefix where it pays on the chip; 16K continuation after a 64K prefix: 7762 -> 7333 ms on a 1x4 block
         GEMMA4_PACKED_KV_WRITE_OP: "1"  # the speculative records write their K/V rows through the model-local paged_update_rows op (one program per layer instead of the per-position loop); measured 2026-10-31 on this block vs the loop: prose c1 63.9 vs 56.4 tok/s (+13 %), every other point at parity, coherent at 256K/128K/short, record unit tests greedy-identical
         # Text + image + video: the multimodal serving class for the checkpoint's architecture (same text
         # path; adds the on-device vision tower and vLLM's multimodal processor) composed with the MTP
@@ -3024,6 +3066,7 @@ templates:
         # and plain decode is the fallback (rows above the cap, a declined step, or an unsupported request).
         GEMMA4_PREFILL_PAD_BUCKETS: "256,512,1024"  # Gemma 4 prefill padding: 129-256-token prompts pad to 256 and 257-512 to 512 instead of 1024 (tt_transformers default). A chat-templated 128-token benchmark prompt is ~144 tokens; measured 2026-10-31 on the 4-chip block with the plain class (same prefill path) vs the knob off: c1 TTFT 189 -> 107 ms, c8 1.21 -> 0.77 s, c16 2.47 -> 1.53 s; 128K/256K TTFT and decode unchanged.
         GEMMA4_SPEC_K_BY_ROWS: "5:3,8:3"  # K=3 records in every band on this entry (fixed policy below): the (1,3) record at ~2x the plain step breaks even at 2 accepted tokens per step, so low-acceptance prompts stay above plain (box release benchmark 2026-11-04, greedy single user vs the v0.26 single-user profile: 128/128 62.7 vs 53.5, 1K 58.6, 2K 55.2, 4K 60.6, 8K/128 60.1, 16K 53.6, 128/1K 69.5, 10K/1K 64.1 tok/s; the K=5 records measured 58.0 / 63.7 / 57.4 / 60.2 / 41.1 / 50.4 / 77.3 / 82.9: higher peaks but a -20 % row where acceptance fell to 2.05). The 2026-10-29 K=5-to-5-rows table stays on the 12B / 31B entries.
+        GEMMA4_SPEC_SAMPLED_VERIFY: "1"  # the records draw the sampled rows' verify ids on the device sampler (tt-metal#64301 + vllm-tt-plugin#278): a request with a temperature above zero is speculated like a greedy one. Measured 2026-11-05 on the QB2 block, knob off -> on, fixed seeds (the entry before this file's K=3 fixed records): random 128/1K sampled c1 49.2 -> 63.4 tok/s/u, prose sampled c1 49.1 -> 59.3, prose sampled c8 238.0 -> 262.0 aggregate, greedy unchanged (55.5/58.9 -> 52.0/58.3); GPQA diamond ci-nightly subset 36/40 -> 35/40 (37/40 same per question), 0 engine errors
         GEMMA4_SPEC_DRAFT_LEN: "3"  # the records are captured at 3 drafts (the table above never asks for more)
         GEMMA4_SPEC_MAX_ISL: "16384"  # the verify-width ladder ends at the 16K rung: a decode position above it has no captured width and runs the plain step. Measured 2026-11-03 on the QB2 block (greedy c1, 128 out, fixed records vs plain steps): the record step is ~2x the plain step at 4K but 3.1-3.9x at 32K and 4.1-5.6x at 128K while acceptance stays 2.3-3.5 tokens per step, so records win through 16K and lose from 32K up on every QB2 entry (32K / 128K: 12B -36 / -52 %, 26B -12 / -36 %, 31B -42 / -47 %). The release proofs that kept records there (41376385063, 41350202054) landed below the plain baseline (the v0.25 comparison: 12B 32K / 64K / 128K -27 / -28 / -44 %); with the cap the 12B rows measure +4.6 / +3.8 / +6.5 % over v0.25 on the box tree. The release benchmark child passes acceptance with the cap on all three entries.
         GEMMA4_SPEC_ADAPTIVE: "0"  # fixed records through the 16K rung on this entry: the adaptive policy parks the single-user rows plain in some runs (box release benchmark 2026-11-04: 128/128 48.9 tok/s vs the v0.26 single-user profile's 53.5, 1K-16K 45-46 vs 51-52) while the fixed K=3 records above measure +5..+32 % on those rows. The fixed first step after prefill costs 10-18 ms TTFT, inside this entry's 40-74 % TTFT headroom over v0.26; not applied to the 12B / 31B entries, where it would cost +24 % TTFT at 128/128 vs v0.25.
@@ -3034,10 +3077,14 @@ templates:
         GEMMA4_SPEC_WIDTH_RUNGS: "5"  # the full verify-width ladder (2K..256K): a record measured 17-23 MB of trace beside 133 MB of MoE decode traces, so 4 shapes x 5 rungs (~510 MB in use) fit the 1.5 GB region (measured 2026-10-29)
         MESH_DEVICE: "P150x4"
         GEMMA4_CCL_TOPOLOGY: "linear"
+        GEMMA4_PRECISION_LM_HEAD: "bfp8"  # lm_head weights in bfloat8_b: greedy 128/1K c1 56.0 -> 75 tok/s (two arms vs three), sampled c1 +7 %, same seeds on a Galaxy QB2 block (2026-11-06); coherence and the GPQA subset unchanged (tt-inference-server#5538)
+        GEMMA4_DECODE_WARMUP_BATCHES: "1,4,8,16,32"  # resident decode traces per batch bucket (adds the 4- and 16-row buckets): prose c16 434 -> 503 tok/s aggregate (+16 %) on the same block; c8 inside the base arms' spread
         GEMMA4_PAGE_BLOCK_SIZE: "64"
-        # KV pool: 5 users at 256K (the Galaxy recipe at the 4-chip KV share: 5 global layers x 2 local KV
-        # heads, bfloat8_b KV ~8.6 GB of the ~17.8 GB free per chip after weights).
-        GEMMA4_MAX_TOKENS_ALL_USERS: "1572864"
+        # KV pool: 11 users at 256K, as each engine of the 26B Galaxy entry. With one routed-expert copy per chip
+        # (tt-metal #64930: the dispatch prefill reads the decode stack) the weights take ~10 GB of a chip instead of
+        # ~16 GB; bfloat8_b KV is ~5.4 KB per token per chip over the five hybrid group tensors, so 2883584 tokens
+        # (+ the output and sliding reservations) take ~17 GB and leave ~4 GB beside the trace region.
+        GEMMA4_MAX_TOKENS_ALL_USERS: "2883584"
         GEMMA4_KV_BFP8: "1"
         # vLLM prefix caching as on the 31B / 12B entries: the plugin gates it on the model class
         # capability (GEMMA4_PREFIX_CACHING), which the class refuses under bounded sliding rings, so
@@ -3051,13 +3098,14 @@ templates:
         GEMMA4_CHUNKED_PREFILL_TRACE: "0"
       override_tt_config:
         fabric_config: FABRIC_1D
-        trace_region_size: 1500000000  # ~133 MB of B=1 + B=32 lean MoE decode traces + 20 speculative records (4 shapes x 5 rungs, GEMMA4_SPEC_WIDTH_RUNGS) x 17-23 MB = ~510 MB in use (the measurement on GEMMA4_SPEC_WIDTH_RUNGS above); ~9 GB DRAM spare per chip after the KV pool; the boot log's "[spec-serving] plan: ... of trace region" line is the check
+        trace_region_size: 1500000000  # ~133 MB of B=1 + B=32 lean MoE decode traces + 20 speculative records (4 shapes x 5 rungs, GEMMA4_SPEC_WIDTH_RUNGS) x 17-23 MB = ~510 MB in use (the measurement on GEMMA4_SPEC_WIDTH_RUNGS above); ~4 GB DRAM spare per chip after the KV pool; the boot log's "[spec-serving] plan: ... of trace region" line is the check
         sample_on_device_mode: decode_only
         # Collective semaphores go to this region instead of worker L1 (see the BLACKHOLE_GALAXY entry).
         l1_small_size: 65536
         decode_interleave_prefill_steps: 1  # one decode-only step after every prefill step (see the Galaxy entry)
       vllm_args:
-        prefix_cache_retention_interval: 1024  # vLLM 0.30 default 0 hashes only the sliding groups' junction tails: a shorter prefix misses on its first visit; 1024 = first-visit hits (measured 2026-10-30: no decode cost, 128K hit 0.94 s TTFT)
+        max_num_seqs: 32  # scheduler cap above max users (8): AgentX sessions fan out to 10-13 requests in flight, and the plugin sizes the KV pool as GEMMA4_MAX_TOKENS_ALL_USERS + max_num_seqs x (block + 8 x sliding window), the pool the max-users runs measured
+        prefix_cache_retention_interval: 4096  # a sliding-window prefix checkpoint every 4096 tokens: at 1024 (<= the 1024 window) every cached prefix keeps all its sliding-window blocks; at 4096 a quarter of them (MiMo-V2.6-Flash: 1.26M -> 2.7M prefix tokens per engine); prompt ends and shared-prefix junctions stay exact
         # 128-token blocks: prefix-cache hits land on the SDPA chunk alignment, so a continuation never
         # re-prefills a shared cached block or reaches past the sliding window the allocator keeps.
         block_size: 128
@@ -3076,138 +3124,85 @@ templates:
         enable_prompt_tokens_details: true  # usage.prompt_tokens_details.cached_tokens (prefix-cache visibility)
         limit-mm-per-prompt: '{"image": 8, "video": 1}'  # MMMU-Pro items carry up to 7 images
         mm-processor-cache-gb: 0
-    # BH Galaxy (32x P150), one 32-chip engine for the MoE 26B-A4B: the plugin folds
-    # data_parallel_size=4 into four in-process lanes (one per mesh column, 32 slots
-    # each; the model's folds_dp_into_lanes capability, vllm-tt-plugin#217), the dense
-    # weights are 2-D fractured with TP=8 on the long axis and the experts run
-    # expert-parallel over the columns (tt-metal#60857). MoE is rejected under standard
-    # multi-process DP, so the lane fold is what makes a Galaxy entry possible for this
-    # model. Multimodal (text + image + video).
+    # BH Galaxy: eight engines of 4 chips (the 26B P300X2 entry's 4-chip serving, one engine per (1, 4) half row)
+    # behind the prefix-aware engine_proxy. Each engine is its own single-DP vLLM server, as on a QB2, so the
+    # lane fold of the previous one-instance entry (MoE is rejected under multi-process DP in one server) is not needed.
     - device: BLACKHOLE_GALAXY
-      max_concurrency: 128  # 32 slots x 4 lanes
+      max_concurrency: 64  # whole box: 8 users x 8 engines, the AgentX peak (2026-11-18: 64 users 109,774 tok/s; 96 users 80,056; 128 users 55,017, the KV pool thrashes)
       max_context: 262144  # the model's max_position_embeddings
       default_impl: true
-      tensor_cache_timeout: 5400.0  # cold TT-cache conversion of the weights; the readiness backstop adds 30 min
+      tensor_cache_timeout: 7200.0  # cold TT-cache conversion of the 4-chip weights; the readiness backstop adds 30 min
+      submesh_engines: true  # eight vLLM engines, one per (1, 4) half row (standard DP discovery at data_parallel_size 8), behind the prefix-aware engine_proxy, each with the 26B P300X2 entry's 4-chip settings: every engine prefills and decodes on its own (the fracture entry ran one 32-chip instance, one prefill at a time)
       env_vars:
-        GEMMA4_GALAXY_FRACTURE: "1"  # one instance over the (8,4) mesh: 2-D fractured dense weights, TP=8 on axis 0
-        # Cross-chunk sliding-tail pool: one boot-allocated slot per in-flight chunked prefill (25 MB per
-        # chip each). The 8-slot default spilled tails into runtime clones under a 128-user ramp, which the
-        # decode-trace replays overwrite.
-        GEMMA4_TAIL_POOL_SLOTS: "64"
-        GEMMA4_GALAXY_LANES: "1"  # lane-sharded batch over the four columns (folds the DP ranks into lanes)
-        GEMMA4_MOE_DISPATCH_PREFILL: "1"  # token-dispatch routed experts for prefill (4K TTFT 3 s -> 0.7 s); the cache marker carries the flag
-        GEMMA4_MOE_DECODE_KERNEL: "1"  # decode-frame experts on the decode MoE kernel (ring fabric; decode step 104 -> 46 ms); loads the checkpoint at every boot
-        # Lane-group prefill router: fresh prompts of one scheduler step are prefilled as one
-        # lane group instead of per user (32 users at 4K ISL: TTFT 20.6 s -> 10.2 s and 92 -> 158
-        # tok/s aggregate; batch 1 and cached continuations unchanged).
-        GEMMA4_LANE_PREFILL_ROUTER: "1"
-        # k prompts per lane per gathered step, prefilled as one lane-batched walk (model-side router).
-        GEMMA4_LANE_PREFILL_PROMPTS: "8"
-        GEMMA4_LANE_PREFILL_CAPABILITY: "0"  # declare no lane-group capability: the plugin admits whatever waits within max_num_batched_tokens
-        # The validated lane-engine performance set (local windows 2026-10-24/25: 128/128 c1 TTFT 104 ms / 37 tok/s/user, c32
-        # 529 ms / 36, c128 1617 ms / 2894 tok/s aggregate): traced lane prefill frames (1/8/16/32 x 128, lm_head inside the
-        # trace) and the fused lane decode step. The engine's own defaults keep every one of these off on the (8,4) mesh, so
-        # without them the entry serves at 413 ms / 22 tok/s/user (shield release run 40196840603).
-        GEMMA4_LANE_PREFILL_TRACE: "1"
-        GEMMA4_LANE_PREFILL_TRACE_BUCKETS: "1x128,1x256,4x256,8x128,16x128,32x128,1x1024,4x1024"  # lane prefill frames by rows x padded tokens. The 256 frames serve the 129-256-token prompts that the padding policy below rounds to 256 (a chat-templated 128-token benchmark prompt is ~144 tokens): measured 2026-10-31 on the lane engine vs the 1024-only frames: 128/128 c1 TTFT 321 -> 145 ms, c8 1.14 -> 0.51 s, c128 10.0 -> 2.7 s with 23.1 -> 28.5 tok/s/user, 4 req/s 843 -> 242 ms; 128K/256K and decode unchanged. The 1024 frames keep the 513-1024-token prompts traced (serial eager prefill otherwise).
-        GEMMA4_PREFILL_PAD_BUCKETS: "256,512,1024"  # Gemma 4 prefill padding: 129-256-token prompts pad to 256 and 257-512 to 512 instead of 1024 (tt_transformers default); the lane frames above cover the 256 bucket, 512 pads to 1024 and takes the 1024 frame
-        GEMMA4_LANE_LMHEAD_IN_TRACE: "1"
-        GEMMA4_QKV_NORM_ROPE_FUSED: "1"
-        GEMMA4_NORM_FUSED: "1"
-        GEMMA4_MLP_GEGLU_FUSED: "1"
-        GEMMA4_CONCAT_HEADS_FUSED: "1"
-        GEMMA4_QKV_L1_OUT: "1"
-        GEMMA4_SOFTCAP_FUSED: "1"
-        GEMMA4_ROPE_DECODE_CUSTOM_OP: "1"
-        GEMMA4_HEAD_NORM_4D: "1"
-        GEMMA4_ATTN_DECODE_1D: "1"
-        GEMMA4_ROUTER_DECODE_1D: "1"
-        GEMMA4_MLP_DECODE_1D: "1"
-        GEMMA4_MOE_FUSED: "1"
-        GEMMA4_MOE_DECODE_TILE_TAIL: "1"
-        GEMMA4_MOE_COMPUTE_CUSTOM_OP: "1"
-        GEMMA4_MOE_COMPUTE_SKIP_ZERO_SCORES: "1"
-        # Eager batch-1 prefill at every per-user chunk shape at boot, BEFORE the decode-trace capture: a shape first seen
-        # mid-session (the 1808-token remainder of a 10000-token prompt -> 2048 on shield run 40196840603, a 1024-token
-        # prompt + template -> 2048 on the local replays) grows L1, the trace guard re-captures the decode trace, and the
-        # next MoE token-dispatch prefill op on the ring fabric hangs (tt-triage 2026-10-25 23:15). With the ladder the
-        # local replay passed that point (0 re-captures); ~40 s of boot.
-        GEMMA4_WARMUP_PREFILL_ISLS: "512,1024,2048,4096,8192,16384,32768"
+        GEMMA4_PREFILL_SDPA_SPLITK: "1"  # split-K global prefill SDPA (tt-metal #64930), taken from a 16K prefix where it pays on the chip; 16K continuation after a 64K prefix: 7762 -> 7333 ms on a 1x4 block
+        TT_PROXY_SLACK: "8"  # engine_proxy: route to the engine holding the prompt prefix unless it has more than 8 requests in flight above the least-loaded one; a spill re-prefills the whole context on an engine without it (AgentX 64 at slack 4: 84 spills, ~2 points of prefix hit)
+        TT_PROXY_INDEX_CHUNKS: "2097152"  # engine_proxy prefix index, 256-character chunk hashes (LRU): 8x the default 262144; at the default the index filled at AgentX 64 and forgot idle sessions, which went to the least-loaded engine and re-prefilled their whole context
+        GEMMA4_SDPA_GROUP_SPLIT: "1"  # decode SDPA of the global layers split over the chips holding the KV head (12B: 4, 26B: 2; tt-metal #64930), merged by log-sum-exp: traced plain step at 86K context, 12B 8 / 16 rows 36.2 -> 26.5 / 52.4 -> 31.4 ms, 26B 35.3 -> 30.8 / 46.6 -> 38.1 ms; 64-position HF gate top-1 12B 52 -> 54 / 64, 26B 48 -> 48 / 64
+        GEMMA4_CCL_ONESHOT: "0"  # off (tt-metal #64930 default on every mesh; the 26B (4,1) build never takes it): no receiver-ready handshake on the per-call scratch
+        GEMMA4_PACKED_KV_WRITE_OP: "1"  # the speculative records write their K/V rows through the model-local paged_update_rows op (one program per layer instead of the per-position loop); measured 2026-10-31 on this block vs the loop: prose c1 63.9 vs 56.4 tok/s (+13 %), every other point at parity, coherent at 256K/128K/short, record unit tests greedy-identical
         # Text + image + video: the multimodal serving class for the checkpoint's architecture (same text
         # path; adds the on-device vision tower and vLLM's multimodal processor) composed with the MTP
-        # speculative contract class, on the lane engine: the plugin's lane speculation (vllm-tt-plugin#255:
-        # the slot batch widened to [lanes x per_lane, 1+K], padding rows between the live slots) and the
-        # model's lane verify path (tt-metal: one captured record per mesh column over its lane's rows).
+        # speculative contract class.
         TT_MODEL_CLASS_OVERRIDES: "Gemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4MTPContractVisionForConditionalGeneration"
-        # MTP speculative decoding (the it-assistant KV-shared drafter on the plugin's speculative contract;
-        # vLLM schedules the drafts, speculative_config below; plain lane decode is the fallback). On the lane
-        # engine the table is PER LANE (per mesh column): the step's record is the smallest covering the
-        # BUSIEST lane's drafting rows and one K serves every lane that step (one captured graph per
-        # column), so the busiest lane decides and a lighter lane takes its K; with the lone-row table
-        # below, any lane with more than one drafting row makes the step the plain lane decode. The
-        # plugin's draft cap is published flat at the folded max_num_seqs (128): the per-lane bands are
-        # applied by the model.
-        GEMMA4_SPEC_K_BY_ROWS: "1:5"  # per lane: K=5 for a lone drafting row on its lane, plain above; measured 2026-10-31 vs the plain lanes entry with the same frames: 128K +11 %, prose c1 +19 %, c1/c8/c128/rate/prose c16 at parity (the 5:5,8:3,16:1 table lost 22 % at c8: a (5,5) record serving 2 rows per lane under synchronous lane verifies, TTFT 6.5 s)
-        GEMMA4_SPEC_MAX_ROWS: "1"  # per lane: above one live row on a lane the step is the plain lane decode
-        # Records x rungs: with the lone-row table above, 1 shape x 5 rungs (2K..256K) + 1 seed trace = 5 records
-        # (~90 MB; the 26B QB2 measured 17-23 MB per record, the Galaxy column adds the lane gather/scatter
-        # collectives per layer) beside the lane decode trace and the eight lane prefill frames
-        # (GEMMA4_LANE_PREFILL_TRACE_BUCKETS) in the 1.2 GB region below. The boot log's "[spec-serving] plan:
-        # ... of trace region" ("plan: 5 records") and "[spec-serving] captured ... MB in use" lines are the
-        # check; a TT_FATAL at the capture names the fix (fewer rungs: 4 drops the 2K rung, 3 drops 8K too).
-        GEMMA4_SPEC_WIDTH_RUNGS: "5"  # the full verify-width ladder (2K..256K); the record budget is in the comment above
-        GEMMA4_CCL_TOPOLOGY: "linear"  # the galaxy column ring is unmeasured
+        # MTP speculative decoding by default (tt-metal models/demos/gemma4): the it-assistant KV-shared
+        # drafter on the plugin's speculative contract; vLLM schedules the drafts (speculative_config below)
+        # and plain decode is the fallback (rows above the cap, a declined step, or an unsupported request).
+        GEMMA4_PREFILL_PAD_BUCKETS: "256,512,1024"  # Gemma 4 prefill padding: 129-256-token prompts pad to 256 and 257-512 to 512 instead of 1024 (tt_transformers default). A chat-templated 128-token benchmark prompt is ~144 tokens; measured 2026-10-31 on the 4-chip block with the plain class (same prefill path) vs the knob off: c1 TTFT 189 -> 107 ms, c8 1.21 -> 0.77 s, c16 2.47 -> 1.53 s; 128K/256K TTFT and decode unchanged.
+        GEMMA4_SPEC_K_BY_ROWS: "5:3,8:3"  # K=3 records in every band on this entry (fixed policy below): the (1,3) record at ~2x the plain step breaks even at 2 accepted tokens per step, so low-acceptance prompts stay above plain (box release benchmark 2026-11-04, greedy single user vs the v0.26 single-user profile: 128/128 62.7 vs 53.5, 1K 58.6, 2K 55.2, 4K 60.6, 8K/128 60.1, 16K 53.6, 128/1K 69.5, 10K/1K 64.1 tok/s; the K=5 records measured 58.0 / 63.7 / 57.4 / 60.2 / 41.1 / 50.4 / 77.3 / 82.9: higher peaks but a -20 % row where acceptance fell to 2.05). The 2026-10-29 K=5-to-5-rows table stays on the 12B / 31B entries.
+        GEMMA4_SPEC_SAMPLED_VERIFY: "1"  # the records draw the sampled rows' verify ids on the device sampler (tt-metal#64301 + vllm-tt-plugin#278): a request with a temperature above zero is speculated like a greedy one. Measured 2026-11-05 on the QB2 block, knob off -> on, fixed seeds (the entry before this file's K=3 fixed records): random 128/1K sampled c1 49.2 -> 63.4 tok/s/u, prose sampled c1 49.1 -> 59.3, prose sampled c8 238.0 -> 262.0 aggregate, greedy unchanged (55.5/58.9 -> 52.0/58.3); GPQA diamond ci-nightly subset 36/40 -> 35/40 (37/40 same per question), 0 engine errors
+        GEMMA4_SPEC_DRAFT_LEN: "3"  # the records are captured at 3 drafts (the table above never asks for more)
+        GEMMA4_SPEC_MAX_ISL: "16384"  # the verify-width ladder ends at the 16K rung: a decode position above it has no captured width and runs the plain step. Measured 2026-11-03 on the QB2 block (greedy c1, 128 out, fixed records vs plain steps): the record step is ~2x the plain step at 4K but 3.1-3.9x at 32K and 4.1-5.6x at 128K while acceptance stays 2.3-3.5 tokens per step, so records win through 16K and lose from 32K up on every QB2 entry (32K / 128K: 12B -36 / -52 %, 26B -12 / -36 %, 31B -42 / -47 %). The release proofs that kept records there (41376385063, 41350202054) landed below the plain baseline (the v0.25 comparison: 12B 32K / 64K / 128K -27 / -28 / -44 %); with the cap the 12B rows measure +4.6 / +3.8 / +6.5 % over v0.25 on the box tree. The release benchmark child passes acceptance with the cap on all three entries.
+        GEMMA4_SPEC_ADAPTIVE: "0"  # fixed records through the 16K rung on this entry: the adaptive policy parks the single-user rows plain in some runs (box release benchmark 2026-11-04: 128/128 48.9 tok/s vs the v0.26 single-user profile's 53.5, 1K-16K 45-46 vs 51-52) while the fixed K=3 records above measure +5..+32 % on those rows. The fixed first step after prefill costs 10-18 ms TTFT, inside this entry's 40-74 % TTFT headroom over v0.26; not applied to the 12B / 31B entries, where it would cost +24 % TTFT at 128/128 vs v0.25.
+        GEMMA4_SPEC_SHARDED_VERIFY_ARGMAX: "1"  # verify ids from the lm_head TP shards: no 16 MiB vocab all-gather per speculative round
+        GEMMA4_SPEC_LEAN_SEED: "1"  # the reseed forward returns the hidden only (no lm_head / softcap / gather)
+        GEMMA4_SPEC_ONE_UPLOAD: "1"  # two staged uploads per round; measured 2026-11-01 on a 4-chip block vs the entry without the three: c1 55.1 vs 50.1 tok/s/u (+10 %), prose c1 +2 %, open-loop +1 %, 256K/128K/c8/prose c8 parity; coherence 256K/128K pass
+        GEMMA4_SPEC_MAX_ROWS: "8"  # above 8 live rows the model proposes nothing and the step is the plain decode
+        GEMMA4_SPEC_WIDTH_RUNGS: "5"  # the full verify-width ladder (2K..256K): a record measured 17-23 MB of trace beside 133 MB of MoE decode traces, so 4 shapes x 5 rungs (~510 MB in use) fit the 1.5 GB region (measured 2026-10-29)
+        GEMMA4_CCL_TOPOLOGY: "linear"
+        GEMMA4_PRECISION_LM_HEAD: "bfp8"  # lm_head weights in bfloat8_b: greedy 128/1K c1 56.0 -> 75 tok/s (two arms vs three), sampled c1 +7 %, same seeds on a Galaxy QB2 block (2026-11-06); coherence and the GPQA subset unchanged (tt-inference-server#5538)
+        GEMMA4_DECODE_WARMUP_BATCHES: "1,4,8,16,32"  # resident decode traces per batch bucket (adds the 4- and 16-row buckets): prose c16 434 -> 503 tok/s aggregate (+16 %) on the same block; c8 inside the base arms' spread
         GEMMA4_PAGE_BLOCK_SIZE: "64"
-        # KV pool PER LANE (the plugin applies it to every lane un-divided; vLLM's "Maximum concurrency"
-        # line is one lane's view): 12 users at 256K per lane = 48 box-wide (47 per lane = 188 at 64K).
-        # The two global KV heads are replicated one per chip over the TP8 column (~7.7 KB per token per
-        # chip); a larger pool OOMs vLLM's per-layer KV allocation (3.0 GB K buffer over 32 GB per chip).
-        GEMMA4_MAX_TOKENS_ALL_USERS: "3145728"
-        # Every layer allocates the pool unless the sliding layers live in vLLM-managed hybrid KV groups
-        # (window-sized caches); bfp8 KV halves the global layers' bytes, as on the 31B / 12B Galaxy entries.
-        GEMMA4_HYBRID_KV_CACHE_GROUPS: "1"
+        # KV pool: 11 users at 256K per engine. With one routed-expert copy per chip (tt-metal #64930: the dispatch
+        # prefill reads the decode stack) the weights take ~10 GB of a chip instead of ~16 GB; bfloat8_b KV is
+        # ~5.4 KB per token per chip over the five hybrid group tensors, so 2883584 tokens (+ the output and
+        # sliding reservations) take ~17 GB and leave ~4 GB beside the 1.5 GB trace region for prefill transients.
+        GEMMA4_MAX_TOKENS_ALL_USERS: "2883584"
         GEMMA4_KV_BFP8: "1"
-        GEMMA4_DECODE_WARMUP_BATCHES: "1,4,8,32"
-        GEMMA4_VLLM_SINGLE_CHUNK: "0"
-        GEMMA4_CHUNKED_PREFILL_TRACE: "0"
-        # Eager prefill on the lane engine: a captured prefill trace bakes one lane's row slice (the
-        # single-lane fast path) or, lane-agnostic, carries all four lanes' gathered rows and overflows
-        # the trace region; eager prefill keeps the per-request owner-lane fast path (1x the expert rows).
-        GEMMA4_DISABLE_PREFILL_TRACE: "1"
-        # vLLM prefix caching as on the other gemma-4 entries (plugin capability gate).
+        # vLLM prefix caching as on the 31B / 12B entries: the plugin gates it on the model class
+        # capability (GEMMA4_PREFIX_CACHING), which the class refuses under bounded sliding rings, so
+        # the sliding layers live in vLLM-managed hybrid KV groups.
+        GEMMA4_HYBRID_KV_CACHE_GROUPS: "1"
         GEMMA4_BOUNDED_SLIDING_KV_CACHE: "0"
         GEMMA4_PREFIX_CACHING: "1"
+        GEMMA4_VLLM_SINGLE_CHUNK: "0"
+        # Off by default: traced multi-chunk sp1 alone needs ~1.08GB on 26B.
+        # Enable with GEMMA4_CHUNKED_PREFILL_TRACE=1 once trace_region covers it.
+        GEMMA4_CHUNKED_PREFILL_TRACE: "0"
       override_tt_config:
-        fabric_config: FABRIC_1D_RING  # the ring fabric the decode MoE kernel needs; linear-topology collectives still run on it
-        trace_region_size: 1200000000
+        fabric_config: FABRIC_1D
+        trace_region_size: 1500000000  # ~133 MB of B=1 + B=32 lean MoE decode traces + 20 speculative records (4 shapes x 5 rungs, GEMMA4_SPEC_WIDTH_RUNGS) x 17-23 MB = ~510 MB in use (the measurement on GEMMA4_SPEC_WIDTH_RUNGS above); ~4 GB DRAM spare per chip after the KV pool; the boot log's "[spec-serving] plan: ... of trace region" line is the check
         sample_on_device_mode: decode_only
-        # Collective semaphores go to this region instead of worker L1: a collective first compiled
-        # after the decode-trace capture (a new prefill shape) would otherwise place them where the
-        # replay writes its L1 intermediates (wrong first token / hang on the next prefill).
+        # Collective semaphores go to this region instead of worker L1 (see the BLACKHOLE_GALAXY entry).
         l1_small_size: 65536
-        decode_interleave_prefill_steps: 1  # one decode-only step (~0.1 s) after every prefill step: with 3-9 s prefill steps the default 2:1 starved running users
+        decode_interleave_prefill_steps: 1  # one decode-only step after every prefill step (see the Galaxy entry)
       vllm_args:
-        prefix_cache_retention_interval: 1024  # vLLM 0.30 default 0 hashes only the sliding groups' junction tails: a shorter prefix misses on its first visit; 1024 = first-visit hits (measured 2026-10-30: no decode cost, 128K hit 0.94 s TTFT)
+        data_parallel_size: 8  # the eight engines
+        max_num_seqs: 32  # per engine; max_concurrency above is whole-box
+        prefix_cache_retention_interval: 4096  # a sliding-window prefix checkpoint every 4096 tokens: at 1024 (<= the 1024 window) every cached prefix keeps all its sliding-window blocks (25 of 30 layers); at 4096 a quarter of them (MiMo-V2.6-Flash: 1.26M -> 2.7M prefix tokens per engine); prompt ends and shared-prefix junctions stay exact
         # 128-token blocks: prefix-cache hits land on the SDPA chunk alignment, so a continuation never
         # re-prefills a shared cached block or reaches past the sliding window the allocator keeps.
         block_size: 128
-        data_parallel_size: 4  # folded into 4 lanes on one engine (GEMMA4_GALAXY_LANES)
-        max_num_seqs: 32  # per lane; max_concurrency above is whole-box
         # Default to the device sampler's top-k limit. Requests can override this value.
         override_generation_config: '{"top_k": 32}'
-        # The MTP contract class declares supports_async_decode / supports_async_spec_decode, which is what a
-        # lane launch with speculation needs (the lane verify takes the plugin's deferred speculative path,
-        # never overlapped with the next step; ordinary lane decode steps keep overlapping).
-        async_scheduling: true
+        async_scheduling: true  # the MTP contract class declares supports_async_decode / supports_async_spec_decode; the measured tables above were taken with asynchronous scheduling on both sides
         # "model_owned_drafter" is the plugin's sentinel: the model proposes and verifies on device.
-        speculative_config: '{"method": "custom_class", "model": "vllm_tt_plugin.model_owned_drafter", "num_speculative_tokens": 5}'
+        speculative_config: '{"method": "custom_class", "model": "vllm_tt_plugin.model_owned_drafter", "num_speculative_tokens": 3}'
         enable-auto-tool-choice: true
         tool-call-parser: gemma4
-        # Thinking on by default; each eval pins its own mode per request (chat_template_kwargs).
         default-chat-template-kwargs: '{"enable_thinking": true}'
         reasoning-parser: gemma4
         enable_chunked_prefill: true
-        max_num_batched_tokens: 4096  # vLLM needs >= max_tokens_per_mm_item (2496 for a video item); prefill chunks pad to a power of two, so 4096 is the only useful value above 2048
+        max_num_batched_tokens: 4096
         long_prefill_token_threshold: 4096
         enable_prompt_tokens_details: true  # usage.prompt_tokens_details.cached_tokens (prefix-cache visibility)
         limit-mm-per-prompt: '{"image": 8, "video": 1}'  # MMMU-Pro items carry up to 7 images

@@ -461,6 +461,78 @@ _agentic_traces_config_list: List[AgenticTracesConfig] = [
             ),
         ),
     ),
+    # Gemma-4 31B tt-transformers on BLACKHOLE_GALAXY (dev catalog). 256k dataset variant to match the spec's 262144
+    # max_context; concurrency 32, the entry's max_concurrency (4 per-row engines; AgentX c32 measured above c64).
+    # Same InferenceX pin as the entries above.
+    AgenticTracesConfig(
+        model_id="id_tt-transformers_gemma-4-31B-it_blackhole_galaxy",
+        inferencex_git_ref=INFERENCEX_AGENTX_GIT_REF,
+        runs=(
+            AgenticTracesRunSpec(
+                trace_source=TraceSource.INFERENCEX_AGENTX,
+                public_dataset="semianalysis_cc_traces_weka_062126_256k",
+                concurrency=_agentx_concurrency(32),
+            ),
+        ),
+    ),
+    # The other default Gemma-4 tt-transformers entries (dev catalog), as the 31B Galaxy one above: the 256k dataset
+    # variant (their max_context is 262144) at the entry's max_concurrency, the AgentX peak (2026-11-18: 8 users per
+    # 4-chip engine for the 12B / 26B; 6 for the 31B on a QB2). Same InferenceX pin.
+    AgenticTracesConfig(
+        model_id="id_tt-transformers_gemma-4-12B-it_blackhole_galaxy",
+        inferencex_git_ref=INFERENCEX_AGENTX_GIT_REF,
+        runs=(
+            AgenticTracesRunSpec(
+                trace_source=TraceSource.INFERENCEX_AGENTX,
+                public_dataset="semianalysis_cc_traces_weka_062126_256k",
+                concurrency=_agentx_concurrency(64),
+            ),
+        ),
+    ),
+    AgenticTracesConfig(
+        model_id="id_tt-transformers_gemma-4-26B-A4B-it_blackhole_galaxy",
+        inferencex_git_ref=INFERENCEX_AGENTX_GIT_REF,
+        runs=(
+            AgenticTracesRunSpec(
+                trace_source=TraceSource.INFERENCEX_AGENTX,
+                public_dataset="semianalysis_cc_traces_weka_062126_256k",
+                concurrency=_agentx_concurrency(64),
+            ),
+        ),
+    ),
+    AgenticTracesConfig(
+        model_id="id_tt-transformers_gemma-4-12B-it_p300x2",
+        inferencex_git_ref=INFERENCEX_AGENTX_GIT_REF,
+        runs=(
+            AgenticTracesRunSpec(
+                trace_source=TraceSource.INFERENCEX_AGENTX,
+                public_dataset="semianalysis_cc_traces_weka_062126_256k",
+                concurrency=_agentx_concurrency(8),
+            ),
+        ),
+    ),
+    AgenticTracesConfig(
+        model_id="id_tt-transformers_gemma-4-26B-A4B-it_p300x2",
+        inferencex_git_ref=INFERENCEX_AGENTX_GIT_REF,
+        runs=(
+            AgenticTracesRunSpec(
+                trace_source=TraceSource.INFERENCEX_AGENTX,
+                public_dataset="semianalysis_cc_traces_weka_062126_256k",
+                concurrency=_agentx_concurrency(8),
+            ),
+        ),
+    ),
+    AgenticTracesConfig(
+        model_id="id_tt-transformers_gemma-4-31B-it_p300x2",
+        inferencex_git_ref=INFERENCEX_AGENTX_GIT_REF,
+        runs=(
+            AgenticTracesRunSpec(
+                trace_source=TraceSource.INFERENCEX_AGENTX,
+                public_dataset="semianalysis_cc_traces_weka_062126_256k",
+                concurrency=_agentx_concurrency(6),
+            ),
+        ),
+    ),
     # MiniMax-M3 on SUPER_CLUSTER (dev catalog). InferenceX agentx replay
     # only. Full (1M) dataset to match the spec's 1048576 max_context, and
     # concurrency at the spec's max_concurrency of 62.
