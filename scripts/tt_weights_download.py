@@ -12,7 +12,9 @@ directories complete, so a server start loads them instead of converting:
     python3 tt_weights_download.py --repo <org>/<name> --revision <tag or commit> \
         --variant <variant> --dest-cache <TT_DIT_CACHE_DIR> --dest-original <checkpoint dir>
 
-It needs huggingface_hub and takes the token from HF_TOKEN.
+A download needs huggingface_hub and takes the token from HF_TOKEN. A run on a
+destination that the same revision completed checks it against the record saved
+there and needs neither.
 
 The kernel-cache image carries this file alone, so it imports nothing of the
 repo, and huggingface_hub only for a download. scripts/prebuilt_artifacts.py
@@ -45,6 +47,11 @@ VARIANT_SLUG = re.compile(r"[a-z0-9]+(-[a-z0-9]+)*")
 # tt_dit loads a cache directory only when this (empty) file is in it.
 CACHE_MARKER = "cache_dict.json"
 TT_WEIGHTS_STAGING = ".tt_weights_download"
+# A completed download saves <variant>.json in this folder of the cache
+# destination: the repo, the revision, its commit, the manifest and the file
+# sizes of each cache directory. A run for that revision checks the destination
+# against it instead of asking the Hub.
+TT_WEIGHTS_RECORDS = ".tt_weights_complete"
 # Layout version of the manifests and the release file; a reader refuses another.
 SCHEMA_VERSION = 1
 WEIGHTS_MANIFEST_FIELDS = (
@@ -208,6 +215,58 @@ def exclusive(directory: Path):
         os.close(lock)
 
 
+def hub_reason(repo, revision, variant, dest_cache, dest_original) -> str | None:
+    """Why a run needs the Hub, or None when the destination is complete by its record.
+
+    The record of the variant has to name the repo and the revision or its
+    commit. The destination is then checked against it without the Hub: each
+    cache directory marked and holding the recorded file names and sizes, each
+    original file with its sha256, each original folder present.
+    """
+    path = dest_cache / TT_WEIGHTS_RECORDS / f"{variant}.json"
+    if not path.is_file():
+        return f"{dest_cache} has no record of a complete download of {variant}"
+    with exclusive(dest_cache):
+        try:
+            record = json.loads(path.read_text(encoding="utf-8"))
+            if record["schema_version"] != SCHEMA_VERSION:
+                raise ValueError("schema_version")
+            commit, manifest = record["commit"], record["manifest"]
+            if (record["repo"], record["variant"]) != (repo, variant):
+                return f"{path} records {record['variant']} of {record['repo']}"
+            if revision not in (record["revision"], commit):
+                return (
+                    f"{path} records revision {record['revision']} "
+                    f"(commit {commit}), not {revision}"
+                )
+            for entry in manifest["cache_directories"]:
+                directory = dest_cache / entry["path"]
+                if not (directory / CACHE_MARKER).is_file():
+                    return f"{directory} has no {CACHE_MARKER}"
+                if tensor_sizes(directory) != record["cache_files"][entry["path"]]:
+                    return (
+                        f"{directory} does not hold the recorded file names and sizes"
+                    )
+            for entry in manifest["original_files"]:
+                if not is_listed_file(dest_original / entry["path"], entry):
+                    return (
+                        f"{dest_original / entry['path']} is missing or not the "
+                        "recorded file"
+                    )
+            for folder in manifest["original_folders"]:
+                if not (dest_original / folder).is_dir():
+                    return f"the folder {dest_original / folder} is missing"
+        except (KeyError, TypeError, ValueError):
+            return f"{path} is not a record this script reads"
+    step(
+        f"complete: {dest_cache} holds {variant} of {repo} at commit {commit}; "
+        f"{len(manifest['cache_directories'])} cache directories and "
+        f"{len(manifest['original_files'])} original files re-checked against the "
+        "saved manifest; the Hub was not contacted"
+    )
+    return None
+
+
 def download_tt_weights(
     api, repo, revision, variant, dest_cache, dest_original
 ) -> None:
@@ -221,7 +280,8 @@ def download_tt_weights(
     download that stops part way leaves none of them looking complete. The
     files are checked in a staging folder before any of them is moved into
     place. A failed run keeps that folder, and the next run for the same commit
-    continues from it.
+    continues from it. A completed run saves the record that hub_reason reads;
+    the records are removed before files of a cache directory are replaced.
     """
     commit = api.model_info(repo_id=repo, revision=revision).sha
     step(f"revision: {revision} is commit {commit}")
@@ -280,6 +340,10 @@ def download_tt_weights(
         "already holds as they are at this commit"
     )
 
+    # A record vouches for file names and sizes only, and a directory can be
+    # shared: none outlives a directory whose files are replaced.
+    if any(tensor_sizes(dest_cache / entry["path"]) for entry in directories):
+        shutil.rmtree(dest_cache / TT_WEIGHTS_RECORDS, ignore_errors=True)
     markers = [dest_cache / entry["path"] / CACHE_MARKER for entry in directories]
     for marker in markers:
         marker.unlink(missing_ok=True)
@@ -343,6 +407,23 @@ def download_tt_weights(
     shutil.rmtree(staging.parent, ignore_errors=True)
     step(f"mark: {len(listed)} directories complete in {dest_cache}")
 
+    record = {
+        "schema_version": SCHEMA_VERSION,
+        "repo": repo,
+        "variant": variant,
+        "revision": revision,
+        "commit": commit,
+        "manifest": manifest,
+        "cache_files": {
+            path: {name: item.size for name, item in directory.items()}
+            for path, directory in remote.items()
+        },
+    }
+    saved = dest_cache / TT_WEIGHTS_RECORDS / f"{variant}.json"
+    saved.parent.mkdir(exist_ok=True)
+    saved.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+    step(f"record: {saved} saved; a run for this revision checks against it")
+
 
 def path_argument(value: str) -> Path:
     """A path option. An empty value would otherwise mean the current directory."""
@@ -364,7 +445,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Fetch and verify the converted weights one model variant "
         "needs. What the destination already holds with the same content is kept. "
-        "Needs huggingface_hub and the token in HF_TOKEN."
+        "Needs huggingface_hub and the token in HF_TOKEN, except on a destination "
+        "that a run for the same revision completed: that one is checked against "
+        "the record saved in it, without the Hub."
     )
     parser.add_argument(
         "--repo",
@@ -375,7 +458,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--revision",
         required=True,
         help="tag or commit from the release file; a branch can be in the middle "
-        "of an upload",
+        "of an upload, and the Hub is not asked where it points once a run for it "
+        "completed the destination",
     )
     parser.add_argument(
         "--variant",
@@ -403,17 +487,21 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
+    target = (
+        args.repo,
+        args.revision,
+        args.variant,
+        args.dest_cache,
+        args.dest_original,
+    )
     try:
+        reason = hub_reason(*target)
+        if reason is None:
+            return 0
+        step(f"hub: needed, {reason}")
         api = hugging_face_api()
         with exclusive(args.dest_cache):
-            download_tt_weights(
-                api,
-                args.repo,
-                args.revision,
-                args.variant,
-                args.dest_cache,
-                args.dest_original,
-            )
+            download_tt_weights(api, *target)
         return 0
     except CliError as error:
         print(f"error: {error}", file=sys.stderr)

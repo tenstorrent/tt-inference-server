@@ -301,16 +301,20 @@ def test_build_image_fails_when_a_docker_command_fails(
     assert "image-id" not in output.out
 
 
-def test_the_download_script_runs_without_the_repo(tmp_path):
-    copy = shutil.copyfile(DOWNLOAD_SCRIPT, tmp_path / DOWNLOAD_SCRIPT.name)
-    command = [sys.executable, "-I", str(copy), "--repo", WEIGHTS_REPO]
-    command += ["--revision", "main", "--variant", FL2VA]
-    command += ["--dest-cache", "cache", "--dest-original", "weights"]
+def run_lone_script(folder, cache, original, python_options=()):
+    """Run a copy of the download script with no repo around it and no token."""
+    copy = shutil.copyfile(DOWNLOAD_SCRIPT, folder / DOWNLOAD_SCRIPT.name)
+    command = [sys.executable, "-I", *python_options, str(copy)]
+    command += ["--repo", WEIGHTS_REPO, "--revision", "main", "--variant", FL2VA]
+    command += ["--dest-cache", str(cache), "--dest-original", str(original)]
     no_token = {name: value for name, value in os.environ.items() if name != "HF_TOKEN"}
-
-    result = subprocess.run(
-        command, cwd=tmp_path, env=no_token, capture_output=True, text=True
+    return subprocess.run(
+        command, cwd=folder, env=no_token, capture_output=True, text=True
     )
+
+
+def test_the_download_script_runs_without_the_repo(tmp_path):
+    result = run_lone_script(tmp_path, "cache", "weights")
 
     assert (result.returncode, result.stderr) == (1, "error: HF_TOKEN is not set\n")
     assert os.listdir(tmp_path) == [DOWNLOAD_SCRIPT.name]
@@ -732,10 +736,26 @@ def test_upload_that_is_refused_does_not_change_the_hub(
     assert exit_code == 1
 
 
-def download(dest, variant=FL2VA):
-    argv = ["--repo", WEIGHTS_REPO, "--revision", "main", "--variant", variant]
+RECORDS = "tt_dit_cache/.tt_weights_complete"
+
+
+class NoHub:
+    """Hub client of a run that must not reach the Hub: any call on it fails the test."""
+
+    def __getattr__(self, name):
+        raise AssertionError(f"the Hub was asked for {name}")
+
+
+def download(dest, variant=FL2VA, revision="main", repo=WEIGHTS_REPO):
+    argv = ["--repo", repo, "--revision", revision, "--variant", variant]
     argv += ["--dest-cache", str(dest / "tt_dit_cache")]
     return tt_weights_download.main(argv + ["--dest-original", str(dest / "weights")])
+
+
+def hub_reasons(capsys):
+    """Why each run since the last read of the output asked the Hub."""
+    lines = capsys.readouterr().out.splitlines()
+    return [line[13:] for line in lines if line.startswith("hub: needed, ")]
 
 
 def test_download_marks_one_variant_and_keeps_it_when_another_fails(
@@ -752,16 +772,24 @@ def test_download_marks_one_variant_and_keeps_it_when_another_fails(
     expected = published(FL2VA, original="weights")
     for directory in (OWN[FL2VA], SHARED):
         expected[f"tt_dit_cache/{directory}/cache_dict.json"] = b""
-    assert tree(dest) == expected
+    files = tree(dest)
+    record = json.loads(files.pop(f"{RECORDS}/{FL2VA}.json"))
+    assert files == expected
+    named = [record[name] for name in ("repo", "variant", "revision", "commit")]
+    assert named == [WEIGHTS_REPO, FL2VA, "main", hub.head]
+    assert record["manifest"] == json.loads(hub.files()[f"manifests/{FL2VA}.json"])
 
     hub.fetched.clear()
     del hub.files()[f"tt_dit_cache/{OWN[REF2VA]}/blocks.0.weight.tensorbin"]
+    shutil.rmtree(dest / RECORDS)
     assert download(dest) == 0
     assert download(dest, REF2VA) == 1
 
     assert not set(hub.fetched) & set(published(FL2VA))
-    applied = {p: d for p, d in tree(dest).items() if ".tt_weights_download" not in p}
+    applied = {p: d for p, d in tree(dest).items() if ".tt_weights_" not in p}
     assert applied == expected
+    assert json.loads((dest / RECORDS / f"{FL2VA}.json").read_text()) == record
+    assert not (dest / RECORDS / f"{REF2VA}.json").exists()
 
 
 def test_download_refuses_a_destination_another_download_holds(hub, tmp_path, capsys):
@@ -828,6 +856,176 @@ def test_download_failure_leaves_no_marker(hub, tmp_path, capsys, path, content)
     assert not list(dest.rglob("cache_dict.json"))
     assert tree(dest / "tt_dit_cache" / SHARED) == {"embed.weight.tensorbin": b"old"}
     assert not (dest / "weights").exists()
+    assert not (dest / RECORDS).exists()
+
+
+def test_download_into_a_complete_destination_needs_no_hub_and_no_token(
+    hub, tmp_path, monkeypatch, capsys
+):
+    dest = tmp_path / "deployment"
+    assert download(dest) == 0
+    before = tree(dest)
+    capsys.readouterr()
+    monkeypatch.delenv("HF_TOKEN", raising=False)
+    monkeypatch.setattr(tt_weights_download, "hugging_face_api", NoHub)
+
+    assert download(dest) == 0
+    assert download(dest, revision=hub.head) == 0
+
+    complete = (
+        f"complete: {dest / 'tt_dit_cache'} holds {FL2VA} of {WEIGHTS_REPO} at "
+        f"commit {hub.head}; 2 cache directories and 12 original files re-checked "
+        "against the saved manifest; the Hub was not contacted"
+    )
+    assert capsys.readouterr().out.splitlines() == [complete, complete]
+    assert tree(dest) == before
+
+
+def test_the_lone_download_script_checks_a_complete_destination(hub, tmp_path):
+    dest = tmp_path / "deployment"
+    assert download(dest) == 0
+    lone = tmp_path / "lone"
+    lone.mkdir()
+
+    result = run_lone_script(
+        lone, dest / "tt_dit_cache", dest / "weights", ["-X", "importtime"]
+    )
+
+    assert result.returncode == 0
+    assert result.stdout.startswith("complete: ") and result.stdout.count("\n") == 1
+    assert "import time:" in result.stderr and "huggingface_hub" not in result.stderr
+
+
+def test_download_of_another_revision_asks_the_hub(hub, tmp_path, capsys):
+    dest = tmp_path / "deployment"
+    assert download(dest) == 0
+    record = dest / RECORDS / f"{FL2VA}.json"
+    (tag,) = hub.tags
+    capsys.readouterr()
+
+    assert download(dest, revision=tag) == 0
+
+    output = capsys.readouterr().out
+    reason = f"{record} records revision main (commit {hub.head}), not {tag}"
+    assert output.startswith(f"hub: needed, {reason}\nrevision: {tag} is commit ")
+    assert "keep: 2 cache directories and 12 original files" in output
+    assert json.loads(record.read_text())["revision"] == tag
+
+
+CHANGES_AFTER_A_DOWNLOAD = {
+    "tensor-removed": (
+        f"tt_dit_cache/{OWN[FL2VA]}/blocks.0.bias.tensorbin",
+        None,
+        "does not hold the recorded file names and sizes",
+    ),
+    "tensor-of-another-size": (
+        f"tt_dit_cache/{SHARED}/embed.weight.tensorbin",
+        b"cut",
+        "does not hold the recorded file names and sizes",
+    ),
+    "marker-removed": (
+        f"tt_dit_cache/{SHARED}/cache_dict.json",
+        None,
+        "has no cache_dict.json",
+    ),
+    "original-file-of-the-same-size": (
+        "weights/vae/config.json",
+        b"[]",
+        "is missing or not the recorded file",
+    ),
+    "original-file-removed": (
+        f"weights/lightx2v/{FL2VA}.safetensors",
+        None,
+        "is missing or not the recorded file",
+    ),
+    "record-cut-short": (
+        f"{RECORDS}/{FL2VA}.json",
+        b"{",
+        "is not a record this script reads",
+    ),
+}
+
+
+@pytest.mark.parametrize(
+    "path, content, reason",
+    CHANGES_AFTER_A_DOWNLOAD.values(),
+    ids=CHANGES_AFTER_A_DOWNLOAD.keys(),
+)
+def test_download_repairs_a_recorded_destination_that_changed(
+    hub, tmp_path, capsys, path, content, reason
+):
+    dest = tmp_path / "deployment"
+    assert download(dest) == 0
+    before = tree(dest)
+    (dest / path).unlink()
+    if content:
+        (dest / path).write_bytes(content)
+    capsys.readouterr()
+
+    assert download(dest) == 0
+
+    (why,) = hub_reasons(capsys)
+    assert why.endswith(reason)
+    assert tree(dest) == before
+
+
+def test_download_restores_an_original_folder_that_holds_no_file(hub, tmp_path, capsys):
+    manifest = json.loads(hub.files()[f"manifests/{FL2VA}.json"])
+    manifest["original_folders"].append("empty")
+    hub.files()[f"manifests/{FL2VA}.json"] = json.dumps(manifest).encode()
+    dest = tmp_path / "deployment"
+    assert download(dest) == 0
+    (dest / "weights/empty").rmdir()
+    capsys.readouterr()
+
+    assert download(dest) == 0
+
+    assert hub_reasons(capsys) == [f"the folder {dest / 'weights/empty'} is missing"]
+    assert (dest / "weights/empty").is_dir()
+
+
+def test_download_ignores_the_record_of_another_repo_or_variant(
+    hub, cache_dir, tmp_path, capsys
+):
+    assert main(upload_argv(cache_dir, REF2VA)) == 0
+    dest = tmp_path / "deployment"
+    assert download(dest) == 0
+    record = dest / RECORDS / f"{FL2VA}.json"
+    copied = shutil.copyfile(record, record.with_name(f"{REF2VA}.json"))
+    hub.fetched.clear()
+    capsys.readouterr()
+
+    assert download(dest, repo="example-org/another-tt-weights") == 0
+    assert download(dest, REF2VA) == 0
+
+    recorded = f"records {FL2VA} of {WEIGHTS_REPO}"
+    assert hub_reasons(capsys) == [f"{record} {recorded}", f"{copied} {recorded}"]
+    assert set(hub.fetched) == set(published(REF2VA)) - set(published(FL2VA))
+    assert json.loads(record.read_text())["repo"] == "example-org/another-tt-weights"
+    assert json.loads(copied.read_text())["variant"] == REF2VA
+
+
+def test_download_that_replaces_tensors_removes_the_records(
+    hub, cache_dir, tmp_path, capsys
+):
+    assert main(upload_argv(cache_dir, REF2VA)) == 0
+    dest = tmp_path / "deployment"
+    assert download(dest) == 0
+    shared = f"tt_dit_cache/{SHARED}/embed.weight.tensorbin"
+    hub.files()[shared] = hub.files()[shared][::-1]
+    capsys.readouterr()
+
+    assert download(dest, REF2VA) == 0
+    assert os.listdir(dest / RECORDS) == [f"{REF2VA}.json"]
+    assert download(dest) == 0
+
+    cache = dest / "tt_dit_cache"
+    no_record = "has no record of a complete download of"
+    assert hub_reasons(capsys) == [
+        f"{cache} {no_record} {REF2VA}",
+        f"{cache} {no_record} {FL2VA}",
+    ]
+    assert (dest / shared).read_bytes() == hub.files()[shared]
 
 
 WEIGHTS = {"repo": WEIGHTS_REPO, "variant": FL2VA, "tag": "t", "commit": "1" * 40}
