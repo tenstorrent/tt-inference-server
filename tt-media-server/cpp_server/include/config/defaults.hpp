@@ -29,6 +29,8 @@ constexpr const char* PREFILL_SERVER_ID = "";
 constexpr uint32_t PREFILL_MAX_IN_FLIGHT = 0;
 
 constexpr size_t MAX_QUEUE_SIZE = 1000;
+// Video service only: same default as Python `max_queue_size`.
+constexpr size_t VIDEO_MAX_QUEUE_SIZE = 5000;
 constexpr const char* LLM_DEVICE_BACKEND =
     "mock_scheduler";  // "mock_pipeline", "mock_scheduler", or
                        // "pipeline_manager"

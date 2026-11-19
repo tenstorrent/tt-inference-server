@@ -250,6 +250,80 @@ ServerMetrics::ServerMetrics() {
            .Register(*registry_)
            .Add(modelLabel, K_LATENCY_QUANTILES, std::chrono::seconds{60}, 5);
 
+  // ----- video service ----------------------------------------------------
+  // A video runs tens of seconds to minutes, so the default buckets (which
+  // stop at 10 s) would put everything into +Inf.
+  static const prometheus::Histogram::BucketBoundaries kVideoSeconds{
+      0.1, 0.5, 1,  2,   5,   10,  20,  30,  45,  60,
+      90,  120, 180, 300, 600, 1200, 1800};
+  // Server-side overhead is in microseconds to milliseconds.
+  static const prometheus::Histogram::BucketBoundaries kOverheadSeconds{
+      0.00005, 0.0001, 0.00025, 0.0005, 0.001, 0.0025,
+      0.005,   0.01,   0.025,   0.05,   0.1,   0.5, 1};
+  video_queue_wait_seconds_ =
+      &prometheus::BuildHistogram()
+           .Name("tt_video_queue_wait_seconds")
+           .Help("Time a video task waited from submit until a worker took it")
+           .Register(*registry_)
+           .Add({}, kVideoSeconds);
+  video_generation_seconds_ =
+      &prometheus::BuildHistogram()
+           .Name("tt_video_generation_seconds")
+           .Help("Worker-side time of one video task (as the worker measured)")
+           .Register(*registry_)
+           .Add({}, kVideoSeconds);
+  auto* videoE2e =
+      &prometheus::BuildHistogram()
+           .Name("tt_video_e2e_seconds")
+           .Help("Video task time from submit until its result reached the "
+                 "server, by outcome")
+           .Register(*registry_);
+  video_e2e_ok_seconds_ = &videoE2e->Add({{"outcome", "ok"}}, kVideoSeconds);
+  video_e2e_error_seconds_ =
+      &videoE2e->Add({{"outcome", "error"}}, kVideoSeconds);
+  auto* videoTasks = &prometheus::BuildCounter()
+                          .Name("tt_video_tasks_total")
+                          .Help("Finished video tasks by outcome")
+                          .Register(*registry_);
+  video_tasks_ok_ = &videoTasks->Add({{"outcome", "ok"}});
+  video_tasks_error_ = &videoTasks->Add({{"outcome", "error"}});
+  auto* videoOverhead =
+      &prometheus::BuildHistogram()
+           .Name("tt_video_server_overhead_seconds")
+           .Help("Server-side cost around the device run, by phase "
+                 "(request_write, shm_enqueue, response_handling)")
+           .Register(*registry_);
+  static const char* kOverheadPhases[] = {"request_write", "shm_enqueue",
+                                          "response_handling"};
+  for (size_t i = 0; i < video_overhead_.size(); ++i) {
+    video_overhead_[i] =
+        &videoOverhead->Add({{"phase", kOverheadPhases[i]}}, kOverheadSeconds);
+  }
+  auto* videoJobs = &prometheus::BuildGauge()
+                         .Name("tt_video_jobs")
+                         .Help("Video jobs in the store, by status")
+                         .Register(*registry_);
+  static const char* kJobStatuses[] = {"queued",    "in_progress", "completed",
+                                       "failed",    "cancelled",   "cancelling"};
+  for (size_t i = 0; i < video_jobs_.size(); ++i) {
+    video_jobs_[i] = &videoJobs->Add({{"status", kJobStatuses[i]}});
+  }
+  auto* videoSweep = &prometheus::BuildCounter()
+                          .Name("tt_video_job_cleanup_total")
+                          .Help("Jobs removed or failed by the background "
+                                "cleaner (evicted = expired, stuck = stale_job)")
+                          .Register(*registry_);
+  video_sweep_evicted_ = &videoSweep->Add({{"kind", "evicted"}});
+  video_sweep_stuck_ = &videoSweep->Add({{"kind", "stuck"}});
+  video_restarts_family_ =
+      &prometheus::BuildCounter()
+           .Name("tt_video_worker_restarts_total")
+           .Help("Automatic video worker restarts by result")
+           .Register(*registry_);
+  for (const char* r : {"ok", "failed", "gave_up"}) {
+    video_restarts_family_->Add({{"result", r}});
+  }
+
   // ----- start background metrics thread ----------------------------------
   running_ = true;
   metrics_thread_ = std::thread(&ServerMetrics::metricsLoop, this);
@@ -349,6 +423,49 @@ void ServerMetrics::onTtsConditioning(TtsConditioningStage stage,
 void ServerMetrics::onTtsRequestDuration(double seconds) {
   if (tts_request_duration_seconds_ == nullptr) return;
   tts_request_duration_seconds_->Observe(seconds);
+}
+
+void ServerMetrics::onVideoTaskClaimed(double queueWaitSeconds) {
+  if (video_queue_wait_seconds_ != nullptr) {
+    video_queue_wait_seconds_->Observe(queueWaitSeconds);
+  }
+}
+
+void ServerMetrics::onVideoTaskDone(bool ok, double generationSeconds,
+                                    double e2eSeconds) {
+  if (video_tasks_ok_ == nullptr) return;
+  (ok ? video_tasks_ok_ : video_tasks_error_)->Increment();
+  (ok ? video_e2e_ok_seconds_ : video_e2e_error_seconds_)->Observe(e2eSeconds);
+  // A failed task has no generation time worth a sample.
+  if (ok && generationSeconds > 0) {
+    video_generation_seconds_->Observe(generationSeconds);
+  }
+}
+
+void ServerMetrics::onVideoOverhead(VideoOverheadPhase phase, double seconds) {
+  const auto index = static_cast<size_t>(phase);
+  if (index < video_overhead_.size() && video_overhead_[index] != nullptr) {
+    video_overhead_[index]->Observe(seconds);
+  }
+}
+
+void ServerMetrics::setVideoJobs(const std::array<size_t, 6>& byStatus) {
+  for (size_t i = 0; i < byStatus.size(); ++i) {
+    if (video_jobs_[i] != nullptr) {
+      video_jobs_[i]->Set(static_cast<double>(byStatus[i]));
+    }
+  }
+}
+
+void ServerMetrics::onVideoSweep(size_t evicted, size_t stuck) {
+  if (video_sweep_evicted_ == nullptr) return;
+  if (evicted != 0) video_sweep_evicted_->Increment(static_cast<double>(evicted));
+  if (stuck != 0) video_sweep_stuck_->Increment(static_cast<double>(stuck));
+}
+
+void ServerMetrics::onVideoWorkerRestart(const std::string& result) {
+  if (video_restarts_family_ == nullptr) return;
+  video_restarts_family_->Add({{"result", result}}).Increment();
 }
 
 // -----------------------------------------------------------------------------

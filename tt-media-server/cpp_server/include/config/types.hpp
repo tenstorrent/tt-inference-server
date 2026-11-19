@@ -18,6 +18,7 @@ enum class ModelService {
   EMBEDDING,
   IMAGE,
   TTS,
+  VIDEO,
 };
 
 /** String value for env MODEL_SERVICE. */
@@ -29,6 +30,8 @@ inline std::string toString(ModelService s) {
       return "image";
     case ModelService::TTS:
       return "tts";
+    case ModelService::VIDEO:
+      return "video";
     case ModelService::LLM:
     default:
       return "llm";
@@ -40,6 +43,7 @@ inline ModelService modelServiceFromString(const std::string& v) {
   if (v == "embedding") return ModelService::EMBEDDING;
   if (v == "image") return ModelService::IMAGE;
   if (v == "tts") return ModelService::TTS;
+  if (v == "video") return ModelService::VIDEO;
   return ModelService::LLM;
 }
 
@@ -98,6 +102,11 @@ enum class ModelRunnerType {
   TT_BGE_M3,
   TT_QWEN_EMBEDDING_8B,
   EMBEDDING_MOCK,
+  // Local stand-in. Does not open a device.
+  VIDEO_MOCK,
+  // In-process device runner. Opens the chip through the Python DiT runner
+  // selected by MODEL_RUNNER and returns an mp4 path.
+  VIDEO_DEVICE,
 };
 
 enum class Model {
@@ -168,6 +177,10 @@ inline std::string toString(ModelRunnerType m) {
       return "tt_qwen_embedding_8b";
     case ModelRunnerType::EMBEDDING_MOCK:
       return "embedding_mock";
+    case ModelRunnerType::VIDEO_MOCK:
+      return "video_mock";
+    case ModelRunnerType::VIDEO_DEVICE:
+      return "video_device";
   }
   return "unknown";
 }
@@ -197,6 +210,10 @@ inline std::string toClientRunnerName(ModelRunnerType m) {
     case ModelRunnerType::PIPELINE_MANAGER:
     case ModelRunnerType::EMBEDDING_MOCK:
       return "";
+    case ModelRunnerType::VIDEO_MOCK:
+      return "video-mock";
+    case ModelRunnerType::VIDEO_DEVICE:
+      return "video-device";
   }
   return "";
 }

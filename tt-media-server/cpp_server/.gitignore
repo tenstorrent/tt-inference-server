@@ -20,6 +20,9 @@ tt-llm-engine/
 # Runtime logs (Drogon setLogPath)
 logs/
 
+# MP4 clips from POST /v1/videos/generations
+videos/
+
 **/vllm-venv
 
 deps/
