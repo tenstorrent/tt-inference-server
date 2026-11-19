@@ -119,7 +119,6 @@ class RuntimeConfig:
     agentic_traces_mode: str = "full"
     agentic_traces_sources: Optional[str] = None
     agentic_traces_duration: Optional[int] = None
-    agentic_traces_git_ref: Optional[str] = None
     agentic_traces_metrics_url: Optional[List[str]] = None
 
     # Device configuration
@@ -225,7 +224,6 @@ class RuntimeConfig:
             agentic_traces_mode=getattr(args, "agentic_traces_mode", None) or "full",
             agentic_traces_sources=getattr(args, "agentic_traces_sources", None),
             agentic_traces_duration=getattr(args, "agentic_traces_duration", None),
-            agentic_traces_git_ref=getattr(args, "agentic_traces_git_ref", None),
             agentic_traces_metrics_url=getattr(
                 args, "agentic_traces_metrics_url", None
             ),

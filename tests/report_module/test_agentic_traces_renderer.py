@@ -58,6 +58,10 @@ def _record(**overrides):
         "p99_effective_latency_ms": 137522.2,
         "output_token_throughput_per_user": 110.8,
         "mean_e2e_norm_intvty": 31.3,
+        "mean_e2e_output_token_throughput": 31.3,
+        "median_e2e_output_token_throughput": 76.42,
+        "p90_e2e_output_token_throughput": 12.05,
+        "p99_e2e_output_token_throughput": 3.117,
         "total_token_throughput": 4856.63,
         "output_token_throughput": 41.99,
         "request_throughput": 0.042,
@@ -93,8 +97,7 @@ def _record(**overrides):
         "branch_joins_suppressed": 0,
         "dataset_num_entries": 32,
         "dataset_hf_name": "semianalysisai/cc-traces-weka-062126-256k",
-        "inferencex_git_ref": "e2dcfa91c86936cc011e3be0668eb3b1ca17288f",
-        "aiperf_version": "0.8.0",
+        "aiperf_version": "1.0.13",
         "benchmark_id": "a70d73f2-53f3-431a-ab89-1f118bcd505f",
         "run_started_at": "2026-07-29T10:25:09.055955",
         "run_ended_at": "2026-07-29T10:40:39.061471",
@@ -231,6 +234,44 @@ class TestTableSplit:
         assert "8,123.4" in out
 
 
+_E2E_HEADING = "#### Per-run E2E Output Token Throughput"
+
+
+class TestE2EOutputThroughputTable:
+    """AIPerf's E2E Output Token Throughput is what Artificial Analysis and
+    OpenRouter publish, so it leads, under AIPerf's own name."""
+
+    def test_is_the_first_metric_table(self):
+        out = _render(_record())
+        assert f"{_E2E_HEADING} (tok/s per request)" in out
+        assert out.index(_E2E_HEADING) < out.index("#### Per-run Latency")
+
+    def test_reports_avg_p50_p90_p99(self):
+        table = _render(_record()).split(_E2E_HEADING)[1].split("####")[0]
+        for header in (
+            "E2E Output Token Throughput Avg (AA)",
+            "E2E Output Token Throughput P50 (OR)",
+            "E2E Output Token Throughput P90",
+            "E2E Output Token Throughput P99",
+        ):
+            assert header in table
+        for cell in ("31.30", "76.42", "12.05", "3.12"):
+            assert cell in table
+
+    def test_is_not_duplicated_in_the_throughput_table(self):
+        out = _render(_record())
+        throughput = out.split("#### Per-run Throughput")[1].split("####")[0]
+        assert "E2E Output Token Throughput" not in throughput
+        assert "Norm Intvty" not in throughput
+
+    def test_is_defined_under_the_aiperf_name(self):
+        out = _render(_record())
+        assert "**E2E Output Token Throughput**: AIPerf's per-request" in out
+
+    def test_a_source_without_it_gets_no_table(self):
+        assert _E2E_HEADING not in _render(_swo_record())
+
+
 class TestConfigTable:
     def test_config_is_transposed_to_one_row_per_field(self):
         """As columns, the long dataset and label values set the report width."""
@@ -254,7 +295,7 @@ class TestConfigTable:
     def test_client_run_identifiers_are_carried(self):
         """A number is only reproducible alongside the client that produced it."""
         config = _render(_record()).split("#### Run Configuration")[1]
-        assert "0.8.0" in config
+        assert "1.0.13" in config
         assert "a70d73f2-53f3-431a-ab89-1f118bcd505f" in config
 
 
@@ -270,13 +311,22 @@ class TestFormatting:
         assert "0.25" in out and "0.75" in out
         assert "0.10" in out
 
-    def test_client_ref_is_full_in_both_the_preamble_and_the_config_table(self):
-        """The transposed config table has the room the old one did not."""
+    def test_the_blurb_credits_agentx_harness_at_the_version_it_ran(self):
         out = _render(_record())
-        assert (
-            "| Client Ref           | e2dcfa91c86936cc011e3be0668eb3b1ca17288f" in out
+        assert "github.com/SemiAnalysisAI/agentx-harness) v1.0.13" in out
+        assert "vendored in [InferenceX]" not in out
+
+    def test_a_pre_agentx_harness_payload_keeps_its_inferencex_attribution(self):
+        """Re-rendering an old report must not credit a client it never ran."""
+        record = _record(
+            inferencex_git_ref="8f12037728d6fc118422318d5472f147dcc2a291",
+            aiperf_version="0.8.0",
         )
-        assert "pinned at `e2dcfa91c86936cc011e3be0668eb3b1ca17288f`" in out
+        out = _render(record)
+        assert "vendored in [InferenceX]" in out
+        assert "pinned at `8f12037728d6fc118422318d5472f147dcc2a291`" in out
+        assert "| InferenceX Ref" in out
+        assert "agentx-harness" not in out
 
     def test_counts_render_as_integers(self):
         out = _render(_record())

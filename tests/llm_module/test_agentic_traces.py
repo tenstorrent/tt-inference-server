@@ -7,7 +7,7 @@
 The load-bearing invariants here are the ones a broken run would only reveal an
 hour in (or worse, as a plausible-looking row of numbers):
 
-* every configured model pins an InferenceX ref and covers every mode,
+* every configured model has runs and covers every mode,
 * no mode can drop below the scenario's 900s profiling floor,
 * the derived knobs (max context, trust-remote-code) track the ModelSpec,
 * a trace source with no driver still fails loudly instead of producing an
@@ -63,8 +63,6 @@ from report_module.schema import Block
 from workflows.workflow_types import AgenticTracesMode
 
 KIMI_MODEL_ID = "id_blaze_Kimi-K2.7-Code_super_cluster"
-# InferenceX #2829, the commit SemiAnalysis's B300 GLM agentic sweep landed as.
-KIMI_PINNED_REF = "8f12037728d6fc118422318d5472f147dcc2a291"
 
 
 class _FakeDeviceModelSpec:
@@ -90,10 +88,6 @@ class _FakeModelSpec:
 
 
 class TestConfigRegistry:
-    def test_kimi_is_registered_with_the_pinned_ref(self):
-        config = AGENTIC_TRACES_CONFIGS[KIMI_MODEL_ID]
-        assert config.inferencex_git_ref == KIMI_PINNED_REF
-
     def test_every_config_covers_every_mode(self):
         for model_id, config in AGENTIC_TRACES_CONFIGS.items():
             for mode in AgenticTracesMode:
@@ -101,16 +95,9 @@ class TestConfigRegistry:
                     f"{model_id} is missing settings for {mode.name}"
                 )
 
-    def test_every_config_pins_a_ref_and_has_runs(self):
+    def test_every_config_has_runs(self):
         for model_id, config in AGENTIC_TRACES_CONFIGS.items():
-            assert config.inferencex_git_ref.strip(), f"{model_id} has no git ref"
             assert config.runs, f"{model_id} has no runs"
-
-    def test_every_agentx_config_shares_one_pin(self):
-        """Numbers are only comparable across models run on the same client."""
-        for model_id, config in AGENTIC_TRACES_CONFIGS.items():
-            if TraceSource.INFERENCEX_AGENTX in config.trace_sources():
-                assert config.inferencex_git_ref == KIMI_PINNED_REF, model_id
 
     def test_registry_is_keyed_by_the_config_model_id(self):
         for model_id, config in AGENTIC_TRACES_CONFIGS.items():
@@ -131,7 +118,6 @@ class TestMinDurationFloor:
         with pytest.raises(ValueError, match="below the 900s minimum"):
             AgenticTracesConfig(
                 model_id="id_test",
-                inferencex_git_ref="abc123",
                 mode_settings={
                     AgenticTracesMode.FULL: AgenticTracesModeSettings(
                         benchmark_duration=3600,
@@ -157,7 +143,6 @@ class TestMinDurationFloor:
     def test_a_scenario_without_the_floor_may_go_shorter(self):
         config = AgenticTracesConfig(
             model_id="id_test",
-            inferencex_git_ref="abc123",
             runs=(AgenticTracesRunSpec(scenario="some-other-scenario"),),
             mode_settings={
                 AgenticTracesMode.FULL: AgenticTracesModeSettings(
@@ -180,7 +165,6 @@ class TestMinDurationFloor:
         with pytest.raises(ValueError, match="missing mode_settings for: CI"):
             AgenticTracesConfig(
                 model_id="id_test",
-                inferencex_git_ref="abc123",
                 mode_settings={
                     AgenticTracesMode.FULL: AgenticTracesModeSettings(
                         benchmark_duration=3600,
@@ -190,10 +174,6 @@ class TestMinDurationFloor:
                     )
                 },
             )
-
-    def test_empty_git_ref_is_rejected(self):
-        with pytest.raises(ValueError, match="inferencex_git_ref"):
-            AgenticTracesConfig(model_id="id_test", inferencex_git_ref="  ")
 
 
 class TestModeResolution:
@@ -231,7 +211,6 @@ class TestModeResolution:
     def test_mode_settings_concurrency_overrides_the_run_spec(self):
         config = AgenticTracesConfig(
             model_id="id_test",
-            inferencex_git_ref="abc123",
             runs=(AgenticTracesRunSpec(concurrency=8),),
             mode_settings={
                 AgenticTracesMode.FULL: AgenticTracesModeSettings(
@@ -288,7 +267,6 @@ class TestDerivedFromModelSpec:
     def test_explicit_max_context_length_overrides_the_spec(self):
         config = AgenticTracesConfig(
             model_id="id_test",
-            inferencex_git_ref="abc123",
             runs=(AgenticTracesRunSpec(max_context_length=65536),),
         )
         run = build_runs(config, _FakeModelSpec(max_context=262144))[0]
@@ -307,10 +285,9 @@ class TestDerivedFromModelSpec:
             False
         )
 
-    def test_run_metadata_carries_the_pinned_ref(self):
+    def test_run_metadata_carries_the_model_id(self):
         config = AGENTIC_TRACES_CONFIGS[KIMI_MODEL_ID]
         run = build_runs(config, _FakeModelSpec())[0]
-        assert run.metadata["inferencex_git_ref"] == KIMI_PINNED_REF
         assert run.metadata["model_id"] == KIMI_MODEL_ID
 
 
@@ -328,7 +305,6 @@ class TestTraceSourceSelection:
         """SwarmOne is a supported source; building its runs must not raise."""
         config = AgenticTracesConfig(
             model_id="id_test",
-            inferencex_git_ref="abc123",
             runs=(
                 AgenticTracesRunSpec(
                     trace_source=TraceSource.SWARMONE,
@@ -347,7 +323,6 @@ class TestTraceSourceSelection:
 
         config = AgenticTracesConfig(
             model_id="id_test",
-            inferencex_git_ref="abc123",
             runs=(AgenticTracesRunSpec(trace_source=TraceSource.SWARMONE),),
         )
         original = runs_mod.SUPPORTED_TRACE_SOURCES
@@ -360,9 +335,7 @@ class TestTraceSourceSelection:
 
     def test_narrowing_to_a_configured_source_keeps_its_runs(self):
         config = AGENTIC_TRACES_CONFIGS[KIMI_MODEL_ID]
-        _, runs = resolve_run_specs(
-            config, trace_sources=(TraceSource.INFERENCEX_AGENTX,)
-        )
+        runs = resolve_run_specs(config, trace_sources=(TraceSource.INFERENCEX_AGENTX,))
         assert runs
         assert all(r.trace_source is TraceSource.INFERENCEX_AGENTX for r in runs)
 
@@ -370,17 +343,10 @@ class TestTraceSourceSelection:
         # A config that only has an InferenceX run rejects a swarmone selection.
         config = AgenticTracesConfig(
             model_id="id_test",
-            inferencex_git_ref="abc123",
             runs=(AgenticTracesRunSpec(trace_source=TraceSource.INFERENCEX_AGENTX),),
         )
         with pytest.raises(ValueError, match="do not match|No agentic-trace runs"):
             resolve_run_specs(config, trace_sources=(TraceSource.SWARMONE,))
-
-    def test_git_ref_override_replaces_the_pin(self):
-        config = AGENTIC_TRACES_CONFIGS[KIMI_MODEL_ID]
-        effective, _ = resolve_run_specs(config, git_ref_override="cafebabe")
-        assert effective.inferencex_git_ref == "cafebabe"
-        assert config.inferencex_git_ref == KIMI_PINNED_REF
 
 
 class TestRunSpecValidation:
@@ -470,7 +436,6 @@ class TestAiperfCommand:
     def test_gpu_telemetry_flag_is_omitted_when_enabled(self):
         config = AgenticTracesConfig(
             model_id="id_test",
-            inferencex_git_ref="abc123",
             runs=(AgenticTracesRunSpec(gpu_telemetry=True),),
         )
         run = build_runs(config, _FakeModelSpec())[0]
@@ -489,10 +454,8 @@ class TestAiperfCommand:
         assert cmd[cmd.index("--trace-idle-gap-cap-seconds") + 1] == "300"
 
     def test_idle_gap_cap_is_omitted_when_disabled(self):
-        """Pins before agentx-v1.0.0 reject the flag outright."""
         config = AgenticTracesConfig(
             model_id="id_test",
-            inferencex_git_ref="abc123",
             runs=(AgenticTracesRunSpec(trace_idle_gap_cap_seconds=None),),
         )
         run = build_runs(config, _FakeModelSpec())[0]
@@ -662,6 +625,12 @@ class TestOutputParsing:
         assert metrics["p75_e2e_norm_intvty"] == 3019.83
         assert metrics["p90_e2e_norm_intvty"] == 2215.77
         assert metrics["p95_e2e_norm_intvty"] == 1813.5
+        # E2E Output Token Throughput under AIPerf's name, with P50 added and the
+        # tail on the worse-tail convention: P99 reads AIPerf's p1.
+        assert metrics["mean_e2e_output_token_throughput"] == 40.41
+        assert metrics["median_e2e_output_token_throughput"] == 4808.69
+        assert metrics["p90_e2e_output_token_throughput"] == 2215.77
+        assert metrics["p99_e2e_output_token_throughput"] == 831.94
         assert metrics["measured_benchmark_duration"] == 3605.47
 
     def test_distinguishes_successful_from_completed_counts(self, tmp_path):
@@ -1001,7 +970,7 @@ class TestParser:
             {
                 "model_id": "moonshotai/Kimi-K2.7-Code",
                 "date": "20260727-120000",
-                "metadata": {"inferencex_git_ref": KIMI_PINNED_REF},
+                "metadata": {"mode": "ci"},
                 **metrics,
             },
             device="super_cluster",
@@ -1015,7 +984,7 @@ class TestParser:
         assert block.data["error_summary"] == (
             "34xServerDisconnectedError, 1xInvalidInferenceResultError"
         )
-        assert block.data["inferencex_git_ref"] == KIMI_PINNED_REF
+        assert block.data["mode"] == "ci"
         assert block.targets["device"] == "super_cluster"
         assert block.targets["timestamp"] == "2026-07-27 12:00:00"
 
@@ -1201,13 +1170,13 @@ class TestSwarmOneModeScoping:
         """swarmone is opt-in, so an unnarrowed sweep must not pull it in and
         make a SwarmOne license a precondition for every Kimi run."""
         config = AGENTIC_TRACES_CONFIGS[KIMI_MODEL_ID]
-        _, specs = resolve_run_specs(config)
+        specs = resolve_run_specs(config)
         sources = {spec.trace_source for spec in specs}
         assert sources == {TraceSource.INFERENCEX_AGENTX}
 
     def test_explicitly_selecting_both_sources_runs_both(self):
         config = AGENTIC_TRACES_CONFIGS[KIMI_MODEL_ID]
-        _, specs = resolve_run_specs(
+        specs = resolve_run_specs(
             config,
             trace_sources=(TraceSource.INFERENCEX_AGENTX, TraceSource.SWARMONE),
         )
@@ -1226,14 +1195,13 @@ class TestSwarmOneModeScoping:
         """Holding back the only configured source would leave an empty sweep."""
         config = AgenticTracesConfig(
             model_id="id_test",
-            inferencex_git_ref=None,
             runs=(
                 AgenticTracesRunSpec(
                     trace_source=TraceSource.SWARMONE, scenario=SWO_SCENARIO
                 ),
             ),
         )
-        _, specs = resolve_run_specs(config)
+        specs = resolve_run_specs(config)
         assert [spec.trace_source for spec in specs] == [TraceSource.SWARMONE]
 
     def test_swarmone_timeout_estimate_is_generous(self):
@@ -1274,23 +1242,6 @@ class TestSwarmOneRunSpecValidation:
     def test_zero_resident_is_rejected(self):
         with pytest.raises(ValueError, match="resident"):
             AgenticTracesRunSpec(trace_source=TraceSource.SWARMONE, resident=0)
-
-
-class TestSwarmOneConfigWithoutInferencex:
-    def test_swarmone_only_config_needs_no_git_ref(self):
-        config = AgenticTracesConfig(
-            model_id="id_swo_only",
-            inferencex_git_ref="",
-            runs=(
-                AgenticTracesRunSpec(
-                    trace_source=TraceSource.SWARMONE,
-                    scenario=SWO_SCENARIO,
-                    public_dataset="",
-                ),
-            ),
-        )
-        runs = build_runs(config, _FakeModelSpec())
-        assert runs[0].trace_source is TraceSource.SWARMONE
 
 
 @pytest.fixture
@@ -1569,7 +1520,6 @@ class TestExpectedSweepPlumbing:
     def test_build_runs_carries_the_specs_expected_sweep(self):
         config = AgenticTracesConfig(
             model_id="id_test",
-            inferencex_git_ref="abc123",
             runs=(
                 AgenticTracesRunSpec(concurrency=4, expected_sweep=list(self._SWEEP)),
             ),
@@ -1582,7 +1532,6 @@ class TestExpectedSweepPlumbing:
     def test_build_runs_defaults_to_no_expectation(self):
         config = AgenticTracesConfig(
             model_id="id_test",
-            inferencex_git_ref="abc123",
             runs=(AgenticTracesRunSpec(),),
         )
 
@@ -1593,7 +1542,6 @@ class TestExpectedSweepPlumbing:
 
         config = AgenticTracesConfig(
             model_id="id_test",
-            inferencex_git_ref="abc123",
             runs=(
                 AgenticTracesRunSpec(concurrency=4, expected_sweep=list(self._SWEEP)),
             ),

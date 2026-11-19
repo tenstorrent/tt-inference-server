@@ -65,7 +65,6 @@ class TestRunTasks:
             mode="ci",
             trace_sources="inferencex_agentx",
             duration_override=1200,
-            git_ref_override="cafebabe",
             auth_token="tok",
             venv_python="/venv/bin/python",
         )
@@ -76,7 +75,6 @@ class TestRunTasks:
         assert kwargs["mode"] == "ci"
         assert kwargs["trace_sources"] == "inferencex_agentx"
         assert kwargs["duration_override"] == 1200
-        assert kwargs["git_ref_override"] == "cafebabe"
         assert kwargs["auth_token"] == "tok"
         assert str(kwargs["venv_python"]) == "/venv/bin/python"
         assert [o.exit_code for o in outcomes] == [0]

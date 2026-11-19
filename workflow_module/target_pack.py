@@ -84,9 +84,8 @@ class TargetPack(Protocol):
         config: Any,
         *,
         trace_sources: Any = None,
-        git_ref_override: Optional[str] = None,
     ) -> Any:
-        """Apply CLI-level source/ref narrowing to an agentic-traces config."""
+        """Apply CLI-level source narrowing to an agentic-traces config."""
         ...
 
     def agentic_traces_min_profile_seconds(self) -> int:

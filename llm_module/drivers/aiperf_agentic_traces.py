@@ -4,8 +4,8 @@
 
 """``aiperf profile`` driver for agentic trace replay.
 
-Drives the AIPerf fork vendored in the pinned InferenceX checkout (see
-``setup_agentic_traces`` in ``workflows/workflow_venvs.py``). That fork owns the
+Drives SemiAnalysis's AIPerf fork, agentx-harness (pinned in
+``requirements/agentic-traces.txt``). That fork owns the
 ``inferencex-agentx-mvp`` scenario and the Weka trace dataset loaders, so this
 driver only translates one :class:`AgenticTracesRun` into its CLI and reads the
 summary back.
@@ -447,6 +447,18 @@ def parse_aiperf_output(
         "p75_e2e_norm_intvty": e2e_per_user.get("p25"),
         "p90_e2e_norm_intvty": e2e_per_user.get("p10"),
         "p95_e2e_norm_intvty": e2e_per_user.get("p5"),
+        # AIPerf's E2E Output Token Throughput (output tokens / whole-request
+        # wall clock, TTFT included) under its own name, with P50 added. It is
+        # the number Artificial Analysis ("speed", average) and OpenRouter
+        # ("throughput", P50) publish, so a release can be read against those
+        # directly. The tail percentiles follow the worse-tail convention
+        # OpenRouter now uses (P99 = the rate only 1% of requests fell below),
+        # so they read AIPerf's low percentiles, like the e2e_norm_intvty ones
+        # above.
+        "mean_e2e_output_token_throughput": e2e_per_user.get("avg"),
+        "median_e2e_output_token_throughput": e2e_per_user.get("p50"),
+        "p90_e2e_output_token_throughput": e2e_per_user.get("p10"),
+        "p99_e2e_output_token_throughput": e2e_per_user.get("p1"),
         "input_token_throughput": _stat("input_token_throughput"),
         "total_token_throughput": _stat("total_token_throughput"),
         "request_throughput": _stat("request_throughput"),
@@ -567,8 +579,8 @@ def parse_aiperf_output(
     if isinstance(errors, list) and errors:
         metrics["error_summary"] = _summarize_errors(errors)
 
-    # Client provenance alongside the pinned git ref: the ref identifies the
-    # source, these identify the actual run.
+    # Client provenance: the installed agentx-harness version (AIPerf reports
+    # it as aiperf_version), plus what identifies this particular run.
     for key, tag in (
         ("aiperf_version", "aiperf_version"),
         ("aiperf_schema_version", "schema_version"),
@@ -927,10 +939,17 @@ def _log_run_summary(run: AgenticTracesRun, metrics: Mapping[str, Any]) -> None:
         float(metrics.get("p99_tpot_ms", 0) or 0),
     )
     logger.info(
-        "[agentic-traces]   output tok/s/user streaming/e2e = %.1f/%.1f; "
-        "total tok/s = %.1f",
+        "[agentic-traces]   E2E output token throughput (tok/s/req) "
+        "avg/p50/p90/p99 = "
+        "%.1f/%.1f/%.1f/%.1f",
+        float(metrics.get("mean_e2e_output_token_throughput", 0) or 0),
+        float(metrics.get("median_e2e_output_token_throughput", 0) or 0),
+        float(metrics.get("p90_e2e_output_token_throughput", 0) or 0),
+        float(metrics.get("p99_e2e_output_token_throughput", 0) or 0),
+    )
+    logger.info(
+        "[agentic-traces]   output tok/s/user streaming = %.1f; total tok/s = %.1f",
         float(metrics.get("output_token_throughput_per_user", 0) or 0),
-        float(metrics.get("mean_e2e_norm_intvty", 0) or 0),
         float(metrics.get("total_token_throughput", 0) or 0),
     )
     measured_cache = metrics.get("measured_prefix_cache_hit_pct")

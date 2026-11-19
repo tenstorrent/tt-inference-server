@@ -257,7 +257,6 @@ class TestAgenticTracesOptions:
             agentic_traces_mode="ci",
             agentic_traces_sources=None,
             agentic_traces_duration=None,
-            agentic_traces_git_ref=None,
             agentic_traces_metrics_url=None,
             jwt_secret=None,
         )
@@ -299,12 +298,10 @@ class TestAgenticTracesOptions:
                 agentic_traces=True,
                 agentic_traces_sources="inferencex_agentx",
                 agentic_traces_duration=1800,
-                agentic_traces_git_ref="cafebabe",
             )
         )
         assert opts.trace_sources == "inferencex_agentx"
         assert opts.duration_override == 1800
-        assert opts.git_ref_override == "cafebabe"
 
     def test_metrics_urls_become_a_tuple(self, monkeypatch):
         """Repeatable flag -> tuple, forwarded verbatim; the driver normalizes."""

@@ -556,12 +556,17 @@ OpenAI-compatible server and report serving latency/throughput under that shape.
 The workflow is `agentic_traces`. It is a benchmark, not an eval: it bypasses the
 media-task dispatcher and emits `Block(kind="agentic_traces")`, one per run.
 
-The client is the AIPerf fork vendored in
-[InferenceX](https://github.com/SemiAnalysisAI/InferenceX), which owns the
-`inferencex-agentx-mvp` scenario and the SemiAnalysis Weka trace dataset loaders.
-The `AGENTIC_TRACES` venv clones that repo at the revision pinned for the
-ModelSpec and installs `utils/aiperf` editable, so a reported number is tied to
-the client that produced it. Use the thin launcher `run_agentic_traces.py`:
+The client is SemiAnalysis's AIPerf fork
+[agentx-harness](https://github.com/SemiAnalysisAI/agentx-harness) (the harness
+[InferenceX](https://github.com/SemiAnalysisAI/InferenceX) runs its AgentX
+benchmark with), which owns the `inferencex-agentx-mvp` scenario and the
+SemiAnalysis Weka trace dataset loaders. The `AGENTIC_TRACES` venv installs it
+from PyPI at the version pinned in
+[`requirements/agentic-traces.txt`](../requirements/agentic-traces.txt), the same
+release InferenceX's own GPU reference runs use. Every report row records the
+client version it ran with (`aiperf_version`).
+
+Use the thin launcher `run_agentic_traces.py`:
 
 ```bash
 MODEL_SPECS_ENV=dev python launchers/run_agentic_traces.py \
@@ -573,14 +578,10 @@ MODEL_SPECS_ENV=dev python launchers/run_agentic_traces.py \
     --runtime-model-spec-json /tmp/kimi_agentic_traces.json
 ```
 
-`run_agentic_traces.py` resolves the ModelSpec first (preferring the runtime spec
-JSON, since `model_id` selects the pinned ref), calls
-`VENV_CONFIGS[WorkflowVenvType.AGENTIC_TRACES].setup(model_spec=...)` (declared
-in [`workflows/workflow_venvs.py`](../workflows/workflow_venvs.py), requirements
-in [`requirements/agentic-traces.txt`](../requirements/agentic-traces.txt)), then
-`os.execv`s into `.workflow_venvs/.venv_agentic_traces/bin/python`. The clone is
-stamped with its ref, so re-running with the same pin skips setup and changing
-the pin forces a re-checkout and reinstall.
+`run_agentic_traces.py` sets up the `AGENTIC_TRACES` venv (declared in
+[`workflows/workflow_venvs.py`](../workflows/workflow_venvs.py), requirements in
+[`requirements/agentic-traces.txt`](../requirements/agentic-traces.txt)), then
+`os.execv`s into `.workflow_venvs/.venv_agentic_traces/bin/python`.
 
 `HF_TOKEN` is required for this workflow even though it is client-side; the
 Weka trace datasets themselves are public (Apache-2.0).
@@ -595,12 +596,12 @@ is rejected by `validate_setup` before the evals rather than after them.
 It is opt-in rather than implied by having a config because full mode is roughly
 an hour of profiling per configured run on top of the rest of the release; pass
 `--agentic-traces-mode ci` for the 900s shape. The same
-`--agentic-traces-sources/-duration/-git-ref` overrides apply, and are rejected
+`--agentic-traces-sources/-duration` overrides apply, and are rejected
 unless the run is either the standalone workflow or an opted-in release.
 
 Mechanically this mirrors `--prefix-cache`: the flag rides through
 `RuntimeConfig` into the engine argv, `_engine_dependency_venv_types` provisions
-`AGENTIC_TRACES` up front (the release child cannot clone InferenceX itself), and
+`AGENTIC_TRACES` up front (the release child cannot set up the venv itself), and
 `CommandFactory` pins that venv's interpreter on the options, since a release
 child runs in `WORKFLOW_RUN_SCRIPT` where `aiperf` is not the fork.
 
@@ -610,12 +611,12 @@ Unlike the ISL/OSL sweep tables, parameters live in
 [`reference_config/agentic_traces/agentic_traces_config.py`](../reference_config/agentic_traces/agentic_traces_config.py),
 keyed by `ModelSpec.model_id` (not `hf_model_repo`): trace replay is sensitive to
 the served context window and to the impl/device the weights run on, so two specs
-for the same weights can need different datasets, concurrency, or a different
-pinned revision. A model with no entry is rejected up front by
+for the same weights can need different datasets or concurrency. A model with
+no entry is rejected up front by
 [`workflows/validate_setup.py`](../workflows/validate_setup.py), before the
-multi-minute clone.
+multi-minute venv install.
 
-Each entry holds an `inferencex_git_ref`, one or more `AgenticTracesRunSpec`s (the
+Each entry holds one or more `AgenticTracesRunSpec`s (the
 scenario, dataset, load shape), and per-mode `AgenticTracesModeSettings`.
 `max_context_length` and `tokenizer_trust_remote_code` default to `None`, meaning
 "derive from the ModelSpec" (`device_model_spec.max_context` and
@@ -664,15 +665,13 @@ runs **except** those listed in `OPT_IN_TRACE_SOURCES`, which must be named
 explicitly (see `default_run_specs`); the orchestrator dispatches each run to the
 driver for its `trace_source`.
 
-- **`inferencex_agentx`** — the AIPerf fork vendored in InferenceX, driven by
+- **`inferencex_agentx`** — the agentx-harness AIPerf fork, driven by
   [`AIPerfAgenticTracesDriver`](../llm_module/drivers/aiperf_agentic_traces.py).
 - **`swarmone`** — SwarmOne's [`swo-bench`](https://swarmone.ai/docs/swo-bench)
   replay engine, driven by
   [`SwoBenchAgenticTracesDriver`](../llm_module/drivers/swo_bench_agentic_traces.py).
-  `swo-bench` is a normal PyPI package pinned in
-  [`requirements/agentic-traces.txt`](../requirements/agentic-traces.txt), so no
-  git checkout is needed; a config whose runs are all `swarmone` skips the
-  InferenceX clone entirely. It replays recorded Claude-Code / Codex coding
+  `swo-bench` is a PyPI package listed in
+  [`requirements/agentic-traces.txt`](../requirements/agentic-traces.txt). It replays recorded Claude-Code / Codex coding
   scenarios (`swo-bench list-scenarios`) turn-by-turn with growing history, and
   the replay plan is built server-side by the SwarmOne backend. A **SwarmOne
   license** is required (`SWO_LICENSE_KEY`, or the key written to
@@ -735,7 +734,14 @@ e2e normalized interactivity (`mean_e2e_norm_intvty`) divides by whole-request
 wall clock and is the honest user-visible speed for a long-prefill agentic turn —
 the two differ by roughly 3x in practice. Its `p75`/`p90`/`p95` companions are
 read off the bottom of the distribution, since for a rate the slow tail is the
-low end.
+low end. The same per-request rate is also exported under AIPerf's own name,
+**E2E Output Token Throughput** (`mean_e2e_output_token_throughput`,
+`median_e2e_output_token_throughput`, `p90_e2e_output_token_throughput`,
+`p99_e2e_output_token_throughput`), and rendered as the first table in the
+report, because it is the number Artificial
+Analysis ("speed", average) and OpenRouter ("throughput", P50) publish for a
+deployment. `p90`/`p99` follow the same worse-tail convention: `p99_e2e_output_token_throughput`
+is the rate only 1% of requests fell below (AIPerf's `p1`).
 
 Several of the fork's tags come in pairs that only mean something together, and
 all halves are kept for that reason. `effective_*` throughput averages over the
@@ -914,7 +920,7 @@ Policy: new benchmarks and runners should be authored as engine modules
 ├── launchers/
 │   ├── run_prefix_cache.py         # thin launcher: ensures PREFIX_CACHE venv, execs run_workflows.py
 │   ├── run_agentic.py              # thin launcher: ensures EVALS_AGENTIC venv, execs run_workflows.py
-│   └── run_agentic_traces.py       # thin launcher: ensures AGENTIC_TRACES venv (InferenceX clone at pinned ref)
+│   └── run_agentic_traces.py       # thin launcher: ensures AGENTIC_TRACES venv (agentx-harness from requirements/agentic-traces.txt)
 ├── workflow_module/                # Workflow scaffolding + block accumulator
 │   ├── workflows.py                # Concrete workflows + WORKFLOW_REGISTRY
 │   ├── execution.py                # WorkflowExecution template + WorkflowResult

@@ -20,7 +20,7 @@ class TraceSource(Enum):
     """Where a run's agentic traces come from.
 
     ``INFERENCEX_AGENTX`` replays the SemiAnalysis Weka coding traces through
-    the AIPerf fork vendored in the InferenceX repo. ``SWARMONE`` replays
+    SemiAnalysis's agentx-harness AIPerf fork. ``SWARMONE`` replays
     SwarmOne's recorded coding sessions through its ``swo-bench`` CLI.
     """
 

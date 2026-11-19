@@ -78,12 +78,21 @@ LATENCY_COLUMNS: List[Tuple[str, str]] = [
     ("p90_adj_e2el_ms", "Err-Adj E2EL P90"),
 ]
 
+# The headline table: AIPerf's E2E Output Token Throughput, i.e. per-request
+# output tokens over whole-request wall clock (TTFT included). It is what
+# Artificial Analysis ("speed", average) and OpenRouter ("throughput", P50)
+# publish. P90/P99 are the slow tail -- the rate 90% / 99% of requests met or
+# beat.
+E2E_OUTPUT_THROUGHPUT_COLUMNS: List[Tuple[str, str]] = [
+    ("mean_e2e_output_token_throughput", "E2E Output Token Throughput Avg (AA)"),
+    ("median_e2e_output_token_throughput", "E2E Output Token Throughput P50 (OR)"),
+    ("p90_e2e_output_token_throughput", "E2E Output Token Throughput P90"),
+    ("p99_e2e_output_token_throughput", "E2E Output Token Throughput P99"),
+]
+
 THROUGHPUT_COLUMNS: List[Tuple[str, str]] = [
     ("output_token_throughput_per_user", "Out Tok/s/User"),
     ("median_output_token_throughput_per_user", "Out Tok/s/User P50"),
-    ("mean_e2e_norm_intvty", "E2E Norm Intvty Avg"),
-    ("p75_e2e_norm_intvty", "E2E Norm Intvty P75"),
-    ("p90_e2e_norm_intvty", "E2E Norm Intvty P90"),
     ("output_token_throughput", "Output Tok/s"),
     ("total_token_throughput", "Total Tok/s"),
     ("active_throughput_tok_per_s", "Total Tok/s (Active)"),
@@ -168,8 +177,11 @@ CONFIG_FIELDS: List[Tuple[str, str]] = [
     ("trajectory_start_min_ratio", "Trajectory Start Min"),
     ("trajectory_start_max_ratio", "Trajectory Start Max"),
     ("random_seed", "Random Seed"),
-    ("inferencex_git_ref", "Client Ref"),
-    ("aiperf_version", "AIPerf Version"),
+    # Payloads from before agentx-harness came from PyPI, which pinned the
+    # InferenceX revision that vendored the client.
+    ("inferencex_git_ref", "InferenceX Ref"),
+    # agentx-harness reports its own release here (e.g. 1.0.14).
+    ("aiperf_version", "Client Version"),
     ("swo_bench_version", "swo-bench Version"),
     ("swo_session_id", "swo-bench Session"),
     ("benchmark_id", "Benchmark ID"),
@@ -183,9 +195,10 @@ _THROUGHPUT_KEYS = frozenset(
         "output_token_throughput",
         "output_token_throughput_per_user",
         "median_output_token_throughput_per_user",
-        "mean_e2e_norm_intvty",
-        "p75_e2e_norm_intvty",
-        "p90_e2e_norm_intvty",
+        "mean_e2e_output_token_throughput",
+        "median_e2e_output_token_throughput",
+        "p90_e2e_output_token_throughput",
+        "p99_e2e_output_token_throughput",
         "total_token_throughput",
         "active_throughput_tok_per_s",
         "effective_prefill_throughput",
@@ -286,10 +299,13 @@ INFERENCEX_DEFINITIONS: List[str] = [
     "**Err-Adj TTFT / E2EL**: percentiles with failed requests folded in, so a "
     "run that got fast by erroring out cannot look good. Omitted when a run "
     "had no errors.",
-    "**E2E Tok/s/User**: divides by whole-request wall clock rather than "
-    "streaming time, so it includes prefill and is the user-visible speed of "
-    "an agentic turn; expect it to be several times lower than "
-    "**Out Tok/s/User**.",
+    "**E2E Output Token Throughput**: AIPerf's per-request output tokens "
+    "divided by whole-request wall clock, TTFT included -- the user-visible "
+    'speed of an agentic turn, and the number Artificial Analysis ("speed", '
+    '**Avg**) and OpenRouter ("throughput", **P50**) publish. **P90 / P99** '
+    "are the slow tail: the rate 90% / 99% of requests met or beat. Prefill time is part of it, so expect it to be "
+    "several times lower than **Out Tok/s/User**, and to move less than "
+    "decode speed does when only decode improves.",
     "**Prefill / Decode Tok/s**: the phase split of serving throughput, "
     "averaged over the whole run. The **(Active)** variants only count the "
     "windows where that phase was actually working, so the ratio between them "
@@ -503,14 +519,6 @@ def _as_int(value: Any) -> int:
     return int(value) if isinstance(value, (int, float)) else 0
 
 
-def _resolve_client_ref(rows: Sequence[Mapping[str, Any]]) -> Optional[str]:
-    for row in rows:
-        ref = row.get("inferencex_git_ref")
-        if isinstance(ref, str) and ref:
-            return ref
-    return None
-
-
 def _resolve_field(rows: Sequence[Mapping[str, Any]], key: str) -> Optional[str]:
     for row in rows:
         value = row.get(key)
@@ -530,12 +538,24 @@ def _tool_paragraphs(rows: Sequence[Mapping[str, Any]]) -> List[str]:
     paragraphs: List[str] = []
 
     if INFERENCEX_SOURCE in sources:
-        client_ref = _resolve_client_ref(rows)
-        ref_note = f" pinned at `{client_ref}`" if client_ref else ""
+        legacy_ref = _resolve_field(rows, "inferencex_git_ref")
+        if legacy_ref:
+            client = (
+                "the AIPerf fork vendored in "
+                "[InferenceX](https://github.com/SemiAnalysisAI/InferenceX)"
+                f" pinned at `{legacy_ref}`"
+            )
+        else:
+            version = _resolve_field(rows, "aiperf_version")
+            version_note = f" v{version}" if version else ""
+            client = (
+                "SemiAnalysis's AIPerf fork "
+                "[agentx-harness](https://github.com/SemiAnalysisAI/agentx-harness)"
+                f"{version_note}"
+            )
         paragraphs.append(
-            "**`inferencex_agentx` rows:** the AIPerf fork vendored in "
-            "[InferenceX](https://github.com/SemiAnalysisAI/InferenceX)"
-            f"{ref_note}, driving the `inferencex-agentx-mvp` scenario. Each run "
+            f"**`inferencex_agentx` rows:** {client}, driving the "
+            "`inferencex-agentx-mvp` scenario. Each run "
             "replays recorded multi-turn agentic coding traces with their original "
             "timing, including subagent fan-out, so the load shape is the trace's "
             "rather than a synthetic ISL/OSL grid."
@@ -556,7 +576,7 @@ def _tool_paragraphs(rows: Sequence[Mapping[str, Any]]) -> List[str]:
 
     paragraphs.append(
         "Numbers are only comparable across runs from the same source on the "
-        "same client revision and trace set."
+        "same client version and trace set."
     )
     return paragraphs
 
@@ -601,6 +621,15 @@ def render_agentic_traces(block: Block, metadata: Mapping[str, Any]) -> str:
 
     parts.append("**Benchmarking Tools:**")
     parts.extend(_tool_paragraphs(rows))
+
+    e2e_throughput = _table(rows, E2E_OUTPUT_THROUGHPUT_COLUMNS)
+    if e2e_throughput:
+        parts.append(
+            "#### Per-run E2E Output Token Throughput (tok/s per request)\n\n"
+            "Output tokens over whole-request time, TTFT included: the metric "
+            "Artificial Analysis and OpenRouter publish. P90 / P99 are the "
+            f"slow tail.\n\n{e2e_throughput}"
+        )
 
     latency = _table(rows, LATENCY_COLUMNS)
     if latency:
