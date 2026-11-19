@@ -996,12 +996,12 @@ def test_download_ignores_the_record_of_another_repo_or_variant(
     capsys.readouterr()
 
     assert download(dest, repo="example-org/another-tt-weights") == 0
+    assert json.loads(record.read_text())["repo"] == "example-org/another-tt-weights"
     assert download(dest, REF2VA) == 0
 
     recorded = f"records {FL2VA} of {WEIGHTS_REPO}"
     assert hub_reasons(capsys) == [f"{record} {recorded}", f"{copied} {recorded}"]
     assert set(hub.fetched) == set(published(REF2VA)) - set(published(FL2VA))
-    assert json.loads(record.read_text())["repo"] == "example-org/another-tt-weights"
     assert json.loads(copied.read_text())["variant"] == REF2VA
 
 
@@ -1026,6 +1026,32 @@ def test_download_that_replaces_tensors_removes_the_records(
         f"{cache} {no_record} {FL2VA}",
     ]
     assert (dest / shared).read_bytes() == hub.files()[shared]
+
+
+def test_download_that_fills_a_removed_directory_removes_the_records(
+    hub, cache_dir, tmp_path, capsys
+):
+    (tag,) = hub.tags
+    assert main(upload_argv(cache_dir, REF2VA)) == 0
+    shared = f"tt_dit_cache/{SHARED}/embed.weight.tensorbin"
+    hub.files()[shared] = hub.files(tag)[shared][::-1]
+    dest = tmp_path / "deployment"
+    assert download(dest, revision=tag) == 0
+    shutil.rmtree(dest / "tt_dit_cache" / SHARED)
+    capsys.readouterr()
+
+    assert download(dest, REF2VA) == 0
+    assert os.listdir(dest / RECORDS) == [f"{REF2VA}.json"]
+    assert (dest / shared).read_bytes() == hub.files()[shared]
+    assert download(dest, revision=tag) == 0
+
+    cache = dest / "tt_dit_cache"
+    no_record = "has no record of a complete download of"
+    assert hub_reasons(capsys) == [
+        f"{cache} {no_record} {REF2VA}",
+        f"{cache} {no_record} {FL2VA}",
+    ]
+    assert (dest / shared).read_bytes() == hub.files(tag)[shared]
 
 
 WEIGHTS = {"repo": WEIGHTS_REPO, "variant": FL2VA, "tag": "t", "commit": "1" * 40}

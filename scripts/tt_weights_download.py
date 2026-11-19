@@ -13,8 +13,9 @@ directories complete, so a server start loads them instead of converting:
         --variant <variant> --dest-cache <TT_DIT_CACHE_DIR> --dest-original <checkpoint dir>
 
 A download needs huggingface_hub and takes the token from HF_TOKEN. A run on a
-destination that the same revision completed checks it against the record saved
-there and needs neither.
+destination that the same revision completed needs neither: it checks the
+destination against the record saved there, converted files by name and size
+plus the completeness marker, original files by sha256.
 
 The kernel-cache image carries this file alone, so it imports nothing of the
 repo, and huggingface_hub only for a download. scripts/prebuilt_artifacts.py
@@ -280,8 +281,10 @@ def download_tt_weights(
     download that stops part way leaves none of them looking complete. The
     files are checked in a staging folder before any of them is moved into
     place. A failed run keeps that folder, and the next run for the same commit
-    continues from it. A completed run saves the record that hub_reason reads;
-    the records are removed before files of a cache directory are replaced.
+    continues from it. A run that fetched a cache directory removes the records
+    of every variant before it moves the files into place: the other variants
+    are checked against the Hub on their next run. A completed run saves the
+    record that hub_reason reads.
     """
     commit = api.model_info(repo_id=repo, revision=revision).sha
     step(f"revision: {revision} is commit {commit}")
@@ -340,10 +343,6 @@ def download_tt_weights(
         "already holds as they are at this commit"
     )
 
-    # A record vouches for file names and sizes only, and a directory can be
-    # shared: none outlives a directory whose files are replaced.
-    if any(tensor_sizes(dest_cache / entry["path"]) for entry in directories):
-        shutil.rmtree(dest_cache / TT_WEIGHTS_RECORDS, ignore_errors=True)
     markers = [dest_cache / entry["path"] / CACHE_MARKER for entry in directories]
     for marker in markers:
         marker.unlink(missing_ok=True)
@@ -392,6 +391,10 @@ def download_tt_weights(
         "original files match the manifest"
     )
 
+    # A record vouches for file names and sizes only, and a directory can be
+    # shared: no record outlives a run that moves a cache directory into place.
+    if directories:
+        shutil.rmtree(dest_cache / TT_WEIGHTS_RECORDS, ignore_errors=True)
     for source, marker in zip(staged, markers):
         marker.parent.mkdir(parents=True, exist_ok=True)
         for name in tensor_sizes(source):
@@ -447,7 +450,8 @@ def build_parser() -> argparse.ArgumentParser:
         "needs. What the destination already holds with the same content is kept. "
         "Needs huggingface_hub and the token in HF_TOKEN, except on a destination "
         "that a run for the same revision completed: that one is checked against "
-        "the record saved in it, without the Hub."
+        "the record saved in it, without the Hub (converted files by name and "
+        "size plus the completeness marker, original files by sha256)."
     )
     parser.add_argument(
         "--repo",
