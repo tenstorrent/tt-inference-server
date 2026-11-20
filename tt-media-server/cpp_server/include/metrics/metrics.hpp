@@ -152,6 +152,30 @@ class ServerMetrics {
    */
   void onTtsRequestDuration(double seconds);
 
+  /**
+   * Video service telemetry (one set of series per server, no model label).
+   * All are per-task / per-sweep frequency, so they write directly.
+   *
+   * Phases of `onVideoOverhead`: the server-side cost around the device run,
+   * i.e. what a request pays on top of the generation itself.
+   */
+  enum class VideoOverheadPhase : size_t {
+    RequestWrite = 0,     // request-<id>.json written to the payload dir
+    ShmEnqueue,           // push into the shm task queue
+    ResponseHandling,     // response json read + callback + cleanup
+    Count
+  };
+  /** Task taken by a worker; `queueWaitSeconds` = submit -> claim. */
+  void onVideoTaskClaimed(double queueWaitSeconds);
+  /** Task result arrived. `generationSeconds` is the worker's own measurement,
+   *  `e2eSeconds` runs from submit to the result being popped. */
+  void onVideoTaskDone(bool ok, double generationSeconds, double e2eSeconds);
+  void onVideoOverhead(VideoOverheadPhase phase, double seconds);
+  /** Jobs currently in the store, by status (queued, in_progress, ...). */
+  void setVideoJobs(const std::array<size_t, 6>& byStatus);
+  void onVideoSweep(size_t evicted, size_t stuck);
+  /** result: "ok", "failed" or "gave_up". */
+
   /** Render the full registry in Prometheus text exposition format. */
   std::string renderText() const;
 
@@ -254,6 +278,20 @@ class ServerMetrics {
   std::array<prometheus::Summary*, TTS_CONDITIONING_STAGE_COUNT>
       tts_conditioning_{};
   prometheus::Summary* tts_request_duration_seconds_{nullptr};
+
+  // --- video service ---------------------------------------------------------
+  prometheus::Histogram* video_queue_wait_seconds_{nullptr};
+  prometheus::Histogram* video_generation_seconds_{nullptr};
+  prometheus::Histogram* video_e2e_ok_seconds_{nullptr};
+  prometheus::Histogram* video_e2e_error_seconds_{nullptr};
+  prometheus::Counter* video_tasks_ok_{nullptr};
+  prometheus::Counter* video_tasks_error_{nullptr};
+  std::array<prometheus::Histogram*,
+             static_cast<size_t>(VideoOverheadPhase::Count)>
+      video_overhead_{};
+  std::array<prometheus::Gauge*, 6> video_jobs_{};
+  prometheus::Counter* video_sweep_evicted_{nullptr};
+  prometheus::Counter* video_sweep_stuck_{nullptr};
 };
 
 }  // namespace tt::metrics

@@ -4,6 +4,7 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cstdint>
 #include <cstdio>
@@ -108,6 +109,17 @@ class VideoJobStore {
   size_t activeCount() const {
     std::lock_guard<std::mutex> lock(mutex_);
     return activeCountLocked();
+  }
+
+  /** Jobs per status, indexed like `JobStatus` (queued, in_progress,
+   *  completed, failed, cancelled, cancelling). For the telemetry gauges. */
+  std::array<size_t, 6> countByStatus() const {
+    std::array<size_t, 6> counts{};
+    std::lock_guard<std::mutex> lock(mutex_);
+    for (const auto& kv : jobs_) {
+      ++counts[static_cast<size_t>(kv.second.status)];
+    }
+    return counts;
   }
 
   /** Drops a job that never reached the worker (submit threw). */

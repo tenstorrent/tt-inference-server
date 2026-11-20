@@ -13,6 +13,7 @@
 #include <string>
 #include <utility>
 
+#include "metrics/metrics.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::services {
@@ -99,6 +100,15 @@ VideoService::VideoService(
     // shares this directory.
     const auto outDir = utils::resolveVideoOutputDir();
     jobs.setOutputRoot(outDir);
+    outputDir_ = outDir;
+    if (const std::string err = utils::checkDirWritable(outDir); !err.empty()) {
+      // Not fatal: the problem may be fixed while the server runs, and every
+      // request is checked again (503 until then).
+      TT_LOG_ERROR(
+          "[VideoService] Video output directory is not usable: {}. Requests "
+          "get 503 until it is fixed.",
+          err);
+    }
     const char* purge = std::getenv("TT_VIDEO_PURGE_ON_START");
     if (purge == nullptr || std::string(purge) != "0") {
       const size_t removed = utils::purgeOrphanMp4(outDir);
@@ -128,6 +138,9 @@ void VideoService::startSweeper() {
                                 [this] { return sweeperStop_; })) {
       lock.unlock();
       const auto result = jobs.sweep(maxStuckSeconds_);
+      tt::metrics::ServerMetrics::instance().onVideoSweep(result.evicted,
+                                                          result.stuck);
+      refreshJobGauges();
       if (result.evicted != 0 || result.stuck != 0) {
         TT_LOG_INFO("[VideoService] Job cleanup: evicted={} stuck_failed={}",
                     result.evicted, result.stuck);
@@ -186,7 +199,13 @@ Json::Value VideoService::createJob(domain::VideoGenerateRequest request) {
     jobs.erase(taskId);
     throw;
   }
+  refreshJobGauges();
   return metadata;
+}
+
+std::string VideoService::outputDirError() const {
+  if (outputDir_.empty()) return {};
+  return utils::checkDirWritable(outputDir_);
 }
 
 std::optional<uint32_t> VideoService::resolveJobId(
@@ -225,6 +244,7 @@ std::optional<Json::Value> VideoService::cancelJob(uint32_t jobId) {
                     ? " (already running, result will be discarded)"
                     : " (queued, worker will skip it)");
   }
+  refreshJobGauges();
   return cancelled;
 }
 
@@ -232,7 +252,11 @@ std::optional<Json::Value> VideoService::cancelJob(uint32_t jobId) {
 // is terminal (so it can be deleted) but its task still sits in the shm queue,
 // and the worker must still see the marker to skip it. cleanupTask() removes it
 // when the worker's result for that task arrives.
-bool VideoService::deleteJob(uint32_t jobId) { return jobs.remove(jobId); }
+bool VideoService::deleteJob(uint32_t jobId) {
+  const bool removed = jobs.remove(jobId);
+  refreshJobGauges();
+  return removed;
+}
 
 void VideoService::removeCancelMarker(uint32_t taskId) const {
   std::error_code ec;
@@ -243,9 +267,29 @@ void VideoService::removeCancelMarker(uint32_t taskId) const {
 
 void VideoService::onTaskClaimed(
     size_t /*workerIdx*/, const IpcResult& result,
-    std::chrono::steady_clock::time_point /*claimTime*/, double /*queueWaitMs*/,
-    double /*shmEnqueueMs*/) {
+    std::chrono::steady_clock::time_point /*claimTime*/, double queueWaitMs,
+    double shmEnqueueMs) {
+  auto& metrics = tt::metrics::ServerMetrics::instance();
+  metrics.onVideoTaskClaimed(queueWaitMs / 1000.0);
+  metrics.onVideoOverhead(
+      tt::metrics::ServerMetrics::VideoOverheadPhase::ShmEnqueue,
+      shmEnqueueMs / 1000.0);
   jobs.markInProgress(result.getTaskId());
+  refreshJobGauges();
+}
+
+void VideoService::onTaskCompleted(
+    size_t /*workerIdx*/, const IpcResult& /*result*/,
+    std::chrono::steady_clock::time_point gotResultTime,
+    std::chrono::steady_clock::time_point doneTime) {
+  tt::metrics::ServerMetrics::instance().onVideoOverhead(
+      tt::metrics::ServerMetrics::VideoOverheadPhase::ResponseHandling,
+      std::chrono::duration<double>(doneTime - gotResultTime).count());
+  refreshJobGauges();
+}
+
+void VideoService::refreshJobGauges() const {
+  tt::metrics::ServerMetrics::instance().setVideoJobs(jobs.countByStatus());
 }
 
 std::string VideoService::validateRequest(
@@ -258,9 +302,19 @@ std::string VideoService::validateRequest(
 
 VideoService::IpcTask VideoService::buildIpcTask(
     const domain::VideoGenerateRequest& request) {
+  const auto submitTime = std::chrono::steady_clock::now();
   const auto reqPath = payloadPath(request.task_id, "request");
   const auto respPath = payloadPath(request.task_id, "response");
   writeJsonFile(reqPath, request.toJson());
+  tt::metrics::ServerMetrics::instance().onVideoOverhead(
+      tt::metrics::ServerMetrics::VideoOverheadPhase::RequestWrite,
+      std::chrono::duration<double>(std::chrono::steady_clock::now() -
+                                    submitTime)
+          .count());
+  {
+    std::lock_guard<std::mutex> lock(submitMutex_);
+    submitTimes_[request.task_id] = submitTime;
+  }
 
   IpcTask task;
   task.task_id = request.task_id;
@@ -275,19 +329,36 @@ domain::video::VideoResponse VideoService::buildResponse(
   response.generationTimeSeconds = result.generation_time_seconds;
   if (!result.error.empty()) {
     response.error = result.error;
-    return response;
+  } else {
+    try {
+      auto body = readJsonFile(payloadPath(taskId, "response"));
+      response = responseFromJson(taskId, body);
+      response.generationTimeSeconds = result.generation_time_seconds;
+    } catch (const std::exception& e) {
+      response.error = e.what();
+    }
   }
-  try {
-    auto body = readJsonFile(payloadPath(taskId, "response"));
-    response = responseFromJson(taskId, body);
-    response.generationTimeSeconds = result.generation_time_seconds;
-  } catch (const std::exception& e) {
-    response.error = e.what();
+  // Telemetry: submit -> result popped (called before cleanupTask).
+  double e2eSeconds = 0.0;
+  {
+    std::lock_guard<std::mutex> lock(submitMutex_);
+    auto it = submitTimes_.find(taskId);
+    if (it != submitTimes_.end()) {
+      e2eSeconds = std::chrono::duration<double>(
+                       std::chrono::steady_clock::now() - it->second)
+                       .count();
+    }
   }
+  tt::metrics::ServerMetrics::instance().onVideoTaskDone(
+      response.error.empty(), result.generation_time_seconds, e2eSeconds);
   return response;
 }
 
 void VideoService::cleanupTask(uint32_t taskId) {
+  {
+    std::lock_guard<std::mutex> lock(submitMutex_);
+    submitTimes_.erase(taskId);
+  }
   std::error_code ec;
   std::filesystem::remove(payloadPath(taskId, "request"), ec);
   std::filesystem::remove(payloadPath(taskId, "response"), ec);

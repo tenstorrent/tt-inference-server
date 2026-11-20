@@ -87,6 +87,24 @@ TEST(VideoJobStoreTest, CreateGetAndListUseTaskIdOrder) {
             std::optional<uint32_t>(3U));
 }
 
+TEST(VideoJobStoreTest, CountByStatusFollowsTheLifecycle) {
+  VideoJobStore store(10, 0);
+  // indexed like JobStatus: queued, in_progress, completed, failed, cancelled,
+  // cancelling
+  EXPECT_EQ(store.countByStatus(), (std::array<size_t, 6>{0, 0, 0, 0, 0, 0}));
+  store.create(1, "tt-wan2.2", params("a"));
+  store.create(2, "tt-wan2.2", params("b"));
+  store.create(3, "tt-wan2.2", params("c"));
+  EXPECT_EQ(store.countByStatus(), (std::array<size_t, 6>{3, 0, 0, 0, 0, 0}));
+  store.markInProgress(1);
+  store.markInProgress(2);
+  EXPECT_EQ(store.countByStatus(), (std::array<size_t, 6>{1, 2, 0, 0, 0, 0}));
+  store.complete(1, "", "boom");  // worker error -> failed
+  ASSERT_TRUE(store.cancel(3).has_value());  // queued -> cancelled
+  ASSERT_TRUE(store.cancel(2).has_value());  // running -> cancelling
+  EXPECT_EQ(store.countByStatus(), (std::array<size_t, 6>{0, 0, 0, 1, 1, 1}));
+}
+
 TEST(VideoJobStoreTest, InProgressThenCompleteKeepsTheFileAndResultPath) {
   VideoJobStore store(10, 0);
   const auto clip = tempClip("complete");
@@ -615,6 +633,42 @@ TEST(VideoOutputDir, StoreRefusesToDeleteOutsideRoot) {
   EXPECT_FALSE(fs::exists(inside));
   EXPECT_TRUE(fs::exists(outside));  // not deleted: outside the output dir
   fs::remove(outside);
+  fs::remove_all(root);
+}
+
+TEST(VideoOutputDir, CheckDirWritableCreatesMissingDirAndLeavesNoProbe) {
+  namespace fs = std::filesystem;
+  const fs::path root = fs::temp_directory_path() / "tt-video-writable-test";
+  fs::remove_all(root);
+  const fs::path dir = root / "a" / "b";
+  EXPECT_EQ(tt::utils::checkDirWritable(dir), "");
+  EXPECT_TRUE(fs::is_directory(dir));
+  EXPECT_TRUE(fs::is_empty(dir));
+  fs::remove_all(root);
+}
+
+TEST(VideoOutputDir, CheckDirWritableReportsNotADirectory) {
+  namespace fs = std::filesystem;
+  const fs::path root = fs::temp_directory_path() / "tt-video-writable-file";
+  fs::remove_all(root);
+  fs::create_directories(root);
+  const fs::path file = root / "plain";
+  std::ofstream(file) << "x";
+  EXPECT_NE(tt::utils::checkDirWritable(file), "");
+  EXPECT_NE(tt::utils::checkDirWritable(file / "sub"), "");
+  fs::remove_all(root);
+}
+
+TEST(VideoOutputDir, CheckDirWritableReportsReadOnlyDirectory) {
+  namespace fs = std::filesystem;
+  if (::geteuid() == 0) GTEST_SKIP() << "root ignores directory permissions";
+  const fs::path root = fs::temp_directory_path() / "tt-video-writable-ro";
+  fs::remove_all(root);
+  fs::create_directories(root);
+  fs::permissions(root, fs::perms::owner_read | fs::perms::owner_exec);
+  EXPECT_NE(tt::utils::checkDirWritable(root), "");
+  fs::permissions(root, fs::perms::owner_all);
+  EXPECT_EQ(tt::utils::checkDirWritable(root), "");
   fs::remove_all(root);
 }
 
