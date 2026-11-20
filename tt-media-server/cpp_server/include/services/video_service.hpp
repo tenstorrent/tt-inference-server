@@ -37,7 +37,7 @@ namespace tt::services {
  * MODEL_RUNNER, and the JSON `video_path` is the mp4 written for that job.
  *
  * Two ways to run the device runner:
- *  - worker process(es) (several DEVICE_IDS groups, or a multihost launch):
+ *  - worker process(es) (several DEVICE_IDS groups):
  *    tasks travel through the shared-memory queue as described above;
  *  - in process (one DEVICE_IDS group): the runner lives on a thread of this
  *    server process and the queue is a plain deque in memory. No shared
