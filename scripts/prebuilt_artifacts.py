@@ -1063,11 +1063,7 @@ def write_release_file(args) -> None:
             "device": args.device,
             "tt_metal_sha": args.tt_metal_sha,
             "server_sha": args.server_sha,
-            "image": {
-                "reference": args.image,
-                "digest": args.image_digest,
-                "base_image": args.base_image,
-            },
+            "image": {"reference": args.image, "digest": args.image_digest},
             "kernel_cache": {
                 "path": kernel["kernel_cache_path"],
                 "manifest_in_image": KERNEL_CACHE_MANIFEST_CONTAINER_PATH,
@@ -1078,6 +1074,7 @@ def write_release_file(args) -> None:
                 "bytes": kernel["bytes"],
             },
             "tt_weights": tt_weights,
+            "tests_outcome": args.tests_outcome,
             "warm_ready_seconds": args.warm_ready_seconds,
             "run_url": args.run_url,
         },
@@ -1383,6 +1380,11 @@ def build_parser() -> argparse.ArgumentParser:
     release.add_argument("--model", required=True, help="model name")
     release.add_argument(
         "--device", required=True, help="device type the artifacts were made on"
+    )
+    release.add_argument(
+        "--tests-outcome",
+        choices=("success", "failure"),
+        help="outcome of the tests of the CI run; written as tests_outcome",
     )
     release.add_argument(
         "--warm-ready-seconds",

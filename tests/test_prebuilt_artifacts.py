@@ -33,7 +33,6 @@ TOOL = Path(prebuilt_artifacts.__file__)
 DOWNLOAD_SCRIPT = Path(tt_weights_download.__file__)
 DOWNLOAD_SCRIPT_IN_IMAGE = "/home/container_app_user/tt_weights_download.py"
 BASE_IMAGE = "registry.example/media-server:1.0-aaa-bbb-1"
-KC_IMAGE = f"{BASE_IMAGE}-kc"
 WEIGHTS_REPO = "example-org/model-tt-weights"
 
 
@@ -300,12 +299,12 @@ def test_kernel_cache_manifest_refuses_a_log_without_compile_lines(
     assert not out.exists()
 
 
-def build_image_argv(kernel_cache, tmp_path, manifest=KERNEL_MANIFEST):
+def build_image_argv(kernel_cache, tmp_path, manifest=KERNEL_MANIFEST, tag=BASE_IMAGE):
     manifest_file = tmp_path / "manifest.json"
     manifest_file.write_text(json.dumps(manifest))
     argv = ["kernel-cache", "build-image", "--base-image", BASE_IMAGE]
     argv += ["--cache-dir", str(kernel_cache), "--manifest", str(manifest_file)]
-    return argv + ["--tag", KC_IMAGE]
+    return argv + ["--tag", tag]
 
 
 def test_build_image_stages_cache_files_and_bakes_set_variables(
@@ -357,6 +356,17 @@ def test_build_image_bakes_the_variables_a_manifest_records_in_its_order(
         'ENV EXAMPLE_MODEL_TOPOLOGY="linear"',
         'ENV ANOTHER_MODEL_OPTION="a \\"quoted\\" \\$value"',
     ]
+
+
+@pytest.mark.parametrize("tag", [BASE_IMAGE, "local/media-server:with-kernels"])
+def test_build_image_builds_from_the_base_image_under_the_given_tag(
+    docker, kernel_cache, tmp_path, tag
+):
+    assert main(build_image_argv(kernel_cache, tmp_path, tag=tag)) == 0
+
+    build, inspect = docker.commands
+    assert build[2:6] == ["--build-arg", f"BASE_IMAGE={BASE_IMAGE}", "--tag", tag]
+    assert inspect[-1] == tag
 
 
 @pytest.mark.parametrize(
@@ -1648,7 +1658,7 @@ def test_download_that_fills_a_removed_directory_removes_the_records(
 
 WEIGHTS = {"repo": WEIGHTS_REPO, "variant": VARIANT, "tag": "t", "commit": "1" * 40}
 RELEASE_OPTIONS = {
-    "--image": KC_IMAGE,
+    "--image": BASE_IMAGE,
     "--image-digest": "sha256:2222",
     "--tt-metal-sha": "aaa",
     "--server-sha": "bbb",
@@ -1678,18 +1688,34 @@ def test_release_file_names_image_kernel_cache_and_weights(tmp_path):
     release = write_release(tmp_path)
 
     assert release["tt_weights"] == WEIGHTS
-    image = {"reference": KC_IMAGE, "digest": "sha256:2222", "base_image": BASE_IMAGE}
-    assert release["image"] == image
+    assert release["image"] == {"reference": BASE_IMAGE, "digest": "sha256:2222"}
     kernel_cache_env = {"TT_METAL_CACHE": KERNEL_CACHE_CONTAINER_DIR, **SET_VARIABLES}
     assert release["kernel_cache"]["env"] == kernel_cache_env
     assert write_release(tmp_path, weights=None)["tt_weights"] is None
+
+
+@pytest.mark.parametrize("outcome", ["success", "failure", None])
+def test_release_file_records_the_tests_outcome(tmp_path, outcome):
+    options = {"--tests-outcome": outcome} if outcome else {}
+
+    assert write_release(tmp_path, options)["tests_outcome"] == outcome
+
+
+def test_release_file_refuses_another_tests_outcome(tmp_path, capsys):
+    with pytest.raises(SystemExit) as refused:
+        write_release(tmp_path, {"--tests-outcome": "cancelled"})
+
+    assert refused.value.code == 2
+    assert "--tests-outcome: invalid choice: 'cancelled'" in capsys.readouterr().err
+    assert not (tmp_path / "release.json").exists()
 
 
 WATCHED = {**KERNEL_MANIFEST["build_key_env"], "TT_METAL_WATCHER": "10"}
 RELEASE_CHANGES = {
     "run-url": ({"options": {"--run-url": "https://ci.example/run/2"}}, True),
     "warm-ready-seconds": ({"options": {"--warm-ready-seconds": "301.5"}}, True),
-    "image-reference": ({"options": {"--image": f"{KC_IMAGE}-again"}}, True),
+    "image-reference": ({"options": {"--image": f"{BASE_IMAGE}-again"}}, True),
+    "tests-outcome": ({"options": {"--tests-outcome": "failure"}}, True),
     "weights-tag": ({"weights": {**WEIGHTS, "tag": "u"}}, True),
     "kernel-cache-size": ({"kernel": {**KERNEL_MANIFEST, "files": 4}}, True),
     "image-digest": ({"options": {"--image-digest": "sha256:3333"}}, False),
