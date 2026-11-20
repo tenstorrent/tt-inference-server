@@ -219,6 +219,8 @@ The setup for other supported DiT models is very similar to [Standard SD-3.5 Set
 | MiniMax-H3-FL2VA-LightX2V | galaxy, galaxy_quad |
 | MiniMax-H3-Ref2VA-LightX2V | galaxy, galaxy_quad |
 
+A server can start from compiled kernels and converted weights that CI produced; see [Image with prebuilt kernels and weights](#image-with-prebuilt-kernels-and-weights).
+
 ## Basic Single Host Deployment
 
 ```bash
@@ -1378,6 +1380,25 @@ sudo docker run -d -it \
 ```
 
 **Note:** Sample above will run Whisper model on devices 24 to 26 - 3 devices.
+
+## Image with prebuilt kernels and weights
+
+CI can bake the tt-metal kernel cache of a server start into the server image, publish the converted weights to a private Hugging Face repo and write a release file that names both. The baked image is pushed under the same tag and replaces the image the run started from, so a deployment pins the digest from the release file. It is pushed even when the tests of the run fail; the release file records their result in `tests_outcome` (`success` or `failure`), and the converted weights are published only when the tests pass. Only content that is not published yet is uploaded: when the repo already holds the same converted weights, under any tag, nothing is sent and the release file names that version. The option exists for the models whose spec in `workflows/model_specs/` has `prebuilt_artifacts` metadata: it names the variables of the model that change the compiled kernels and the files of the original checkpoint that a start with converted weights still reads. `python3 scripts/prebuilt_artifacts.py model-info --model <model> --device <device> --out <file>` (with `--dev-mode` for the dev catalog) fails for a model without it and else writes what CI takes from the spec: the variant name, the name of the weights repo and the container folders of the converted weights and the original checkpoint. A server started from the image and the weights loads the kernels and the weights instead of compiling and converting them:
+
+- Deploy the image by the digest in the release file (`image.digest`).
+- Leave `TT_METAL_CACHE` as baked and mount nothing over it: tt-metal reuses a kernel cache only at the path it was written at. Keep it writable; tt-metal writes into it on every start.
+- Do not override the variables listed under `kernel_cache.env` in the release file. Another value makes tt-metal compile again.
+- Fetch the weights inside a container of the image, with `HF_TOKEN` set. The release file gives the repo, the variant and the tag and commit under `tt_weights`:
+
+  ```bash
+  source "${PYTHON_ENV_DIR}/bin/activate" && python /home/container_app_user/tt_weights_download.py \
+    --repo <org>/<name> --revision <tag or commit from the release file> --variant <variant> \
+    --dest-cache <TT_DIT_CACHE_DIR> --dest-original <checkpoint folder>
+  ```
+
+  `<checkpoint folder>` is the folder the server reads the original checkpoint from. This fetches the converted weights and the part of the original checkpoint the server still reads; the script prints the size of the converted weights first, which can exceed 100 GB. Extra files such as a LoRA land where `hf_extra_files` of the spec puts them, `<checkpoint folder>/<local_subdir>/<filename>`; a server variable that names such a file must point there. A plain Hub download is not enough: the script marks each cache folder complete after verifying it, and the server loads only marked folders. A run on a folder that the same revision already completed re-checks it locally against the manifest saved in it (converted files by name and size plus the completeness marker, original files by sha256) and needs neither the Hub nor the token. Host setup in `run.py` still downloads the full checkpoint, so this download is for deployments that start the container themselves.
+- To tell that nothing was compiled, look at the server log: a start that used the cache has no `compiled <kernel>/<hash>/ in <N> ms` lines. The count is only meaningful when `TT_METAL_LOG_KERNEL_COMPILE` is not `0`. `python3 scripts/prebuilt_artifacts.py kernel-cache check-log --server-log <log>` counts the lines.
+- The kernels also depend on the host, so another host may compile again; that start is slow and still works. A start that compiles nothing has been shown on the host that built the cache only.
 
 # Profiling
 

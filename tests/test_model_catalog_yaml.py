@@ -578,6 +578,15 @@ def test_minimax_h3_lightx2v_dev_spec_serves_the_lightx2v_runner(
     assert f"{served}/*" not in excludes
     assert f"{served}/config.json" in spec.metadata["hf_required_globs"]
 
+    # A start with converted weights reads the config of the served transformer only, and
+    # the kernel variables the spec names are ones it sets.
+    prebuilt = spec.metadata["prebuilt_artifacts"]
+    assert f"{served}/config.json" in prebuilt["original_files"]
+    assert not any(skipped in path.split("/") for path in prebuilt["original_files"])
+    assert prebuilt["original_folders"][0] == served
+    assert skipped not in prebuilt["original_folders"]
+    assert set(prebuilt["kernel_build_env"]) <= set(env)
+
 
 def test_device_profile_can_narrow_the_template_modalities():
     """``supported_modalities`` is template-wide; a device block that serves the

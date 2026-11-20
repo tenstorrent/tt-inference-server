@@ -131,6 +131,8 @@ class RuntimeConfig:
     host_weights_dir: Optional[str] = None
     # Host path to the selected immutable Quetzal package directory.
     quetzal_package_root: Optional[str] = None
+    # Host directory mounted as the container's tt-metal kernel cache.
+    kernel_cache_dir: Optional[str] = None
     # Label giving custom weights a distinct identity; see derive_custom_weights_spec.
     custom_weights: Optional[str] = None
     image_user: str = "1000"
@@ -234,6 +236,7 @@ class RuntimeConfig:
             host_hf_cache=args.host_hf_cache,
             host_weights_dir=args.host_weights_dir,
             quetzal_package_root=getattr(args, "quetzal_package_root", None),
+            kernel_cache_dir=getattr(args, "kernel_cache_dir", None),
             custom_weights=getattr(args, "custom_weights", None),
             image_user=args.image_user,
             skip_system_sw_validation=args.skip_system_sw_validation,

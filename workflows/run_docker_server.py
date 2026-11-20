@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import List, Tuple
 
 from utils.pinned_artifacts import get_pinned_revision
+from workflows.kernel_cache import KERNEL_CACHE_CONTAINER_DIR, KERNEL_CACHE_ENV
 from workflows.log_setup import clean_log_file
 from workflows.multihost_orchestrator import (
     MultiHostOrchestrator,
@@ -686,6 +687,11 @@ def generate_docker_run_command(
                 f"dst={auxiliary.runtime_root},readonly",
             ])
 
+    if runtime_config.kernel_cache_dir:
+        docker_command.extend([
+            "--mount", f"type=bind,src={runtime_config.kernel_cache_dir},dst={KERNEL_CACHE_CONTAINER_DIR}",
+        ])
+
     if runtime_config.interactive:
         docker_command.append("-itd")
     # fmt: on
@@ -772,6 +778,9 @@ def generate_docker_run_command(
         logger.warning(
             "No runtime model spec JSON path provided while in dev mode, using default model spec."
         )
+
+    if runtime_config.kernel_cache_dir:
+        docker_env_vars[KERNEL_CACHE_ENV] = KERNEL_CACHE_CONTAINER_DIR
 
     if runtime_config.dev_mode:
         # fmt: off
