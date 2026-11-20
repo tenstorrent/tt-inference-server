@@ -15,8 +15,7 @@ namespace tt::runners {
 /** Device video runner: creates the C++ runner (runtime/dit) for
  *  `VideoConfig::pythonRunner`. It opens the mesh, validates requests, builds
  *  the pipeline calls and exports the mp4; the only Python it runs is the
- *  model's adapter in `python/cpp_dit_adapters`, which calls tt_dit. On a
- *  multihost launch the runner is wrapped so every rank runs each request.
+ *  model's adapter in `python/cpp_dit_adapters`, which calls tt_dit.
  *  `run()` returns the mp4 path written for that request. */
 class VideoDeviceRunner
     : public IMediaRunner<tt::domain::VideoGenerateRequest, std::string> {

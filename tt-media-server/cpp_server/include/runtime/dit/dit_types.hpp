@@ -23,8 +23,8 @@ class RequestError : public std::invalid_argument {
 };
 
 /** The result could not be written out (ffmpeg missing or failed, disk full)
- *  after the pipeline ran. Not the client's mistake, but it only concerns the
- *  rank that exports: in a multihost mesh the ranks are still in step. */
+ *  after the pipeline ran. Not the client's mistake and not a failure of the
+ *  runner: the pipeline itself finished. */
 class ExportError : public std::runtime_error {
  public:
   using std::runtime_error::runtime_error;
@@ -47,8 +47,7 @@ struct RunnerConfig {
   std::string outputDir = "/tmp/videos";
   int workerId = 0;
 
-  /** MODEL_RUNNER, DEVICE, MODEL_WEIGHTS_PATH, TT_VIDEO_OUTPUT_DIR: what a
-   *  multihost follower rank has (it gets no VideoConfig). */
+  /** MODEL_RUNNER, DEVICE, MODEL_WEIGHTS_PATH, TT_VIDEO_OUTPUT_DIR. */
   static RunnerConfig fromEnv();
 };
 

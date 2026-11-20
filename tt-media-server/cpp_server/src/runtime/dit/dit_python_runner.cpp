@@ -13,7 +13,6 @@
 #include <system_error>
 
 #include "runtime/dit/dit_env.hpp"
-#include "runtime/dit/dit_multihost.hpp"
 #include "runtime/dit/media_export.hpp"
 #include "utils/logger.hpp"
 
@@ -135,47 +134,6 @@ void deleteIfFile(const std::string& path) {
   std::error_code ec;
   std::filesystem::remove(path, ec);
 }
-
-/** Rank 0 -> every other rank over tt-metal's MPI context. Messages are a
- *  big-endian 8-byte length, then the payload. */
-class MpiComm : public Comm {
- public:
-  void broadcast(const std::string& message) override {
-    py::module_ ttnn = py::module_::import("ttnn");
-    const int rank = ttnn.attr("distributed_context_get_rank")().cast<int>();
-    if (rank != kRootRank) {
-      throw std::runtime_error("broadcast called on rank " +
-                               std::to_string(rank));
-    }
-    std::string header(8, '\0');
-    for (int i = 0; i < 8; ++i) {
-      header[7 - i] = static_cast<char>((message.size() >> (8 * i)) & 0xFF);
-    }
-    const int size = ttnn.attr("distributed_context_get_size")().cast<int>();
-    for (int dest = kRootRank + 1; dest < size; ++dest) {
-      ttnn.attr("distributed_context_send_bytes")(py::bytes(header), dest,
-                                                  kMessageTag);
-      ttnn.attr("distributed_context_send_bytes")(py::bytes(message), dest,
-                                                  kMessageTag);
-    }
-  }
-
-  std::string receive() override {
-    py::module_ ttnn = py::module_::import("ttnn");
-    const std::string header =
-        ttnn.attr("distributed_context_recv_bytes")(8, kRootRank, kMessageTag)
-            .cast<std::string>();
-    uint64_t length = 0;
-    for (unsigned char c : header) length = (length << 8) | c;
-    return ttnn
-        .attr("distributed_context_recv_bytes")(length, kRootRank, kMessageTag)
-        .cast<std::string>();
-  }
-
-  void barrier() override {
-    py::module_::import("ttnn").attr("distributed_context_barrier")();
-  }
-};
 
 }  // namespace
 
@@ -321,47 +279,10 @@ void DiTRunner::close() {
   TT_LOG_INFO("[DiT] Closed mesh device");
 }
 
-bool DiTRunner::meshIsDistributed() const {
-  if (!python_->mesh) return false;
-  // Strict `is True`: only a real distributed environment wraps the runner.
-  py::object distributed =
-      py::module_::import("ttnn").attr("using_distributed_env")();
-  return py::isinstance<py::bool_>(distributed) && distributed.cast<bool>();
-}
-
 std::unique_ptr<IDiTRunner> createOpenRunner(const RunnerConfig& config) {
   auto runner = std::make_unique<DiTRunner>(createModel(config));
   runner->openDevice();
-  try {
-    // Opening the mesh creates the distributed context; only now is it known
-    // whether the mesh spans several hosts.
-    if (runner->meshIsDistributed()) {
-      TT_LOG_INFO(
-          "[DiT] Multihost mesh: rank 0 runs in lockstep with the others");
-      return std::make_unique<LockstepRunner>(std::move(runner),
-                                              std::make_shared<MpiComm>());
-    }
-  } catch (...) {
-    // The caller never gets a runner to stop(), so the open mesh would keep the
-    // chips claimed: close it here.
-    try {
-      if (runner) runner->close();  // null once LockstepRunner took it
-    } catch (...) {
-    }
-    throw;
-  }
   return runner;
-}
-
-int runFollowerRank(int rank) {
-  try {
-    auto runner =
-        std::make_unique<DiTRunner>(createModel(RunnerConfig::fromEnv()));
-    return Follower(rank, std::move(runner), std::make_shared<MpiComm>()).run();
-  } catch (const std::exception& e) {
-    TT_LOG_ERROR("[DiTMultihost] Rank {}: cannot start: {}", rank, e.what());
-    return 1;
-  }
 }
 
 }  // namespace tt::dit

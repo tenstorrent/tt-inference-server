@@ -33,8 +33,6 @@ class DiTRunner : public IDiTRunner {
   void close() override;
 
   const DiTModel& model() const { return *model_; }
-  /** True when the open mesh spans several MPI ranks. */
-  bool meshIsDistributed() const;
 
  private:
   struct Python;
@@ -48,13 +46,8 @@ class DiTRunner : public IDiTRunner {
   std::unique_ptr<Python> python_;
 };
 
-/** The runner for config.modelRunner with its mesh open, wrapped in
- *  LockstepRunner when the mesh spans several ranks. Needs the GIL and
+/** The runner for config.modelRunner with its mesh open. Needs the GIL and
  *  prepareVideoPythonPath() done. */
 std::unique_ptr<IDiTRunner> createOpenRunner(const RunnerConfig& config);
-
-/** A follower rank's runner, from the environment tt-run gave it (MODEL_RUNNER,
- *  DEVICE, MODEL_WEIGHTS_PATH, TT_VIDEO_OUTPUT_DIR), and its Comm. */
-int runFollowerRank(int rank);
 
 }  // namespace tt::dit

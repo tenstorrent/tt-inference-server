@@ -1254,7 +1254,6 @@ add_executable(dit_runner_test
     src/runtime/dit/dit_registry.cpp
     src/runtime/dit/models_wan.cpp
     src/runtime/dit/media_export.cpp
-    src/runtime/dit/dit_multihost.cpp
     src/utils/logger.cpp)
 target_link_libraries(dit_runner_test PRIVATE
     spdlog::spdlog
@@ -1417,7 +1416,6 @@ set(SERVICE_TEST_COMMON_SOURCES
     src/runtime/dit/dit_registry.cpp
     src/runtime/dit/models_wan.cpp
     src/runtime/dit/media_export.cpp
-    src/runtime/dit/dit_multihost.cpp
     src/runtime/dit/dit_python_runner.cpp
     src/services/tts_service.cpp
     src/services/tts_request_preprocessor.cpp
@@ -1571,7 +1569,6 @@ set(INTEGRATION_TEST_COMMON_SOURCES
     src/runtime/dit/dit_registry.cpp
     src/runtime/dit/models_wan.cpp
     src/runtime/dit/media_export.cpp
-    src/runtime/dit/dit_multihost.cpp
     src/runtime/dit/dit_python_runner.cpp
     src/services/tts_service.cpp
     src/services/tts_request_preprocessor.cpp
@@ -2114,7 +2111,6 @@ set(SOURCES
     src/runtime/dit/dit_registry.cpp
     src/runtime/dit/models_wan.cpp
     src/runtime/dit/media_export.cpp
-    src/runtime/dit/dit_multihost.cpp
     src/runtime/dit/dit_python_runner.cpp
     src/services/tts_service.cpp
     src/services/tts_request_preprocessor.cpp
