@@ -1691,8 +1691,11 @@ templates:
     - device: P150X8
       max_concurrency: 8
       max_context: 262144
-      max_tokens_all_users_override: 525312
+      max_tokens_all_users_override: 1040384
       default_impl: true
+      env_vars:
+        # Measured to fit in P150 DRAM next to the model's traces; the model-level budget applies where it is not.
+        QWEN36_MAX_TOKENS_ALL_USERS: "1040384"
       vllm_args:
         # The model raises a smaller block size to the smallest block whose K and V hold one GDN state (1024 at TP=8
         # with bfloat8_b K and V). Prefix hits land on block boundaries.

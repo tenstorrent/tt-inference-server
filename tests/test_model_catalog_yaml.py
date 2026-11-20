@@ -519,6 +519,10 @@ def test_qwen38_mtp_dev_spec_keeps_k_and_verify_rows_consistent():
         assert spec.supported_modalities == ["text", "image", "video"]
         tt_config = json.loads(args["additional_config"])["tt"]
         assert tt_config["sample_on_device_mode"] == "decode_only"
+    p150x8 = mtp[DeviceTypes.P150X8]
+    assert p150x8.device_model_spec.max_tokens_all_users == int(
+        p150x8.env_vars["QWEN36_MAX_TOKENS_ALL_USERS"]
+    )
     galaxy = mtp[DeviceTypes.BLACKHOLE_GALAXY].device_model_spec
     assert galaxy.vllm_args["data_parallel_size"] == 4
     assert galaxy.max_tokens_all_users == 4 * int(
