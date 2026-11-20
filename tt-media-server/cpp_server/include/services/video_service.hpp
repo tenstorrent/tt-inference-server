@@ -57,10 +57,9 @@ class VideoService
   explicit VideoService(config::VideoConfig config);
   ~VideoService() override;
 
-  /** True when the service should run in process: TT_VIDEO_IN_PROCESS=1, or
-   *  not set and there is a single worker (one DEVICE_IDS group) on a launch
-   *  that is not multihost. TT_VIDEO_IN_PROCESS=0 keeps the worker process.
-   *  Throws std::runtime_error for =1 with several workers or on multihost. */
+  /** True when the runner runs on a thread of the server: exactly one
+   *  DEVICE_IDS group. Several groups run one worker process each. Nothing else
+   *  (no variable) changes the choice. */
   static bool useInProcess();
 
   void start() override;
@@ -85,6 +84,11 @@ class VideoService
    *  directory cannot be written (the controller answers 503). Only checked
    *  for the real device runner; the mock runner writes no files. */
   std::string outputDirError() const;
+
+  /** Deletes the mp4 of a synchronous request after its bytes were read (it
+   *  has no job record, so nothing else would). Same rule as the job store:
+   *  inside the output directory when there is one, never a `mock://` path. */
+  void discardSyncResult(const std::string& path) const;
 
   /** Public job id (UUID) -> internal task id; nullopt = unknown/malformed. */
   std::optional<uint32_t> resolveJobId(const std::string& publicId) const;
@@ -122,10 +126,12 @@ class VideoService
  private:
   std::string payloadPath(uint32_t taskId, const char* prefix) const;
   void removeCancelMarker(uint32_t taskId) const;
+  void prepareOutputDir();
 
   config::VideoConfig videoConfig;
   std::filesystem::path payloadDir;
   std::filesystem::path outputDir_;  // empty when the runner writes no mp4
+  int outputDirLockFd_ = -1;         // flock on the output dir, see .cpp
   void startSweeper();
   void stopSweeper();
 

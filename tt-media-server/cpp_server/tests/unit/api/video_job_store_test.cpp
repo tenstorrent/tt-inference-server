@@ -520,7 +520,7 @@ TEST(VideoGenerateRequestGaps, RemainingTypesAndSparseJson) {
   json["aspect_ratio"] = " ";
   auto req = VideoGenerateRequest::fromJson(json, 1);
   ASSERT_TRUE(req.fps.has_value());
-  EXPECT_FLOAT_EQ(*req.fps, 16.0F);
+  EXPECT_DOUBLE_EQ(*req.fps, 16.0);
   ASSERT_TRUE(req.seed.has_value());
   EXPECT_EQ(*req.seed, -3);
   ASSERT_TRUE(req.negativePrompt.has_value());
@@ -530,7 +530,7 @@ TEST(VideoGenerateRequestGaps, RemainingTypesAndSparseJson) {
 
   auto stored = req.toJson();
   EXPECT_EQ(stored["prompt"].asString(), "boat");
-  EXPECT_EQ(stored["fps"].asFloat(), 16.0F);
+  EXPECT_EQ(stored["fps"].asDouble(), 16.0);
   EXPECT_FALSE(stored.isMember("height"));
   EXPECT_EQ(stored["num_inference_steps"].asInt(), 20);  // defaulted
 }
@@ -557,12 +557,49 @@ TEST(VideoFaststart, RemuxesARealMp4WithoutAShell) {
   fs::remove_all(dir);
 }
 
+TEST(VideoGenerateRequest, KeepsDoublesAndSixtyFourBitSeedsAsSent) {
+  Json::Value json(Json::objectValue);
+  json["prompt"] = "boat";
+  json["fps"] = 23.976;
+  json["duration"] = 5.1;
+  json["seed"] = static_cast<Json::Int64>(4294967295LL);
+  auto req = VideoGenerateRequest::fromJson(json, 1);
+  ASSERT_TRUE(req.fps && req.duration && req.seed);
+  EXPECT_EQ(*req.seed, 4294967295LL);
+  auto stored = req.toJson();
+  EXPECT_EQ(stored["fps"].asDouble(), 23.976);
+  EXPECT_EQ(stored["duration"].asDouble(), 5.1);
+  EXPECT_EQ(stored["seed"].asInt64(), 4294967295LL);
+  json["seed"] = static_cast<Json::Int64>(-9000000000000000000LL);
+  EXPECT_EQ(*VideoGenerateRequest::fromJson(json, 1).seed,
+            -9000000000000000000LL);
+  json["seed"] = Json::Value(Json::UInt64(18446744073709551615ULL));
+  EXPECT_THROW(VideoGenerateRequest::fromJson(json, 1), std::invalid_argument);
+}
+
 TEST(VideoFaststart, MissingInputFailsAndLeavesNoOutput) {
   const std::string out = "/tmp/tt-faststart-test-missing.mp4";
   std::filesystem::remove(out);
   EXPECT_FALSE(tt::utils::ensureFaststart("/tmp/definitely-not-here.mp4", out));
   EXPECT_EQ(tt::utils::faststartInPlace("/tmp/definitely-not-here.mp4"),
             tt::utils::FaststartResult::Failed);
+}
+
+TEST(VideoFaststart, MissingFfmpegFailsWithoutHanging) {
+  const char* oldPath = std::getenv("PATH");
+  const std::string saved = oldPath ? oldPath : "";
+  const std::string in = "/tmp/tt-faststart-test-nopath-in.mp4";
+  const std::string out = "/tmp/tt-faststart-test-nopath-out.mp4";
+  {
+    std::ofstream f(in, std::ios::binary);
+    f << "x";
+  }
+  ::setenv("PATH", "/nonexistent-dir", 1);
+  const bool ok = tt::utils::ensureFaststart(in, out, 5);
+  ::setenv("PATH", saved.c_str(), 1);
+  EXPECT_FALSE(ok);
+  EXPECT_FALSE(std::filesystem::exists(out));
+  std::filesystem::remove(in);
 }
 
 TEST(VideoFaststart, InvalidFileIsLeftUntouched) {
@@ -775,19 +812,53 @@ TEST(VideoOutputDir, ResultOutsideTheRootFailsTheJob) {
   fs::remove_all(root);
 }
 
-TEST(VideoOutputDir, PurgeRemovesOnlyTopLevelMp4) {
+TEST(VideoOutputDir, PurgeRemovesOnlyTheServersOwnTopLevelResults) {
   namespace fs = std::filesystem;
   const fs::path root = "/tmp/tt-outdir-purge";
+  const std::string id = "3a6541e1-5a19-46e9-969a-c8f1e1cf3572";
   fs::remove_all(root);
   fs::create_directories(root / "sub");
-  std::ofstream(root / "a.mp4") << "x";
+  std::ofstream(root / (id + ".mp4")) << "x";
+  std::ofstream(root / (id + "_silent.mp4")) << "x";
+  std::ofstream(root / (id + ".mp4.faststart.tmp.mp4")) << "x";
+  std::ofstream(root / "holiday.mp4") << "x";  // the user's own clip
+  std::ofstream(root / "mock-1.mp4") << "x";   // not a result of a device
+  std::ofstream(root / "3A6541E1-5A19-46E9-969A-C8F1E1CF3572.mp4") << "x";
   std::ofstream(root / "b.txt") << "x";
-  std::ofstream(root / "sub" / "c.mp4") << "x";
-  EXPECT_EQ(tt::utils::purgeOrphanMp4(root), 1U);
-  EXPECT_FALSE(fs::exists(root / "a.mp4"));
+  std::ofstream(root / "sub" / (id + ".mp4")) << "x";
+  EXPECT_EQ(tt::utils::purgeOrphanMp4(root), 3U);
+  EXPECT_FALSE(fs::exists(root / (id + ".mp4")));
+  EXPECT_FALSE(fs::exists(root / (id + "_silent.mp4")));
+  EXPECT_FALSE(fs::exists(root / (id + ".mp4.faststart.tmp.mp4")));
+  EXPECT_TRUE(fs::exists(root / "holiday.mp4"));
+  EXPECT_TRUE(fs::exists(root / "mock-1.mp4"));
+  EXPECT_TRUE(fs::exists(root / "3A6541E1-5A19-46E9-969A-C8F1E1CF3572.mp4"));
   EXPECT_TRUE(fs::exists(root / "b.txt"));
-  EXPECT_TRUE(fs::exists(root / "sub" / "c.mp4"));
+  EXPECT_TRUE(fs::exists(root / "sub" / (id + ".mp4")));
   EXPECT_EQ(tt::utils::purgeOrphanMp4("/tmp/tt-outdir-nope"), 0U);
+  fs::remove_all(root);
+}
+
+TEST(VideoOutputDir, OnlyOneServerHoldsTheFolder) {
+  namespace fs = std::filesystem;
+  const fs::path root = "/tmp/tt-outdir-lock";
+  fs::remove_all(root);
+  fs::create_directories(root);
+  bool held = false;
+  const int first = tt::utils::lockOutputDir(root, held);
+  ASSERT_GE(first, 0);
+  EXPECT_FALSE(held);
+  // A second server (another open file description) is refused and says why.
+  const int second = tt::utils::lockOutputDir(root, held);
+  EXPECT_LT(second, 0);
+  EXPECT_TRUE(held);
+  ::close(first);  // what the kernel does when the first server dies
+  const int third = tt::utils::lockOutputDir(root, held);
+  EXPECT_GE(third, 0);
+  if (third >= 0) ::close(third);
+  // A folder that cannot be opened is not "held by another server".
+  EXPECT_LT(tt::utils::lockOutputDir("/tmp/tt-outdir-nope", held), 0);
+  EXPECT_FALSE(held);
   fs::remove_all(root);
 }
 
