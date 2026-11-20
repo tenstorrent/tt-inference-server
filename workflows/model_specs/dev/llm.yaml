@@ -7670,6 +7670,10 @@ templates:
 # glm53_flash_1m's at the previous prompt's end; usage reports cached_tokens);
 # chunked prefill on the stack's 8192-token bucket grid, one chunk per engine
 # step and, while users decode, one per 8 decode steps.
+# Seeded requests: the plugin picks one sampler per forward (seeded_sampling_policy auto, the default), so a
+# seeded request's text can depend on which requests share its forward. A deployment that needs reproducible
+# seeds sets seeded_sampling_policy: host in tt_config; seeded requests, and any request batched with them, then
+# sample on the host without MTP steps (one seeded user 15.5 vs 39.7 tok/s; unseeded traffic is unchanged).
 #
 # Validated on an 8x4 (45 layers, OSL 128, tests/test_mk_e2e.py; decode as
 # tok/s per user): 1 M x 1 51.7 (TTFT 345 s), 1 M x 4 35.4 (TTFT 1,379 s),
