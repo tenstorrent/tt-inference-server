@@ -4,7 +4,6 @@
 
 """Start, stop and restart behaviour of the video service on a real device.
 
-Report: docs/tests/2026-11-14-video-real-device-extended-checks.md
 
 Unlike the other real-device tests this one starts and stops the server itself,
 several times, so no other server may use the chips. It needs a T3K with the
@@ -383,7 +382,7 @@ def main():
         args,
         out,
         os.path.join(work, "phase3_restart.log"),
-        {"TT_VIDEO_PURGE_ON_START": "0", "TT_VIDEO_WORKER_MAX_RESTARTS": "0"},
+        {"TT_VIDEO_PURGE_ON_START": "0"},
     ).start()
     ok = srv.wait_ready(300)
     p(

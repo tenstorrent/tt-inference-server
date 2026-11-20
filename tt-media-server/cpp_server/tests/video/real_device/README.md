@@ -32,10 +32,9 @@ Notes:
 - `TT_DIT_CACHE_DIR` should point at an existing weight cache. Otherwise the weights are
   built from PyTorch at every start, which is slow.
 - If the start fails with `Read unexpected run_mailbox value`, the chips are in a stale
-  state and need `tt-smi -r`. Details: `docs/tests/2026-11-14-device-reset-problem.md`.
+  state and need `tt-smi -r`.
 - On a T3K, Wan2.2 text-to-video currently needs tracing disabled in the Python runner
   (`"traced": False` in `_wan22_pipeline_args`); with the default the output is noise.
-  Details: `docs/tests/2026-11-14-non-video-changes-check.md`.
 - The race test needs the extra variable `TT_MEDIA_TEST_PRECLAIM_DELAY_MS=1500`. It is a
   test hook and must not be set for normal use.
 
@@ -69,6 +68,5 @@ those parameters, not failed. The exit code is 0 only if no check failed.
 2. At the top put `sys.path.insert(0, <folder above the script>)` and then
    `import common as c` (the same pattern as in the existing scripts).
 3. Use `c.add_common_args(ap)` and `c.setup(args)` at the start and `c.finish()` at the end.
-4. In the docstring write the report the script belongs to and the command to run it.
-5. Write a report in `docs/tests/` and add it to `docs/tests/README.md` and to the table in
+4. In the docstring write the command to run it, and add the script to the table in
    `tests/video/README.md`.

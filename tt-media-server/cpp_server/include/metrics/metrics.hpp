@@ -175,7 +175,6 @@ class ServerMetrics {
   void setVideoJobs(const std::array<size_t, 6>& byStatus);
   void onVideoSweep(size_t evicted, size_t stuck);
   /** result: "ok", "failed" or "gave_up". */
-  void onVideoWorkerRestart(const std::string& result);
 
   /** Render the full registry in Prometheus text exposition format. */
   std::string renderText() const;
@@ -293,7 +292,6 @@ class ServerMetrics {
   std::array<prometheus::Gauge*, 6> video_jobs_{};
   prometheus::Counter* video_sweep_evicted_{nullptr};
   prometheus::Counter* video_sweep_stuck_{nullptr};
-  prometheus::Family<prometheus::Counter>* video_restarts_family_{nullptr};
 };
 
 }  // namespace tt::metrics

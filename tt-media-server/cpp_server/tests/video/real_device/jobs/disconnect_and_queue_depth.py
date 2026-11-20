@@ -4,7 +4,6 @@
 
 """A dropped synchronous request and a deep queue, on a real device.
 
-Report: docs/tests/2026-11-14-video-real-device-extended-checks.md
 
 Run (server must be model_ready):
     python3 tests/video/real_device/jobs/disconnect_and_queue_depth.py \

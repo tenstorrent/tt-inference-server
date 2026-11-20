@@ -296,7 +296,6 @@ Errors have the FastAPI-style `detail` and an OpenAI-style `error` object:
 | `JOB_RETENTION_SECONDS` | 86400 | How long a finished job (and its mp4) is kept |
 | `JOB_CLEANUP_INTERVAL_SECONDS` | 300 | Cleanup pass interval; `<= 0` disables the thread |
 | `JOB_MAX_STUCK_TIME_SECONDS` | 10800 | A running job with no progress for this long becomes `failed` (`stale_job`); `<= 0` disables |
-| `TT_VIDEO_WORKER_MAX_RESTARTS` | 3 | Automatic worker restarts per hour (`0` disables; never for multihost) |
 | `TT_VIDEO_OUTPUT_DIR` | `<binary dir>/../videos` | Where mp4 files are written |
 | `TT_VIDEO_PURGE_ON_START` | on | `0` keeps existing `*.mp4` files at start (see below) |
 | `SERVED_MODEL_NAME` | `MODEL_WEIGHTS_PATH`, else the runner name (e.g. `tt-wan2.2`) | Value of `model` in the job |
@@ -317,10 +316,9 @@ Test-only hooks (never set in production): `TT_VIDEO_MOCK_DELAY_MS`,
   never deleted (`..` and symlinks are resolved first).
 - **A stuck job is only marked failed.** The worker process is not interrupted; if
   its result arrives later it is discarded and its mp4 removed.
-- **Worker crash.** The worker is restarted (up to the limit above). Tasks it had
-  already taken become `failed`; tasks still waiting in the queue are served by the
-  new worker. Past the limit the service becomes failed and the process exits, so
-  it needs a supervisor (systemd, container restart policy) to come back.
+- **Worker crash.** A dead worker is not restarted: the service is marked failed, the
+  jobs it held or that were still waiting become `failed`, and the process exits with
+  code 1, so it needs a supervisor (systemd, container restart policy) to come back.
 - **Shutdown.** SIGTERM of an idle server exits cleanly (code 0, no worker left, the
   ipc folder and shm queues are removed) and the next start works at once. SIGTERM
   while a job is running closes the device under the generation and exits in under a
@@ -343,9 +341,8 @@ codes, error cases and the `Range` behaviour are the same):
 | `ETag`, `Last-Modified` on `download` | sent | not sent (`If-Range` is not usable) |
 | `HEAD` on `download` | `405` | `200` |
 | `?async=false` | ignored (the server setting decides) | supported, and `?async=banana` is `422` |
-| worker crash on a device | the held job stays `in_progress`, liveness `503`, the process keeps running | the held job becomes `failed`, the process exits after the restart limit |
+| worker crash on a device | the held job stays `in_progress`, liveness `503`, the process keeps running | the held job becomes `failed`, the process exits with code 1 |
 
-Details: [the report](tests/2026-11-14-video-real-device-extended-checks.md).
 
 ## Known limitations
 
@@ -354,24 +351,17 @@ Details: [the report](tests/2026-11-14-video-real-device-extended-checks.md).
 - `GET /v1/videos/jobs` returns every job, without pagination or filters.
 - Synchronous requests leave their mp4 on disk until the next start.
 - A running generation cannot be interrupted (cancel waits for the end of the run).
-- **Worker crash on a device needs a chip reset.** With the mock runner the restart
-  works (`kill -9` of the worker: the job it held becomes `failed`, the queued job is
-  served, the restart limit is respected). On a T3K the job also becomes `failed`, but
-  the chips cannot be opened again without `tt-smi -r`, so every restarted worker fails
-  its warmup and exits; after the restart limit the server exits with code 1. Reset the
-  chips and start the server again. While a restarted worker is warming up,
-  `/tt-liveness` still reports `model_ready=true` and `POST` is accepted. Details:
-  [the report](tests/2026-11-14-video-curl-examples-and-worker-crash-real-device.md).
-- A task taken by a worker that dies before it is claimed stays `queued` (the stuck-job
-  sweep only fails running jobs); cancel and resubmit. Seen on the mock runner.
+- **Worker crash on a device needs a chip reset.** The job it held becomes `failed` and
+  the server exits with code 1 (there is no automatic restart). The chips cannot be
+  opened again without `tt-smi -r`: reset them and start the server again.
 - When `TT_VIDEO_OUTPUT_DIR` cannot be written (missing and not creatable, read-only,
   full), `POST` (async and sync) is refused with `503` before any device time is spent;
   the server logs an error at start and checks again on every request, so fixing the
   folder is enough, no restart. A disk that fills up in the middle of a generation can
   still fail that one job.
 - Orphan `/tmp/tt-video-ipc-<pid>` folders of killed servers are not removed.
-- A stuck-job sweep against a real device hang, a full disk, several workers and
-  multihost launches are not tested on a device.
+- A stuck-job sweep against a real device hang, a full disk, and several workers are
+  not tested on a device.
 - On a T3K, Wan2.2 currently needs tracing disabled in the Python runner
   (`"traced": False`); with tracing the output is noise.
 
@@ -382,4 +372,3 @@ Details: [the report](tests/2026-11-14-video-real-device-extended-checks.md).
 | Unit tests (job store, request validation, Range, faststart, UUID) | `tests/unit/api/video_generate_request_test.cpp`, `tests/unit/api/video_job_store_test.cpp`, run with `ctest` |
 | Contract and server tests on the mock runner | [tests/video/mock/README.md](../tests/video/mock/README.md) |
 | Tests on a real server and device | [tests/video/real_device/README.md](../tests/video/real_device/README.md) |
-| Reports of runs on a T3K | [docs/tests/](tests/README.md) |

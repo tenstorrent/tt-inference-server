@@ -67,7 +67,6 @@ domain::video::VideoResponse responseFromJson(uint32_t taskId,
 
 constexpr size_t kMaxJobs = 10000;
 constexpr int64_t kJobRetentionSeconds = 86400;  // Python job_retention_seconds
-constexpr int64_t kRestartWindowSeconds = 3600;
 
 int64_t envInt64(const char* name, int64_t fallback) {
   const char* value = std::getenv(name);
@@ -93,8 +92,6 @@ VideoService::VideoService(
                1, envInt64("MAX_JOBS", static_cast<int64_t>(kMaxJobs)))),
            envInt64("JOB_RETENTION_SECONDS", kJobRetentionSeconds)) {
   std::filesystem::create_directories(payloadDir);
-  maxWorkerRestarts_ = static_cast<size_t>(
-      std::max<int64_t>(0, envInt64("TT_VIDEO_WORKER_MAX_RESTARTS", 3)));
   startSweeper();
   if (videoConfig.runner_type == config::ModelRunnerType::VIDEO_DEVICE) {
     // Delete only inside the output dir, and drop mp4 files left by a previous
@@ -162,46 +159,6 @@ void VideoService::stopSweeper() {
   if (sweeper_.joinable()) sweeper_.join();
 }
 
-// A dead video worker is restarted (the shm task queue keeps the queued tasks,
-// the new worker takes them after its warmup) unless: it is a multihost launch
-// (all ranks run in lockstep, one cannot be replaced alone), restarts are
-// disabled (TT_VIDEO_WORKER_MAX_RESTARTS=0), or it already restarted that many
-// times within the last hour (a crash loop). Then the service fails as before
-// and the process exits so a supervisor can restart it.
-bool VideoService::tryRecoverWorker(size_t workerIdx) {
-  if (maxWorkerRestarts_ == 0 || !workerManager()) return false;
-  if (envInt64("OMPI_COMM_WORLD_SIZE", 1) > 1) return false;
-  {
-    std::lock_guard<std::mutex> lock(restartMutex_);
-    const auto now = std::chrono::steady_clock::now();
-    while (!restartTimes_.empty() &&
-           now - restartTimes_.front() >
-               std::chrono::seconds(kRestartWindowSeconds)) {
-      restartTimes_.pop_front();
-    }
-    if (restartTimes_.size() >= maxWorkerRestarts_) {
-      TT_LOG_ERROR(
-          "[VideoService] Worker {} died; {} restarts within the last hour, "
-          "giving up",
-          workerIdx, restartTimes_.size());
-      tt::metrics::ServerMetrics::instance().onVideoWorkerRestart("gave_up");
-      return false;
-    }
-    restartTimes_.push_back(now);
-  }
-  try {
-    workerManager()->restartWorker(workerIdx);
-  } catch (const std::exception& e) {
-    TT_LOG_ERROR("[VideoService] Restart of worker {} failed: {}", workerIdx,
-                 e.what());
-    tt::metrics::ServerMetrics::instance().onVideoWorkerRestart("failed");
-    return false;
-  }
-  tt::metrics::ServerMetrics::instance().onVideoWorkerRestart("ok");
-  TT_LOG_WARN("[VideoService] Worker {} died and was restarted", workerIdx);
-  return true;
-}
-
 std::string VideoService::runnerInUse() const {
   if (!videoConfig.pythonRunner.empty()) return videoConfig.pythonRunner;
   return config::toClientRunnerName(videoConfig.runner_type);
@@ -225,9 +182,14 @@ Json::Value VideoService::createJob(domain::VideoGenerateRequest request) {
   }
   const uint32_t taskId = request.task_id;
   // Python order (_enforceAdmissionLimits): outstanding jobs vs queue size
-  // (429) first, then stored records vs max jobs (503, thrown by create()).
-  if (jobs.activeCount() >= maxQueueSize) throw QueueFullException{};
-  auto metadata = jobs.create(taskId, servedModelName(), request.toJson());
+  // (429) first, then stored records vs max jobs (503). Both are checked in
+  // create(), under the store lock, so two requests cannot both pass the check.
+  Json::Value metadata;
+  try {
+    metadata = jobs.create(taskId, servedModelName(), request.toJson(), maxQueueSize);
+  } catch (const ActiveJobLimitException&) {
+    throw QueueFullException{};
+  }
   try {
     submitRequestAsync(std::move(request),
                        [this, taskId](domain::video::VideoResponse&& r) {
@@ -304,7 +266,7 @@ void VideoService::removeCancelMarker(uint32_t taskId) const {
 }
 
 void VideoService::onTaskClaimed(
-    size_t workerIdx, const IpcResult& result,
+    size_t /*workerIdx*/, const IpcResult& result,
     std::chrono::steady_clock::time_point /*claimTime*/, double queueWaitMs,
     double shmEnqueueMs) {
   auto& metrics = tt::metrics::ServerMetrics::instance();
@@ -312,15 +274,7 @@ void VideoService::onTaskClaimed(
   metrics.onVideoOverhead(
       tt::metrics::ServerMetrics::VideoOverheadPhase::ShmEnqueue,
       shmEnqueueMs / 1000.0);
-  // Remember which worker process holds the job (Python's
-  // `worker_assignment.identity`), for stopping or replacing it later.
-  int pid = 0;
-  if (auto* manager = workerManager()) {
-    if (auto* worker = manager->worker(workerIdx)) {
-      pid = static_cast<int>(worker->pid.load());
-    }
-  }
-  jobs.markInProgress(result.getTaskId(), static_cast<int>(workerIdx), pid);
+  jobs.markInProgress(result.getTaskId());
   refreshJobGauges();
 }
 

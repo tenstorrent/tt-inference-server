@@ -4,7 +4,6 @@
 
 """Warmup answers and queue limits with the real runner (starts the server itself).
 
-Report: docs/tests/2026-11-14-video-real-device-extended-checks.md
 
     python3 tests/video/real_device/lifecycle/warmup_and_limits.py \
         --tt-metal <tt-metal> --media-server <path to tt-media-server> \

@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-"""Checks that need the real server (tt_media_server_cpp), not the stub.
+"""Checks that need the real server (tt_media_server_cpp), not only the HTTP contract.
 
 Run against a server started with MODEL_RUNNER_TYPE=video_mock.
 tests/video/mock/run_server_tests.sh starts the server once per --phase:
@@ -24,8 +24,6 @@ import json
 import os
 import sys
 import time
-import urllib.error
-import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import contract_cases as cc  # noqa: E402
@@ -37,22 +35,20 @@ note = cc.note
 def raw(base, method, path, body=None, token=None):
     """(status, headers, parsed json) so Retry-After can be checked."""
     data = None if body is None else json.dumps(body).encode()
-    req = urllib.request.Request(base + path, data=data, method=method)
+    headers = {}
     if data is not None:
-        req.add_header("content-type", "application/json")
+        headers["content-type"] = "application/json"
     if token:
-        req.add_header("authorization", f"Bearer {token}")
+        headers["authorization"] = f"Bearer {token}"
+    status, resp_headers, content = cc.http_call(
+        base, method, path, data, headers, timeout=60
+    )
+    text = content.decode()
     try:
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            text = resp.read().decode()
-            return resp.status, resp.headers, json.loads(text) if text.strip() else {}
-    except urllib.error.HTTPError as exc:
-        text = exc.read().decode()
-        try:
-            payload = json.loads(text) if text.strip() else {}
-        except json.JSONDecodeError:
-            payload = {"raw": text}
-        return exc.status, exc.headers, payload
+        payload = json.loads(text) if text.strip() else {}
+    except json.JSONDecodeError:
+        payload = {"raw": text}
+    return status, resp_headers, payload
 
 
 def job_status(base, token, job_id):
@@ -149,16 +145,12 @@ def check_queue_cancel_delete(base, token):
 def fetch_raw(base, path, token, method="GET", body=None):
     """(status, headers, raw bytes) for non-JSON answers such as the mp4."""
     data = None if body is None else json.dumps(body).encode()
-    req = urllib.request.Request(base + path, data=data, method=method)
+    headers = {}
     if data is not None:
-        req.add_header("content-type", "application/json")
+        headers["content-type"] = "application/json"
     if token:
-        req.add_header("authorization", f"Bearer {token}")
-    try:
-        with urllib.request.urlopen(req, timeout=120) as resp:
-            return resp.status, resp.headers, resp.read()
-    except urllib.error.HTTPError as exc:
-        return exc.status, exc.headers, exc.read()
+        headers["authorization"] = f"Bearer {token}"
+    return cc.http_call(base, method, path, data, headers)
 
 
 def check_sync_ok(base, token):
@@ -228,15 +220,10 @@ def check_sync_ok(base, token):
 
 
 def range_get(base, token, jid, rng):
-    req = urllib.request.Request(f"{base}{GEN}/{jid}/download")
-    req.add_header("authorization", f"Bearer {token}")
+    headers = {"authorization": f"Bearer {token}"}
     if rng:
-        req.add_header("Range", rng)
-    try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            return resp.status, resp.headers, resp.read()
-    except urllib.error.HTTPError as exc:
-        return exc.status, exc.headers, exc.read()
+        headers["Range"] = rng
+    return cc.http_call(base, "GET", f"{GEN}/{jid}/download", None, headers, timeout=30)
 
 
 def check_download(base, token):
@@ -461,7 +448,9 @@ def check_queue_full(base, token, max_queue):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--base-url", required=True)
+    # These phases only run against the server that run_server_tests.sh starts on
+    # this machine, so the address is fixed and only the port is a parameter.
+    parser.add_argument("--port", required=True, type=int)
     parser.add_argument(
         "--phase",
         default="main",
@@ -474,7 +463,7 @@ def main():
         help="MAX_QUEUE_SIZE of the server; 0 skips the 429 check",
     )
     args = parser.parse_args()
-    base = args.base_url.rstrip("/")
+    base = f"http://127.0.0.1:{args.port}"
     token = os.environ.get("VIDEO_API_KEY", "your-secret-key")
 
     if args.phase == "warmup":

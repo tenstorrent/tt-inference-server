@@ -4,7 +4,6 @@
 
 """Request fields, video content, Range resume and server responsiveness on a real device.
 
-Report: docs/tests/2026-11-14-video-real-device-extended-checks.md
 
 Run (server must be model_ready; the output folder and log are optional):
     python3 tests/video/real_device/jobs/fields_content_load.py \

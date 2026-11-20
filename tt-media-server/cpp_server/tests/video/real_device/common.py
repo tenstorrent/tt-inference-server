@@ -9,6 +9,7 @@ a real runner over HTTP; the helpers here send the requests, wait for job
 statuses, read the server log and keep the PASS/FAIL list.
 """
 
+import argparse
 import glob
 import hashlib
 import json
@@ -30,6 +31,21 @@ BASE = TOKEN = LOG = PAYLOAD = OUTDIR = DLDIR = None
 STEPS = 4
 T0 = time.time()
 results = []  # (ok, name)
+
+
+def checked_base_url(value):
+    """Accept only an http URL of this machine (127.0.0.1 or localhost).
+
+    These tests read the payload directory and the log of the server and look at the
+    process that listens on the port, so the server has to run on this machine. The
+    URL is rebuilt from its parts, so a path, query or credentials are dropped.
+    """
+    parsed = urllib.parse.urlparse(value)
+    if parsed.scheme != "http" or parsed.hostname not in ("127.0.0.1", "localhost"):
+        raise argparse.ArgumentTypeError(
+            f"{value!r}: only http://127.0.0.1:<port> or http://localhost:<port> is accepted"
+        )
+    return f"http://{parsed.netloc}"
 
 
 def p(*a):
@@ -166,7 +182,9 @@ def markers():
 
 # ---------------------------------------------------------------- setup / summary
 def add_common_args(ap):
-    ap.add_argument("--base-url", default="http://127.0.0.1:8000")
+    ap.add_argument(
+        "--base-url", default="http://127.0.0.1:8000", type=checked_base_url
+    )
     ap.add_argument(
         "--api-key", default=os.environ.get("VIDEO_API_KEY", "your-secret-key")
     )

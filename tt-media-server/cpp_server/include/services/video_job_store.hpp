@@ -28,34 +28,19 @@ class MaxJobsReachedException : public std::runtime_error {
   MaxJobsReachedException() : std::runtime_error("Maximum job limit reached") {}
 };
 
+/** Too many jobs that are not finished (the video queue limit, HTTP 429). */
+class ActiveJobLimitException : public std::runtime_error {
+ public:
+  ActiveJobLimitException()
+      : std::runtime_error("Request queue is full, please retry later") {}
+};
+
 class JobStillActiveException : public std::logic_error {
  public:
   JobStillActiveException()
       : std::logic_error(
             "Job is still active; cancel it first and delete once it reaches "
             "a terminal state") {}
-};
-
-class ForceDeleteNotAllowedException : public std::logic_error {
- public:
-  ForceDeleteNotAllowedException(const std::string& jobType,
-                                 const std::string& status)
-      : std::logic_error("Only active training jobs can be force-deleted; a " +
-                         jobType + " job is " + status) {}
-};
-
-/**
- * What differs per job type (Python: `AUTO_CLEANUP_EXEMPT_JOB_TYPES`,
- * `_validate_result_path_for_deletion` with `adapters_root` /
- * `merged_models_root`, and force delete of active training jobs).
- */
-struct JobTypePolicy {
-  bool autoCleanup = true;            // retention / sweep may evict it
-  std::filesystem::path resultRoot;   // deletions only inside it; empty = any
-  bool resultMayBeDirectory = false;  // result is a directory (training) and
-                                      // is removed recursively
-  bool forceDeletable = false;        // DELETE of an active job is allowed; the
-                                      // caller must stop the worker
 };
 
 /**
@@ -67,44 +52,35 @@ struct JobTypePolicy {
 class VideoJobStore {
  public:
   VideoJobStore(size_t maxJobs, int64_t retentionSeconds)
-      : maxJobs_(maxJobs), retentionSeconds_(retentionSeconds) {
-    // The same rules as Python. Result roots of training / adapter merge are
-    // not known here; the code that serves them sets them.
-    policies_[domain::video::kJobTypeVideo] = JobTypePolicy{};
-    policies_[domain::video::kJobTypeTraining] =
-        JobTypePolicy{false, {}, true, true};
-    policies_[domain::video::kJobTypeAdapterMerge] =
-        JobTypePolicy{false, {}, true, false};
-  }
-
-  /** Overrides the rules of one job type (e.g. its result root). */
-  void setJobTypePolicy(const std::string& jobType, JobTypePolicy policy) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    policies_[jobType] = std::move(policy);
-  }
+      : maxJobs_(maxJobs), retentionSeconds_(retentionSeconds) {}
 
   /**
-   * Limits file deletion to this directory (Python validates the result path
-   * before deleting). Unset = no restriction (unit tests). A path outside the
-   * root is never deleted, only logged.
+   * Limits the result files to this directory (Python validates the result path
+   * before deleting). A result outside it is refused by complete(), and a file
+   * outside it is never deleted. Unset = no restriction (unit tests).
    */
   void setOutputRoot(std::filesystem::path root) {
     std::lock_guard<std::mutex> lock(mutex_);
-    policies_[domain::video::kJobTypeVideo].resultRoot = std::move(root);
+    outputRoot_ = std::move(root);
   }
 
-  /** Registers a new QUEUED job. Throws MaxJobsReachedException when full. */
+  /**
+   * Registers a new QUEUED job. The limits are checked under the same lock that
+   * inserts the job, so concurrent requests cannot all pass a check made before
+   * any of them is stored. Same order as Python: more than `maxActive` jobs that
+   * are not finished throws ActiveJobLimitException (0 = no limit), then a full
+   * table throws MaxJobsReachedException.
+   */
   Json::Value create(uint32_t taskId, std::string model,
-                     Json::Value requestParameters,
-                     std::string jobType = domain::video::kJobTypeVideo,
-                     std::string orgId = {}) {
+                     Json::Value requestParameters, size_t maxActive = 0) {
     std::lock_guard<std::mutex> lock(mutex_);
     evictExpiredLocked();
+    if (maxActive > 0 && activeCountLocked() >= maxActive) {
+      throw ActiveJobLimitException{};
+    }
     if (jobs_.size() >= maxJobs_) throw MaxJobsReachedException{};
     domain::video::VideoJob job;
     job.taskId = taskId;
-    job.jobType = std::move(jobType);
-    job.orgId = std::move(orgId);
     job.uuid = utils::generateUuidV4();
     job.model = std::move(model);
     job.requestParameters = std::move(requestParameters);
@@ -132,10 +108,7 @@ class VideoJobStore {
    */
   size_t activeCount() const {
     std::lock_guard<std::mutex> lock(mutex_);
-    return static_cast<size_t>(
-        std::count_if(jobs_.begin(), jobs_.end(), [](const auto& kv) {
-          return !domain::video::isTerminal(kv.second.status);
-        }));
+    return activeCountLocked();
   }
 
   /** Jobs per status, indexed like `JobStatus` (queued, in_progress,
@@ -160,62 +133,15 @@ class VideoJobStore {
 
   /**
    * Worker picked the task up. A cancel that raced in stays CANCELLING.
-   * `workerIdx`/`pid` record which worker holds it (Python
-   * `worker_assignment.identity`); -1 = not known.
    */
-  void markInProgress(uint32_t taskId, int workerIdx = -1, int pid = 0) {
+  void markInProgress(uint32_t taskId) {
     std::lock_guard<std::mutex> lock(mutex_);
     auto it = jobs_.find(taskId);
     if (it == jobs_.end()) return;
-    if (workerIdx >= 0) {
-      it->second.worker = domain::video::WorkerIdentity{workerIdx, pid};
-    }
     if (it->second.status == domain::video::JobStatus::QUEUED) {
       it->second.status = domain::video::JobStatus::IN_PROGRESS;
       it->second.progressAt = domain::video::nowSeconds();
     }
-  }
-
-  /** The worker that holds the job, if one claimed it and it is not done. */
-  std::optional<domain::video::WorkerIdentity> assignedWorker(
-      uint32_t taskId) const {
-    std::lock_guard<std::mutex> lock(mutex_);
-    auto it = jobs_.find(taskId);
-    if (it == jobs_.end()) return std::nullopt;
-    return it->second.worker;
-  }
-
-  /**
-   * Records that a running job is still making progress (Python
-   * `Job.touch_progress`; training calls it for every metric). Without it a
-   * long job would be failed by sweep() after the stuck limit.
-   */
-  void reportProgress(uint32_t taskId) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    auto it = jobs_.find(taskId);
-    if (it != jobs_.end()) it->second.progressAt = domain::video::nowSeconds();
-  }
-
-  /** Metrics / logs / checkpoints of a job (Python `job_metrics`, ...). */
-  bool appendMetric(uint32_t taskId, Json::Value entry) {
-    return appendTo(taskId, &domain::video::VideoJob::metrics,
-                    std::move(entry));
-  }
-  bool appendLog(uint32_t taskId, Json::Value entry) {
-    return appendTo(taskId, &domain::video::VideoJob::logs, std::move(entry));
-  }
-  bool appendCheckpoint(uint32_t taskId, Json::Value entry) {
-    return appendTo(taskId, &domain::video::VideoJob::checkpoints,
-                    std::move(entry));
-  }
-  std::optional<Json::Value> metrics(uint32_t taskId) const {
-    return arrayOf(taskId, &domain::video::VideoJob::metrics);
-  }
-  std::optional<Json::Value> logs(uint32_t taskId) const {
-    return arrayOf(taskId, &domain::video::VideoJob::logs);
-  }
-  std::optional<Json::Value> checkpoints(uint32_t taskId) const {
-    return arrayOf(taskId, &domain::video::VideoJob::checkpoints);
   }
 
   struct SweepResult {
@@ -256,12 +182,12 @@ class VideoJobStore {
 
   /**
    * Final result from the worker. If the job was cancelled meanwhile the
-   * result is discarded (and the produced file removed).
+   * result is discarded (and the produced file removed). A result path outside
+   * the output root (see setOutputRoot) fails the job.
    */
   void complete(uint32_t taskId, const std::string& videoPath,
                 const std::string& error) {
     std::string orphanFile;
-    std::string orphanType = domain::video::kJobTypeVideo;
     {
       std::lock_guard<std::mutex> lock(mutex_);
       auto it = jobs_.find(taskId);
@@ -269,8 +195,6 @@ class VideoJobStore {
         orphanFile = videoPath;  // job was deleted while running
       } else {
         auto& job = it->second;
-        orphanType = job.jobType;
-        job.worker.reset();
         if (job.status == domain::video::JobStatus::FAILED &&
             job.errorCode == "stale_job") {
           orphanFile = videoPath;  // already failed by sweep(); drop the result
@@ -286,6 +210,18 @@ class VideoJobStore {
           job.status = domain::video::JobStatus::FAILED;
           job.errorCode = "processing_error";
           job.errorMessage = error;
+        } else if (!resultPathAllowed(videoPath)) {
+          // The runner reported a file outside the result root. Storing it
+          // would let /download serve it, so the job fails instead. The file is
+          // not touched: it is not ours to delete.
+          std::fprintf(stderr,
+                       "[VideoJobStore] Task %u: result '%s' is outside the "
+                       "output dir\n",
+                       taskId, videoPath.c_str());
+          job.completedAt = domain::video::nowSeconds();
+          job.status = domain::video::JobStatus::FAILED;
+          job.errorCode = "processing_error";
+          job.errorMessage = "Result file is outside the output directory";
         } else {
           job.completedAt = domain::video::nowSeconds();
           job.status = domain::video::JobStatus::COMPLETED;
@@ -294,35 +230,30 @@ class VideoJobStore {
       }
     }
     std::lock_guard<std::mutex> lock(mutex_);
-    removeResultLocked(orphanType, orphanFile);
+    removeResultLocked(orphanFile);
   }
 
-  /** `orgId` non-empty: only a job of that organisation is visible (Python
-   *  `_get_job_if_authorized`). Empty: no filtering. Same for the calls below.
-   */
-  std::optional<Json::Value> get(uint32_t taskId,
-                                 const std::string& orgId = {}) const {
+  std::optional<Json::Value> get(uint32_t taskId) const {
     std::lock_guard<std::mutex> lock(mutex_);
     auto it = jobs_.find(taskId);
-    if (it == jobs_.end() || !visibleTo(it->second, orgId)) return std::nullopt;
+    if (it == jobs_.end()) return std::nullopt;
     return it->second.toPublicJson();
   }
 
-  Json::Value list(const std::string& orgId = {}) const {
+  Json::Value list() const {
     std::lock_guard<std::mutex> lock(mutex_);
     Json::Value arr(Json::arrayValue);
     for (const auto& [id, job] : jobs_) {
-      if (visibleTo(job, orgId)) arr.append(job.toPublicJson());
+      arr.append(job.toPublicJson());
     }
     return arr;
   }
 
   /** Path of the mp4 only for COMPLETED jobs (Python get_job_result_path). */
-  std::optional<std::string> resultPath(uint32_t taskId,
-                                        const std::string& orgId = {}) const {
+  std::optional<std::string> resultPath(uint32_t taskId) const {
     std::lock_guard<std::mutex> lock(mutex_);
     auto it = jobs_.find(taskId);
-    if (it == jobs_.end() || !visibleTo(it->second, orgId) ||
+    if (it == jobs_.end() ||
         it->second.status != domain::video::JobStatus::COMPLETED ||
         it->second.resultPath.empty()) {
       return std::nullopt;
@@ -337,12 +268,10 @@ class VideoJobStore {
    * A still-queued job is CANCELLED right away; its worker result, when it
    * eventually arrives, is dropped the same way.
    */
-  std::optional<Json::Value> cancel(uint32_t taskId,
-                                    const std::string& orgId = {}) {
+  std::optional<Json::Value> cancel(uint32_t taskId) {
     std::lock_guard<std::mutex> lock(mutex_);
     auto it = jobs_.find(taskId);
-    if (it == jobs_.end() || !visibleTo(it->second, orgId) ||
-        domain::video::isTerminal(it->second.status) ||
+    if (it == jobs_.end() || domain::video::isTerminal(it->second.status) ||
         it->second.status == domain::video::JobStatus::CANCELLING) {
       return std::nullopt;
     }
@@ -360,26 +289,14 @@ class VideoJobStore {
    * Removes a terminal job and its result. Returns false if unknown; throws
    * JobStillActiveException while queued / running / cancelling. A late
    * worker result for an already removed job is dropped by complete().
-   *
-   * `force`: remove an active job too (Python: only active training jobs).
-   * Throws ForceDeleteNotAllowedException for a type that does not allow it.
-   * The record is removed; stopping or replacing its worker is the caller's
-   * job (read `assignedWorker()` first).
    */
-  bool remove(uint32_t taskId, const std::string& orgId = {},
-              bool force = false) {
+  bool remove(uint32_t taskId) {
     std::lock_guard<std::mutex> lock(mutex_);
     auto it = jobs_.find(taskId);
-    if (it == jobs_.end() || !visibleTo(it->second, orgId)) return false;
+    if (it == jobs_.end()) return false;
     const auto& job = it->second;
-    if (!domain::video::isTerminal(job.status)) {
-      if (!force) throw JobStillActiveException{};
-      if (!policyFor(job.jobType).forceDeletable) {
-        throw ForceDeleteNotAllowedException(
-            job.jobType, domain::video::toString(job.status));
-      }
-    }
-    removeResultLocked(job.jobType, job.resultPath);
+    if (!domain::video::isTerminal(job.status)) throw JobStillActiveException{};
+    removeResultLocked(job.resultPath);
     byUuid_.erase(job.uuid);
     jobs_.erase(it);
     return true;
@@ -392,8 +309,8 @@ class VideoJobStore {
     for (auto it = jobs_.begin(); it != jobs_.end();) {
       const auto& job = it->second;
       if (domain::video::isTerminal(job.status) && job.completedAt != 0 &&
-          job.completedAt < cutoff && policyFor(job.jobType).autoCleanup) {
-        removeResultLocked(job.jobType, job.resultPath);
+          job.completedAt < cutoff) {
+        removeResultLocked(job.resultPath);
         byUuid_.erase(job.uuid);
         it = jobs_.erase(it);
       } else {
@@ -402,61 +319,35 @@ class VideoJobStore {
     }
   }
 
-  const JobTypePolicy& policyFor(const std::string& jobType) const {
-    static const JobTypePolicy kDefault{};
-    auto it = policies_.find(jobType);
-    return it == policies_.end() ? kDefault : it->second;
+  size_t activeCountLocked() const {
+    return static_cast<size_t>(
+        std::count_if(jobs_.begin(), jobs_.end(), [](const auto& kv) {
+          return !domain::video::isTerminal(kv.second.status);
+        }));
   }
 
-  static bool visibleTo(const domain::video::VideoJob& job,
-                        const std::string& orgId) {
-    return orgId.empty() || job.orgId == orgId;
-  }
-
-  using VectorMember = std::vector<Json::Value> domain::video::VideoJob::*;
-
-  bool appendTo(uint32_t taskId, VectorMember member, Json::Value entry) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    auto it = jobs_.find(taskId);
-    if (it == jobs_.end()) return false;
-    (it->second.*member).push_back(std::move(entry));
-    return true;
-  }
-
-  std::optional<Json::Value> arrayOf(uint32_t taskId,
-                                     VectorMember member) const {
-    std::lock_guard<std::mutex> lock(mutex_);
-    auto it = jobs_.find(taskId);
-    if (it == jobs_.end()) return std::nullopt;
-    Json::Value arr(Json::arrayValue);
-    for (const auto& entry : it->second.*member) arr.append(entry);
-    return arr;
+  /** True when a result path may be stored: inside the output root (when one
+   *  is set). `mock://` results are not files. Caller holds mutex_. */
+  bool resultPathAllowed(const std::string& path) const {
+    if (path.empty() || path.rfind("mock://", 0) == 0) return true;
+    return outputRoot_.empty() || utils::isInsideDir(path, outputRoot_);
   }
 
   /**
-   * Deletes a job's result like Python `_delete_result_path`: only inside the
-   * type's result root (when one is set), and a directory only for types whose
-   * result is a directory. Caller holds mutex_.
+   * Deletes a job's result file like Python `_delete_result_path`: only inside
+   * the output root (when one is set). Caller holds mutex_.
    */
-  void removeResultLocked(const std::string& jobType,
-                          const std::string& path) const {
+  void removeResultLocked(const std::string& path) const {
     if (path.empty() || path.rfind("mock://", 0) == 0) return;
-    const JobTypePolicy& policy = policyFor(jobType);
-    if (!policy.resultRoot.empty() &&
-        !utils::isInsideDir(path, policy.resultRoot)) {
+    if (!outputRoot_.empty() && !utils::isInsideDir(path, outputRoot_)) {
       std::fprintf(stderr,
                    "[VideoJobStore] Refusing to delete '%s': outside result "
                    "dir '%s'\n",
-                   path.c_str(), policy.resultRoot.string().c_str());
+                   path.c_str(), outputRoot_.string().c_str());
       return;
     }
     std::error_code ec;
-    if (policy.resultMayBeDirectory &&
-        std::filesystem::is_directory(path, ec)) {
-      std::filesystem::remove_all(path, ec);
-    } else {
-      std::filesystem::remove(path, ec);
-    }
+    std::filesystem::remove(path, ec);
   }
 
   mutable std::mutex mutex_;
@@ -464,7 +355,7 @@ class VideoJobStore {
   std::map<std::string, uint32_t> byUuid_;
   size_t maxJobs_;
   int64_t retentionSeconds_;
-  std::map<std::string, JobTypePolicy> policies_;
+  std::filesystem::path outputRoot_;  // empty = no restriction
 };
 
 }  // namespace tt::services

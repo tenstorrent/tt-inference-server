@@ -6,25 +6,18 @@
 #include <json/json.h>
 
 #include <cstdint>
+#include <cstring>
 #include <ctime>
 #include <optional>
 #include <string>
 #include <vector>
 
+#include "domain/video_generate_request.hpp"
+
 namespace tt::domain::video {
 
-/** Python `JobTypes` (config/constants.py). The store is generic over the job
- *  type so training can reuse it later; only "video" is served today. */
+/** Python `JobTypes.VIDEO` (config/constants.py): the only job type served. */
 inline constexpr const char* kJobTypeVideo = "video";
-inline constexpr const char* kJobTypeTraining = "training";
-inline constexpr const char* kJobTypeAdapterMerge = "adapter_merge";
-
-/** Which worker process holds a job (Python `Job.assigned_worker_identity`,
- *  `(worker_id, pid)`). Needed later to stop or replace that worker. */
-struct WorkerIdentity {
-  int workerIdx = -1;
-  int pid = 0;
-};
 
 /** Same states as Python `JobStatus` (utils/job_manager.py). */
 enum class JobStatus {
@@ -62,8 +55,6 @@ inline bool isTerminal(JobStatus status) {
 /** One async video job. The job id is the decimal task id. */
 struct VideoJob {
   uint32_t taskId = 0;
-  std::string jobType = kJobTypeVideo;
-  std::string orgId;  // empty = none (Python `Job.org_id`)
   std::string uuid;   // public id; empty = use the decimal task id
   std::string model;
   Json::Value requestParameters;
@@ -74,27 +65,51 @@ struct VideoJob {
   std::string resultPath;
   std::string errorCode;
   std::string errorMessage;
-  std::optional<WorkerIdentity> worker;  // set when a worker claims it
-  // Python `job_metrics`, `job_logs`, `job_checkpoints` (used by training;
-  // empty for video, so they cost nothing there).
-  std::vector<Json::Value> metrics;
-  std::vector<Json::Value> logs;
-  std::vector<Json::Value> checkpoints;
 
   std::string id() const {
     return uuid.empty() ? std::to_string(taskId) : uuid;
+  }
+
+  /** Python `VideoGenerateRequest.model_dump()`: every field is present and an
+   *  unset optional is null. The shape validator fills a missing
+   *  num_inference_steps with the default (20) before the job is stored, so the
+   *  default is applied here as well for a job that was built without it. Keys
+   *  this server adds on top of the Python schema are kept. */
+  Json::Value publicRequestParameters() const {
+    static const char* const kFields[] = {
+        "prompt",   "negative_prompt", "num_inference_steps", "seed",
+        "aspect_ratio", "height",      "width",               "fps",
+        "duration", "num_frames"};
+    Json::Value out(Json::objectValue);
+    for (const char* key : kFields) {
+      const bool set = requestParameters.isObject() &&
+                       requestParameters.isMember(key) &&
+                       !requestParameters[key].isNull();
+      if (set) {
+        out[key] = requestParameters[key];
+      } else if (std::strcmp(key, "num_inference_steps") == 0) {
+        out[key] = kDefaultVideoInferenceSteps;
+      } else {
+        out[key] = Json::nullValue;
+      }
+    }
+    if (requestParameters.isObject()) {
+      for (const auto& name : requestParameters.getMemberNames()) {
+        if (!out.isMember(name)) out[name] = requestParameters[name];
+      }
+    }
+    return out;
   }
 
   /** Mirrors Python `Job.to_public_dict()`. */
   Json::Value toPublicJson() const {
     Json::Value json;
     json["id"] = id();
-    json["job_type"] = jobType;
+    json["job_type"] = kJobTypeVideo;
     json["status"] = toString(status);
     json["created_at"] = static_cast<Json::Int64>(createdAt);
     json["model"] = model;
-    json["request_parameters"] = requestParameters;
-    if (!orgId.empty()) json["org_id"] = orgId;
+    json["request_parameters"] = publicRequestParameters();
     if (completedAt != 0) {
       json["completed_at"] = static_cast<Json::Int64>(completedAt);
     }

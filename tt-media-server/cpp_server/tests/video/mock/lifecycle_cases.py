@@ -15,8 +15,6 @@ folder), so it can run next to a server that owns a device. Cases:
                no shm queues
   disconnect   the client drops a synchronous request: no mp4 is left, the server lives
   sync2        two synchronous requests at once: the second waits, both succeed
-  restart      what /tt-liveness and POST do while a restarted worker is warming up
-  preclaim     the worker dies after taking a task and before CLAIMED
   stress       hundreds of concurrent POST/GET/cancel/DELETE
   bigtable     GET /v1/videos/jobs with 10000 jobs, with the sweeper running
   downloads    many parallel downloads of one mp4 (whole file and Range)
@@ -43,6 +41,7 @@ import worker_crash_cases as w
 
 GEN = w.GENERATIONS
 KEY = w.KEY
+FINAL = ("completed", "failed", "cancelled")
 note = w.note
 
 
@@ -52,7 +51,7 @@ def server(port, tag, workdir, **env):
     base = {"TT_VIDEO_MOCK_DELAY_MS": "0", "TT_VIDEO_OUTPUT_DIR": str(out)}
     base.update(env)
     proc, log = w.start(
-        port, tag, 3, workdir, {k: (None if v is None else str(v)) for k, v in base.items()}
+        port, tag, workdir, {k: (None if v is None else str(v)) for k, v in base.items()}
     )
     return proc, log, out
 
@@ -67,7 +66,7 @@ def create(port, prompt="p", **body):
 
 
 def finished(port, jid, timeout=30):
-    return w.wait_job(port, jid, w.FINAL, timeout)
+    return w.wait_job(port, jid, FINAL, timeout)
 
 
 def ipc_dirs():
@@ -289,85 +288,6 @@ def case_sync2(wd):
         w.stop(proc)
 
 
-def case_restart(wd):
-    print("=== restart: liveness and POST while a restarted worker warms up ===")
-    port = 18165
-    proc, log, out = server(
-        port, "rs", wd, TT_VIDEO_MOCK_WARMUP_MS=6000, TT_VIDEO_MOCK_DELAY_MS=1000
-    )
-    try:
-        note(ready(port, 90), "server ready (first warmup 6 s)")
-        pid0, _ = w.worker(port)
-        os.kill(pid0, signal.SIGKILL)
-        t0 = time.time()
-        seen = []
-        posts = []
-        while time.time() - t0 < 12:
-            pid, alive = w.worker(port)
-            st, j = create(port)
-            seen.append((round(time.time() - t0, 1), w.model_ready(port), pid != pid0))
-            posts.append(st)
-            time.sleep(1)
-        print(f"  (seconds since kill, model_ready, new pid): {seen}")
-        print(f"  POST statuses during the window: {posts}")
-        window = [r for r in seen if r[2]]
-        ready_in_window = [r for r in window if r[1]]
-        note(
-            True,
-            (
-                "OBSERVED: model_ready is true in the warmup window of the new worker"
-                if ready_in_window
-                else "OBSERVED: model_ready is false during the warmup window of the new worker"
-            ),
-            f"{len(ready_in_window)} of {len(window)} samples",
-        )
-        note(
-            all(s in (202, 503) for s in posts),
-            "POST answers 202 or 503, never an error",
-            str(sorted(set(posts))),
-        )
-        note(
-            bool(w.wait_until(lambda: w.new_worker_ready(port, pid0), 30)),
-            "the new worker becomes ready",
-        )
-    finally:
-        w.stop(proc)
-
-
-def case_preclaim(wd):
-    print("=== preclaim: the worker dies after taking a task and before CLAIMED ===")
-    port = 18166
-    proc, log, out = server(
-        port,
-        "pc",
-        wd,
-        TT_MEDIA_TEST_PRECLAIM_DELAY_MS=4000,
-        JOB_CLEANUP_INTERVAL_SECONDS=1,
-        JOB_MAX_STUCK_TIME_SECONDS=3,
-    )
-    try:
-        note(ready(port), "server ready")
-        pid0, _ = w.worker(port)
-        _, j = create(port)
-        time.sleep(1.5)  # the worker holds the task and waits in the hook
-        os.kill(pid0, signal.SIGKILL)
-        pid1 = w.wait_until(lambda: w.new_worker_ready(port, pid0), 30)
-        note(pid1 is not None, "a new worker starts")
-        time.sleep(8)
-        s, body = w.job(port, j["id"])
-        print(f"  job after 8 s: status={s} error={body.get('error')}")
-        note(
-            s in ("queued", "failed"),
-            "OBSERVED: the job is not lost silently",
-            f"status={s} error={body.get('error')}",
-        )
-        _, j2 = create(port)
-        s2, _ = finished(port, j2["id"], 30)
-        note(s2 == "completed", "a new job completes", f"status={s2}")
-    finally:
-        w.stop(proc)
-
-
 def case_stress(wd):
     print("=== stress: concurrent POST/GET/cancel/DELETE ===")
     port = 18167
@@ -561,8 +481,6 @@ CASES = {
     "sigterm": case_sigterm,
     "disconnect": case_disconnect,
     "sync2": case_sync2,
-    "restart": case_restart,
-    "preclaim": case_preclaim,
     "stress": case_stress,
     "bigtable": case_bigtable,
     "downloads": case_downloads,

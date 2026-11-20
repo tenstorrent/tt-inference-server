@@ -256,8 +256,6 @@ bool VideoDeviceRunner::warmup() {
                                      : videoConfig.visible_devices;
     python->runner = fabric.attr("get_device_runner")(runnerId);
     python->runner.attr("set_device")();
-    python->runner = py::module_::import("multihost.lockstep_runner")
-                         .attr("wrap_if_multihost")(python->runner);
 
     py::module_ asyncio = py::module_::import("asyncio");
     python->loop = asyncio.attr("new_event_loop")();

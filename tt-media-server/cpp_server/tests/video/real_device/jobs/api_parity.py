@@ -7,7 +7,6 @@
 Works against the C++ server and the Python tt-media-server (same routes), so the two
 outputs can be compared with `diff`. It asserts nothing: it records behaviour.
 
-Report: docs/tests/2026-11-14-video-real-device-extended-checks.md
 
     python3 tests/video/real_device/jobs/api_parity.py --base-url http://127.0.0.1:8000 \
         --api-key <token> > python.txt

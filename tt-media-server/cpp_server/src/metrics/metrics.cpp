@@ -315,14 +315,6 @@ ServerMetrics::ServerMetrics() {
                           .Register(*registry_);
   video_sweep_evicted_ = &videoSweep->Add({{"kind", "evicted"}});
   video_sweep_stuck_ = &videoSweep->Add({{"kind", "stuck"}});
-  video_restarts_family_ =
-      &prometheus::BuildCounter()
-           .Name("tt_video_worker_restarts_total")
-           .Help("Automatic video worker restarts by result")
-           .Register(*registry_);
-  for (const char* r : {"ok", "failed", "gave_up"}) {
-    video_restarts_family_->Add({{"result", r}});
-  }
 
   // ----- start background metrics thread ----------------------------------
   running_ = true;
@@ -461,11 +453,6 @@ void ServerMetrics::onVideoSweep(size_t evicted, size_t stuck) {
   if (video_sweep_evicted_ == nullptr) return;
   if (evicted != 0) video_sweep_evicted_->Increment(static_cast<double>(evicted));
   if (stuck != 0) video_sweep_stuck_->Increment(static_cast<double>(stuck));
-}
-
-void ServerMetrics::onVideoWorkerRestart(const std::string& result) {
-  if (video_restarts_family_ == nullptr) return;
-  video_restarts_family_->Add({{"result", result}}).Increment();
 }
 
 // -----------------------------------------------------------------------------

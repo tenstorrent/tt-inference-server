@@ -1390,7 +1390,6 @@ set(SERVICE_TEST_COMMON_SOURCES
     src/runtime/runners/video_ipc_runner.cpp
     src/runtime/runners/mock_video_runner.cpp
     src/runtime/runners/video_device_runner.cpp
-    src/runtime/runners/video_multihost.cpp
     src/services/tts_service.cpp
     src/services/tts_request_preprocessor.cpp
     src/services/qwen3_tts_request_validator.cpp
@@ -1536,7 +1535,6 @@ set(INTEGRATION_TEST_COMMON_SOURCES
     src/runtime/runners/video_ipc_runner.cpp
     src/runtime/runners/mock_video_runner.cpp
     src/runtime/runners/video_device_runner.cpp
-    src/runtime/runners/video_multihost.cpp
     src/services/tts_service.cpp
     src/services/tts_request_preprocessor.cpp
     src/services/qwen3_tts_request_validator.cpp
@@ -2068,7 +2066,6 @@ set(SOURCES
     src/runtime/runners/video_ipc_runner.cpp
     src/runtime/runners/mock_video_runner.cpp
     src/runtime/runners/video_device_runner.cpp
-    src/runtime/runners/video_multihost.cpp
     src/services/tts_service.cpp
     src/services/tts_request_preprocessor.cpp
     src/services/qwen3_tts_request_validator.cpp
