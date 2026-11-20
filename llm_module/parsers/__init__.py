@@ -7,6 +7,7 @@ from .aiperf_prefix_cache import AIPerfPrefixCacheParser
 from .aiperf_spec_decode import AIPerfSpecDecodeParser
 from .swo_bench_agentic_traces import SwoBenchAgenticTracesParser
 from .base import LLMResultParser
+from .vllm_structured_output import VLLMStructuredOutputParser
 
 __all__ = [
     "AIPerfAgenticTracesParser",
@@ -14,4 +15,5 @@ __all__ = [
     "AIPerfSpecDecodeParser",
     "SwoBenchAgenticTracesParser",
     "LLMResultParser",
+    "VLLMStructuredOutputParser",
 ]

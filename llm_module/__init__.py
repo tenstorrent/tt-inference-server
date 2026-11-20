@@ -2,7 +2,12 @@
 #
 # SPDX-FileCopyrightText: 2026 Tenstorrent AI ULC
 
-from .config import DriverContext, LLMRunConfig, ServerConnection
+from .config import (
+    DriverContext,
+    LLMRunConfig,
+    ServerConnection,
+    StructuredOutputRunConfig,
+)
 from .guidellm_scenarios import GuideLLMScenario, build_guidellm_scenarios
 from .drivers import (
     AgenticEvalDriver,
@@ -17,6 +22,7 @@ from .drivers import (
     SpecDecodeDriverResult,
     HarborAgenticDriver,
     VLLMBenchDriver,
+    VLLMStructuredOutputDriver,
     make_agentic_driver,
 )
 from .prefix_cache import PrefixCacheRun, build_runs as build_prefix_cache_runs
@@ -31,6 +37,7 @@ from .target_checks import apply_target_checks, build_target_checks
 
 __all__ = [
     "LLMRunConfig",
+    "StructuredOutputRunConfig",
     "GuideLLMScenario",
     "build_guidellm_scenarios",
     "ServerConnection",
@@ -51,6 +58,7 @@ __all__ = [
     "GuideLLMDriver",
     "HarborAgenticDriver",
     "VLLMBenchDriver",
+    "VLLMStructuredOutputDriver",
     "make_agentic_driver",
     "LLMPerformanceRunner",
     "RunnerResult",
