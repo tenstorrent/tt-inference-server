@@ -159,6 +159,34 @@ def test_runtime_json_resolves_impl_and_engine_from_model_spec(
     assert resolved_spec is mock_model_spec
 
 
+MIMO_GALAXY_ID = "id_mimo-v2.6-flash_MiMo-V2.6-Flash-MOPD_blackhole_galaxy"
+KIMI_ID = "id_blaze_Kimi-K2.7-Code_super_cluster"
+
+
+@pytest.mark.parametrize(
+    "model_id, workflow, expected",
+    [
+        # MiMo's config sets in_release: a plain release (tt-shield) runs AgentX.
+        (MIMO_GALAXY_ID, "release", True),
+        # Only releases: other workflows never grow an agentic-traces child.
+        (MIMO_GALAXY_ID, "benchmarks", False),
+        # A config without in_release keeps the flag opt-in.
+        (KIMI_ID, "release", False),
+        # No config at all.
+        ("id_tt-transformers_Mistral-7B-Instruct-v0.3_n150", "release", False),
+    ],
+)
+def test_agentic_traces_release_default(model_id, workflow, expected):
+    from run import apply_agentic_traces_release_default
+
+    model_spec = MagicMock(model_id=model_id)
+    runtime_config = argparse.Namespace(workflow=workflow, agentic_traces=False)
+
+    apply_agentic_traces_release_default(model_spec, runtime_config)
+
+    assert runtime_config.agentic_traces is expected
+
+
 @pytest.fixture
 def mock_setup_config():
     """Mock setup configuration for docker server (default Docker volume mode)."""

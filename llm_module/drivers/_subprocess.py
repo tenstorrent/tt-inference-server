@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import signal
 import subprocess
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence
@@ -35,19 +36,24 @@ def run_command(
     If ``timeout_s`` is set and elapses before the process exits, the
     child is killed and 124 is returned (matching ``/usr/bin/timeout``)
     so callers can treat it as a normal nonzero exit and move on.
+
+    The tool runs in its own process group, and the whole group is killed
+    when it returns or times out. aiperf runs its workers as separate
+    processes: killing only the parent left them sending requests and
+    holding the caller's output pipes open, so the workflow never exited.
     """
     logger.info("Executing: %s", " ".join(str(c) for c in cmd))
     full_env = dict(os.environ)
     if env:
         full_env.update(env)
+    proc = subprocess.Popen(
+        list(cmd),
+        env=full_env,
+        cwd=str(cwd) if cwd else None,
+        start_new_session=True,
+    )
     try:
-        proc = subprocess.run(
-            list(cmd),
-            env=full_env,
-            cwd=str(cwd) if cwd else None,
-            check=False,
-            timeout=timeout_s,
-        )
+        return proc.wait(timeout=timeout_s)
     except subprocess.TimeoutExpired:
         logger.error(
             "Command exceeded timeout of %.0fs and was killed: %s",
@@ -55,7 +61,12 @@ def run_command(
             " ".join(str(c) for c in cmd),
         )
         return 124
-    return proc.returncode
+    finally:
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        proc.wait()
 
 
 def load_json(path: Path) -> Optional[Dict[str, Any]]:

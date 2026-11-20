@@ -70,6 +70,7 @@ _MOCK_VLLM_SERVE_FLAGS = (
     ("served_model_name", "+"),
     ("cudagraph_capture_sizes", "+"),
     ("lora_modules", "+"),
+    ("allowed_media_domains", "+"),
     ("allowed_origins", None),
     ("default_chat_template_kwargs", None),
     ("hf_overrides", None),
@@ -1473,6 +1474,146 @@ def test_pinned_download_and_model_path_env_are_implementation_independent(
     assert module.snapshot_download.call_args.kwargs["revision"] == "a" * 40
 
 
+def test_tt_cache_env_points_at_tt_cache_path(
+    monkeypatch, tmp_path, run_vllm_api_server_module
+):
+    module = run_vllm_api_server_module
+    snapshot = tmp_path / "snapshot"
+    snapshot.mkdir()
+    monkeypatch.setenv("CACHE_ROOT", str(tmp_path))
+    monkeypatch.setenv("MODEL_WEIGHTS_DIR", str(snapshot))
+    monkeypatch.setenv("TT_CACHE_PATH", str(tmp_path / "tt-cache"))
+    monkeypatch.setenv("CUSTOM_TT_CACHE", "/stale")
+    spec = _weights_spec()
+    spec.update(metadata={"tt_cache_env": "CUSTOM_TT_CACHE"})
+    module.set_vllm_logging_config.return_value = ("logging.json", "server.log")
+    module.create_model_symlink.return_value = str(snapshot)
+    module.model_setup(spec)
+    assert os.environ["CUSTOM_TT_CACHE"] == str(tmp_path / "tt-cache")
+
+
+def test_cache_subdir_envs_live_inside_the_tt_cache_dir(
+    monkeypatch, tmp_path, run_vllm_api_server_module
+):
+    module = run_vllm_api_server_module
+    snapshot = tmp_path / "snapshot"
+    snapshot.mkdir()
+    monkeypatch.setenv("CACHE_ROOT", str(tmp_path))
+    monkeypatch.setenv("MODEL_WEIGHTS_DIR", str(snapshot))
+    monkeypatch.setenv("TT_CACHE_PATH", str(tmp_path / "tt-cache"))
+    monkeypatch.delenv("MIMO_VISION_CACHE", raising=False)
+    spec = _weights_spec()
+    spec.update(metadata={"cache_subdir_envs": {"MIMO_VISION_CACHE": "vision"}})
+    module.set_vllm_logging_config.return_value = ("logging.json", "server.log")
+    module.create_model_symlink.return_value = str(snapshot)
+    module.model_setup(spec)
+    assert os.environ["MIMO_VISION_CACHE"] == str(tmp_path / "tt-cache" / "vision")
+    for bad in ({"lower": "vision"}, {"MIMO_VISION_CACHE": "../escape"}):
+        spec.update(metadata={"cache_subdir_envs": bad})
+        with pytest.raises(ValueError, match="cache_subdir_envs"):
+            module.model_setup(spec)
+
+
+def test_mimo_mm_engines_get_allowed_media_domains_as_one_token_per_domain(
+    monkeypatch, run_vllm_api_server_module
+):
+    """The mm spec's list renders as vLLM's nargs='+' flag: the engines refuse every
+    media URL, so only the proxy (with its address checks) downloads."""
+    template = next(
+        t
+        for t in load_templates_from_yaml(DEV_LLM_SPECS_PATH)
+        if t.impl.impl_id == "mimo_v2_6_flash_mm"
+    )
+    (spec,) = template.expand_to_specs()
+    domains = spec.device_model_spec.vllm_args["allowed-media-domains"]
+    monkeypatch.setattr(sys, "argv", ["run_vllm_api_server.py"])
+    run_vllm_api_server_module.set_vllm_sys_argv(
+        argparse.Namespace(service_port=None), [], {"allowed-media-domains": domains}
+    )
+    assert sys.argv[1:] == ["--allowed-media-domains", "fetched-by-the-proxy.invalid"]
+
+
+def test_tt_cache_env_rejects_non_env_var_names(
+    monkeypatch, tmp_path, run_vllm_api_server_module
+):
+    module = run_vllm_api_server_module
+    snapshot = tmp_path / "snapshot"
+    snapshot.mkdir()
+    monkeypatch.setenv("CACHE_ROOT", str(tmp_path))
+    monkeypatch.setenv("MODEL_WEIGHTS_DIR", str(snapshot))
+    monkeypatch.setenv("TT_CACHE_PATH", str(tmp_path / "tt-cache"))
+    spec = _weights_spec()
+    spec.update(metadata={"tt_cache_env": "not-an-env-var"})
+    module.set_vllm_logging_config.return_value = ("logging.json", "server.log")
+    module.create_model_symlink.return_value = str(snapshot)
+    with pytest.raises(ValueError, match="tt_cache_env"):
+        module.model_setup(spec)
+
+
+def test_mimo_bh_galaxy_spec_runs_four_row_engines_of_four():
+    template = next(
+        t
+        for t in load_templates_from_yaml(DEV_LLM_SPECS_PATH)
+        if t.impl.impl_id == "mimo_v2_6_flash"
+    )
+    (spec,) = template.expand_to_specs()
+    vllm_args = spec.device_model_spec.vllm_args
+    assert spec.device_type.name == "BLACKHOLE_GALAXY"
+    assert (
+        not spec.device_model_spec.default_impl
+    )  # MTP is the default (--impl mimo-v2.6-flash)
+    assert vllm_args["data_parallel_size"] == 4
+    assert vllm_args["max_num_seqs"] == 4
+    assert vllm_args["max_num_batched_tokens"] == 4096
+    # Without it (vLLM's default 0) the SWA groups keep only each prompt's last blocks, so a
+    # shared prefix with a different ending hits 0 tokens.
+    assert vllm_args["enable-prefix-caching"] is True
+    assert vllm_args["prefix-cache-retention-interval"] == 1024
+    # One engine per mesh row behind the proxy; the launcher discovers the rows' chips.
+    assert spec.device_model_spec.submesh_engines is True
+    assert spec.device_model_spec.env_vars["MESH_DEVICE"] == "(4, 8)"
+    # 4 x 1M per lane with the global KV pair split (tt-metal #62679).
+    assert spec.device_model_spec.env_vars["MIMO_KV_GB_PER_CHIP"] == 6.7
+    tt_config = json.loads(vllm_args["additional_config"])["tt"]
+    assert tt_config["trace_region_size"] == 1000000000
+    assert tt_config["sample_on_device_mode"] == "decode_only"
+    # The lane-DP prefill gather was for four lanes stalling together; an engine prefills alone.
+    assert "prefill_gather_ms" not in tt_config
+    assert spec.metadata["model_path_env"] == "MIMO_MODEL_PATH"
+    assert spec.metadata["tt_cache_env"] == "MIMO_TT_CACHE"
+
+
+def test_mimo_mtp_spec_speculates_asynchronously_through_the_model_drafter():
+    template = next(
+        t
+        for t in load_templates_from_yaml(DEV_LLM_SPECS_PATH)
+        if t.impl.impl_id == "mimo_v2_6_flash_mtp"
+    )
+    (spec,) = template.expand_to_specs()
+    vllm_args = spec.device_model_spec.vllm_args
+    assert spec.device_model_spec.default_impl
+    assert spec.device_model_spec.env_vars["MIMO_SPEC_DECODE"] == "mtp"
+    # c=16: adaptive draft groups, 3 drafts for 1-2 requests per engine, 1 for 3-4.
+    assert spec.device_model_spec.env_vars["MIMO_SPEC_SLOTS"] == 8
+    assert spec.device_model_spec.env_vars["MIMO_SPEC_GROUPS"] == "adaptive"
+    assert spec.device_model_spec.env_vars["MIMO_SDPA_FULL_GRID"] == 1
+    assert spec.device_model_spec.submesh_engines is True
+    # The model declares supports_async_spec_decode, so async scheduling stays on.
+    assert "no-async-scheduling" not in vllm_args
+    assert vllm_args["max_num_seqs"] == 8 and vllm_args["data_parallel_size"] == 4
+    assert vllm_args["max_num_batched_tokens"] == 4096
+    assert vllm_args["prefix-cache-retention-interval"] == 4096
+    assert spec.device_model_spec.env_vars["TT_PROXY_SLACK"] == 4
+    # MTP keeps the default KV budget: a larger one is unverified with its extra memory.
+    assert "MIMO_KV_GB_PER_CHIP" not in spec.device_model_spec.env_vars
+    speculative = json.loads(vllm_args["speculative_config"])
+    assert speculative == {
+        "method": "custom_class",
+        "model": "vllm_tt_plugin.model_owned_drafter",
+        "num_speculative_tokens": 3,
+    }
+
+
 def _llama_qb2_spec():
     template = next(
         t
@@ -1655,3 +1796,447 @@ def test_quetzal_metadata_without_vendored_registry_is_unchanged(
 
     assert [name for name, _ in calls] == ["AutoConfig", "AutoTokenizer"]
     assert all(kwargs["trust_remote_code"] is False for _, kwargs in calls)
+
+
+# ---------------------------------------------------------------- submesh engines
+
+
+def _submesh_spec(data_parallel_size=2):
+    return {
+        "model_id": "id_x_Model_galaxy",
+        "impl": {"impl_id": "x"},
+        "device_model_spec": {
+            "submesh_engines": True,
+            "vllm_args": {"data_parallel_size": data_parallel_size, "max_num_seqs": 4},
+        },
+    }
+
+
+def test_submesh_engine_count(run_vllm_api_server_module):
+    module = run_vllm_api_server_module
+    assert module.submesh_engine_count({"device_model_spec": {}}) is None
+    assert module.submesh_engine_count(_submesh_spec(4)) == 4
+    with pytest.raises(ValueError, match="data_parallel_size"):
+        module.submesh_engine_count(_submesh_spec(1))
+
+
+def _fake_discovery(conn, mesh_device_env, data_parallel_size):
+    # vllm-tt-plugin's run_standard_dp_visible_device_group_discovery, without devices.
+    rows = [
+        ",".join(str(4 * r + c) for c in range(4)) for r in range(data_parallel_size)
+    ]
+    conn.send(("ok", [(row, (1, 4)) for row in rows]))
+    conn.close()
+
+
+def _fake_discovery_failing(conn, mesh_device_env, data_parallel_size):
+    conn.send(("error", f"RuntimeError: no mesh {mesh_device_env}"))
+    conn.close()
+
+
+def _install_fake_discovery(monkeypatch, module, target):
+    fake = types.ModuleType("vllm_tt_plugin.utils.dp_discovery")
+    fake.run_standard_dp_visible_device_group_discovery = target
+    monkeypatch.setitem(sys.modules, "vllm_tt_plugin.utils.dp_discovery", fake)
+    # The fake lives only in this process: fork instead of spawn so the child has it.
+    fork = module.multiprocessing.get_context("fork")
+    monkeypatch.setattr(module.multiprocessing, "get_context", lambda method: fork)
+
+
+def test_discover_submesh_engine_groups(monkeypatch, run_vllm_api_server_module):
+    module = run_vllm_api_server_module
+    monkeypatch.setenv("MESH_DEVICE", "(2, 4)")
+    _install_fake_discovery(monkeypatch, module, _fake_discovery)
+    assert module.discover_submesh_engine_groups(2) == [
+        ("0,1,2,3", "(1, 4)"),
+        ("4,5,6,7", "(1, 4)"),
+    ]
+
+
+def test_discover_submesh_engine_groups_reports_failure(
+    monkeypatch, run_vllm_api_server_module
+):
+    module = run_vllm_api_server_module
+    monkeypatch.setenv("MESH_DEVICE", "(2, 4)")
+    _install_fake_discovery(monkeypatch, module, _fake_discovery_failing)
+    with pytest.raises(RuntimeError, match=r"no mesh \(2, 4\)"):
+        module.discover_submesh_engine_groups(2)
+
+
+def test_run_submesh_engines_hands_each_engine_its_group(
+    monkeypatch, run_vllm_api_server_module
+):
+    module = run_vllm_api_server_module
+    # Each fake engine process is the environment it was started with.
+    monkeypatch.setattr(
+        module.subprocess, "Popen", lambda command, env, start_new_session: env
+    )
+    served = {}
+
+    async def serve_engine_proxy(procs, backends, host, port):
+        served.update(envs=procs, backends=backends, port=port)
+        return 0
+
+    monkeypatch.setattr(module, "serve_engine_proxy", serve_engine_proxy)
+    monkeypatch.setattr(module, "stop_submesh_engines", MagicMock())
+    groups = [("0,1,2,3", "(1, 4)"), ("4,5,6,7", "(1, 4)")]
+
+    assert module.run_submesh_engines(groups, ["--model", "m"], 7000, "0.0.0.0") == 0
+
+    envs = served["envs"]
+    assert [env[module.SUBMESH_ENGINE_INDEX_ENV] for env in envs] == ["0", "1"]
+    assert [env[module.SUBMESH_ENGINE_DEVICES_ENV] for env in envs] == [
+        "0,1,2,3",
+        "4,5,6,7",
+    ]
+    assert {env[module.SUBMESH_ENGINE_MESH_ENV] for env in envs} == {"(1, 4)"}
+    assert served["backends"] == ["http://127.0.0.1:7001", "http://127.0.0.1:7002"]
+    assert served["port"] == 7000
+
+
+def test_submesh_engine_command_moves_the_port(run_vllm_api_server_module):
+    module = run_vllm_api_server_module
+    argv = [
+        "--model",
+        "m",
+        "--tt-device",
+        "galaxy",
+        "--service-port",
+        "7000",
+        "--port=7000",
+        "--no-auth",
+    ]
+    command = module.submesh_engine_command(argv, 7000, 2)
+    assert command[:2] == [sys.executable, os.path.abspath(module.__file__)]
+    assert command[2:] == [
+        "--model",
+        "m",
+        "--tt-device",
+        "galaxy",
+        "--no-auth",
+        "--service-port",
+        "7003",
+    ]
+
+
+def test_configure_submesh_engine(monkeypatch, run_vllm_api_server_module):
+    module = run_vllm_api_server_module
+    monkeypatch.setenv("MESH_DEVICE", "(4, 8)")
+    monkeypatch.setenv(module.SUBMESH_ENGINE_INDEX_ENV, "1")
+    monkeypatch.setenv(module.SUBMESH_ENGINE_DEVICES_ENV, "4,5,6,7")
+    monkeypatch.setenv(module.SUBMESH_ENGINE_MESH_ENV, "(1, 4)")
+    monkeypatch.delenv("OMP_NUM_THREADS", raising=False)
+    monkeypatch.delenv("TT_VISIBLE_DEVICES", raising=False)
+    monkeypatch.setattr(module.os, "cpu_count", lambda: 64)
+    args = {"data_parallel_size": 4, "max_num_seqs": 4}
+    module.configure_submesh_engine(4, args)
+    assert os.environ["TT_VISIBLE_DEVICES"] == "4,5,6,7"
+    assert os.environ["MESH_DEVICE"] == "(1, 4)"
+    assert os.environ["OMP_NUM_THREADS"] == "8"
+    assert args == {"data_parallel_size": 1, "max_num_seqs": 4}
+    # A spec-set OMP_NUM_THREADS wins.
+    monkeypatch.setenv("OMP_NUM_THREADS", "3")
+    module.configure_submesh_engine(2, {"data_parallel_size": 2})
+    assert os.environ["OMP_NUM_THREADS"] == "3"
+
+
+def _patch_main_startup(monkeypatch, module, model_spec, cli=()):
+    args = argparse.Namespace(
+        model="m",
+        tt_device="galaxy",
+        device=None,
+        engine=None,
+        impl=None,
+        no_auth=True,
+        disable_trace_capture=True,
+        service_port=7000,
+    )
+    monkeypatch.setattr(module, "parse_args", lambda: (args, list(cli)))
+    monkeypatch.setattr(module, "load_model_spec", MagicMock(return_value=model_spec))
+    for name in (
+        "set_cache_paths",
+        "ensure_weights_available",
+        "register_tt_models",
+        "set_metal_timeout_env_vars",
+        "set_runtime_env_vars",
+        "runtime_settings",
+        "start_trace_capture",
+    ):
+        monkeypatch.setattr(module, name, MagicMock())
+    run_module = MagicMock()
+    monkeypatch.setattr(module.runpy, "run_module", run_module)
+    return run_module
+
+
+def test_main_serves_submesh_engines_behind_the_proxy(
+    monkeypatch, run_vllm_api_server_module
+):
+    module = run_vllm_api_server_module
+    monkeypatch.delenv(module.SUBMESH_ENGINE_INDEX_ENV, raising=False)
+    run_module = _patch_main_startup(monkeypatch, module, _submesh_spec())
+    groups = [("0,1", "(1, 2)"), ("2,3", "(1, 2)")]
+    discover = MagicMock(return_value=groups)
+    monkeypatch.setattr(module, "discover_submesh_engine_groups", discover)
+    run_engines = MagicMock(return_value=0)
+    monkeypatch.setattr(module, "run_submesh_engines", run_engines)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["run_vllm_api_server.py", "--model", "m", "--service-port", "7000"],
+    )
+
+    with pytest.raises(SystemExit) as stop:
+        module.main()
+
+    assert stop.value.code == 0
+    discover.assert_called_once_with(2)
+    run_engines.assert_called_once_with(
+        groups, ["--model", "m", "--service-port", "7000"], 7000, "0.0.0.0", None
+    )
+    run_module.assert_not_called()
+
+
+def test_main_runs_one_engine_in_a_submesh_child(
+    monkeypatch, run_vllm_api_server_module
+):
+    module = run_vllm_api_server_module
+    monkeypatch.setenv(module.SUBMESH_ENGINE_INDEX_ENV, "1")
+    monkeypatch.setenv(module.SUBMESH_ENGINE_DEVICES_ENV, "2,3")
+    monkeypatch.setenv(module.SUBMESH_ENGINE_MESH_ENV, "(1, 2)")
+    monkeypatch.delenv("TT_VISIBLE_DEVICES", raising=False)
+    monkeypatch.setenv("MESH_DEVICE", "(1, 4)")
+    run_module = _patch_main_startup(monkeypatch, module, _submesh_spec())
+    for parent_only in ("discover_submesh_engine_groups", "run_submesh_engines"):
+        monkeypatch.setattr(
+            module, parent_only, MagicMock(side_effect=AssertionError("parent path"))
+        )
+    monkeypatch.setattr(sys, "argv", ["run_vllm_api_server.py"])
+
+    module.main()
+
+    run_module.assert_called_once()
+    assert os.environ["TT_VISIBLE_DEVICES"] == "2,3"
+    assert os.environ["MESH_DEVICE"] == "(1, 2)"
+    argv = " ".join(sys.argv)
+    assert "--data_parallel_size 1" in argv and "--port 7000" in argv
+
+
+class _FakeProc:
+    def __init__(self, exit_after_polls=None, code=3):
+        self.polls, self.exit_after, self.code = 0, exit_after_polls, code
+        self.returncode = None
+        self.signals = []
+
+    def poll(self):
+        self.polls += 1
+        if self.exit_after is not None and self.polls > self.exit_after:
+            self.returncode = self.code
+        return self.returncode
+
+    def send_signal(self, sig):
+        self.signals.append(sig)
+
+    def wait(self, timeout=None):
+        if self.returncode is None and self.signals:
+            self.returncode = 0
+        if self.returncode is None:
+            raise module_subprocess.TimeoutExpired("x", timeout)
+        return self.returncode
+
+    def kill(self):
+        self.returncode = -9
+
+
+import subprocess as module_subprocess  # noqa: E402
+
+
+def _free_port():
+    import socket
+
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+def test_serve_engine_proxy_stops_when_an_engine_exits(
+    monkeypatch, run_vllm_api_server_module
+):
+    import asyncio
+
+    monkeypatch.syspath_prepend(str(MODULE_PATH.parent))
+    module = run_vllm_api_server_module
+    procs = [_FakeProc(), _FakeProc(exit_after_polls=2, code=3)]
+    code = asyncio.run(
+        module.serve_engine_proxy(
+            procs, ["http://127.0.0.1:1"], "127.0.0.1", _free_port(), poll_s=0.01
+        )
+    )
+    assert code == 3
+
+
+def test_stop_submesh_engines(monkeypatch, run_vllm_api_server_module):
+    import signal
+
+    module = run_vllm_api_server_module
+
+    def signal_engine(proc, sig):
+        if sig == signal.SIGKILL:
+            if proc.returncode is None:  # a group that already exited takes no signal
+                proc.kill()
+            return
+        proc.send_signal(sig)
+
+    monkeypatch.setattr(module, "_signal_engine", signal_engine)
+    running, stubborn = _FakeProc(), _FakeProc()
+    stubborn.send_signal = lambda sig: None  # ignores SIGTERM
+    module.stop_submesh_engines([running, stubborn], timeout_s=0.01)
+    assert running.signals[0] == signal.SIGTERM and running.returncode == 0
+    assert stubborn.returncode == -9
+
+
+def test_stop_submesh_engines_reaches_the_whole_process_group(
+    run_vllm_api_server_module,
+):
+    """An engine's API server can exit on SIGTERM while its EngineCore (here: a child ignoring SIGTERM) keeps running;
+    stopping must not leave that child on the devices."""
+    module = run_vllm_api_server_module
+    proc = module.subprocess.Popen(
+        ["sh", "-c", '(trap "" TERM; exec sleep 60) & echo $!; wait'],
+        stdout=module.subprocess.PIPE,
+        start_new_session=True,
+        text=True,
+    )
+    child = int(proc.stdout.readline())
+    module.stop_submesh_engines([proc], timeout_s=5)
+    assert proc.returncode is not None
+    for _ in range(50):
+        try:
+            os.kill(child, 0)
+        except ProcessLookupError:
+            break
+        module.time.sleep(0.05)
+    else:
+        pytest.fail(f"process {child} of the engine's group survived")
+
+
+# ---------------------------------------------------------------- shared KV store (ttserve-kvstore)
+
+KV_TRANSFER = json.dumps(
+    {
+        "kv_connector": "TTKVStoreConnector",
+        "kv_connector_module_path": "vllm_tt_plugin.kv_connector",
+        "kv_role": "kv_both",
+        "kv_connector_extra_config": {
+            "socket": "/tmp/unused.sock",
+            "global_gib": 2,
+            "swa_gib": 1,
+        },
+    }
+)
+
+
+def test_kvstore_settings_reads_only_the_tt_store_connector(run_vllm_api_server_module):
+    module = run_vllm_api_server_module
+    assert module.kvstore_settings({}) is None
+    assert module.kvstore_settings({"kv-transfer-config": KV_TRANSFER}) == {
+        "socket": "/tmp/unused.sock",
+        "global_gib": 2,
+        "swa_gib": 1,
+    }
+    other = json.dumps({"kv_connector": "NixlConnector"})
+    assert module.kvstore_settings({"kv-transfer-config": other}) is None
+    assert module.kvstore_settings({"kv-transfer-config": "{not json"}) is None
+    args = {"kv-transfer-config": KV_TRANSFER, "max_num_seqs": 8}
+    module.drop_kv_transfer_config(args)
+    assert args == {"max_num_seqs": 8}
+
+
+def test_an_engine_drops_the_connector_when_no_store_runs(
+    monkeypatch, run_vllm_api_server_module
+):
+    module = run_vllm_api_server_module
+    monkeypatch.setenv(module.SUBMESH_ENGINE_INDEX_ENV, "1")
+    monkeypatch.setenv(module.SUBMESH_ENGINE_DEVICES_ENV, "4,5")
+    monkeypatch.setenv(module.SUBMESH_ENGINE_MESH_ENV, "(1, 2)")
+    args = {"kv-transfer-config": KV_TRANSFER}
+    module.configure_submesh_engine(4, args)
+    assert "kv-transfer-config" in args  # a store runs: the engine keeps its connector
+    monkeypatch.setenv(module.KVSTORE_DISABLED_ENV, "1")
+    module.configure_submesh_engine(4, args)
+    assert "kv-transfer-config" not in args
+
+
+def test_start_kvstore_serves_without_a_store_it_cannot_run(
+    monkeypatch, tmp_path, run_vllm_api_server_module
+):
+    module = run_vllm_api_server_module
+    settings = {"socket": str(tmp_path / "kv.sock"), "global_gib": 2, "swa_gib": 1}
+    monkeypatch.setenv(module.KVSTORE_SHM_DIR_ENV, str(tmp_path))
+    # no binary in the image
+    monkeypatch.delenv(module.KVSTORE_BIN_ENV, raising=False)
+    monkeypatch.setattr(module.shutil, "which", lambda name: None)
+    assert module.start_kvstore(settings) is None
+    # turned off
+    binary = tmp_path / "ttserve-kvstore"
+    binary.write_text("#!/bin/sh\nexit 0\n")
+    binary.chmod(0o755)
+    monkeypatch.setenv(module.KVSTORE_BIN_ENV, str(binary))
+    monkeypatch.setenv(module.KVSTORE_ENV, "0")
+    assert module.start_kvstore(settings) is None
+    monkeypatch.delenv(module.KVSTORE_ENV)
+    # too little room for the pools
+    usage = types.SimpleNamespace(free=1 << 30)
+    monkeypatch.setattr(module.shutil, "disk_usage", lambda path: usage)
+    assert module.start_kvstore(settings) is None
+    # the store exits before its socket appears
+    usage.free = 100 << 30
+    assert module.start_kvstore(settings) is None
+
+
+def test_start_and_stop_kvstore(monkeypatch, tmp_path, run_vllm_api_server_module):
+    module = run_vllm_api_server_module
+    sock = tmp_path / "kv.sock"
+    args_file = tmp_path / "args"
+    # A stand-in store: records its arguments, creates the socket path, runs until SIGTERM.
+    binary = tmp_path / "ttserve-kvstore"
+    binary.write_text(
+        f'#!/bin/sh\necho "$@" > {args_file}\ntouch {sock}\ntrap "exit 0" TERM\n'
+        "while :; do sleep 0.1; done\n"
+    )
+    binary.chmod(0o755)
+    monkeypatch.setenv(module.KVSTORE_BIN_ENV, str(binary))
+    monkeypatch.setenv(module.KVSTORE_SHM_DIR_ENV, str(tmp_path))
+    monkeypatch.setattr(
+        module.shutil, "disk_usage", lambda path: types.SimpleNamespace(free=100 << 30)
+    )
+    sock.write_text("stale")  # a previous store's socket is removed first
+    proc = module.start_kvstore({"socket": str(sock), "global_gib": 2, "swa_gib": 1.5})
+    try:
+        assert proc is not None and proc.poll() is None
+        assert args_file.read_text().split() == [
+            "--socket",
+            str(sock),
+            "--shm-dir",
+            str(tmp_path),
+            "--max-gib",
+            "4",
+        ]
+    finally:
+        module.stop_kvstore(proc)
+    assert proc.poll() is not None
+    module.stop_kvstore(None)  # nothing to stop
+
+
+def test_mimo_multimodal_entry_configures_the_shared_kv_store():
+    templates = load_templates_from_yaml(
+        get_repo_root_path() / "workflows" / "model_specs" / "dev" / "llm.yaml"
+    )
+    (entry,) = [t for t in templates if t.impl.impl_id == "mimo_v2_6_flash_mm"]
+    (device,) = entry.device_model_specs
+    config = json.loads(device.vllm_args["kv-transfer-config"])
+    assert config["kv_connector"] == "TTKVStoreConnector"
+    extra = config["kv_connector_extra_config"]
+    # the container's /dev/shm holds the store's pools
+    assert device.docker_shm_size == "128g"
+    assert extra["global_gib"] + extra["swa_gib"] < 128
+    assert device.submesh_engines is True  # the connector serves one lane per engine

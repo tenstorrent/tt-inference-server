@@ -364,11 +364,11 @@ The run routes to the workflow engine, which emits the report in-process to `wor
 
 ## Tool-Call Schema Tests
 
-> **Internal.** Runs as part of `spec_tests` for the models enrolled in `test_module/test_suites/llm.json` (MiniMax-M3 and Kimi-K2.7-Code on `super_cluster`).
+> **Internal.** Runs as part of `spec_tests` for the models enrolled in `test_module/test_suites/llm.json` (MiniMax-M3, Kimi-K2.7-Code and GLM-5.3 on `super_cluster`; MiMo-V2.6-Flash on `blackhole_galaxy`).
 
 `ToolCallSchemaConformanceTest` checks that tool-call arguments validate against the tool's JSON Schema. It offers each of 204 walle cases (from the [Kimi Vendor Verifier](https://github.com/MoonshotAI/Kimi-Vendor-Verifier)) as a `strict` tool, in non-streaming and streaming mode, and validates the returned arguments with `jsonschema`. It passes when the pass rate reaches `pass_rate_threshold` (100% by default; per model through `targets`).
 
-The enrolled models run it twice: `tool_choice` `auto`, then `required`. The `required` run sets `non_blocking`, so acceptance waives its FAIL (an ERROR still blocks).
+The enrolled models run it twice: `tool_choice` `auto`, then `required`. The `required` run sets `non_blocking`, so acceptance waives its FAIL (an ERROR still blocks); MiMo-V2.6-Flash gates on both runs.
 
 ```bash
 python3 run.py --model MiniMaxAI/MiniMax-M3 --device super_cluster --workflow spec_tests --dev-mode \

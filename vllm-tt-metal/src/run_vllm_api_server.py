@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import argparse
+import asyncio
 import json
 import logging
 import multiprocessing
@@ -10,9 +11,13 @@ import os
 import re
 import runpy
 import shlex
+import shutil
+import signal
+import subprocess
 import sys
+import time
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional, Tuple
 
 from huggingface_hub import snapshot_download
 
@@ -851,13 +856,31 @@ def model_setup(model_spec_json):
         "VLLM_LOGGING_CONFIG_PATH": str(config_path),
         "HF_MODEL": hf_dir,
     }
-    model_path_env = model_spec_json.get("metadata", {}).get("model_path_env")
-    if model_path_env:
-        if not isinstance(model_path_env, str) or not re.fullmatch(
-            r"[A-Z][A-Z0-9_]*", model_path_env
+    # metadata names env vars the model reads its checkpoint / TT cache from
+    metadata = model_spec_json.get("metadata", {})
+    for key, value in (
+        ("model_path_env", weights_dir),
+        ("tt_cache_env", os.getenv("TT_CACHE_PATH")),
+    ):
+        env_name = metadata.get(key)
+        if env_name:
+            if not isinstance(env_name, str) or not re.fullmatch(
+                r"[A-Z][A-Z0-9_]*", env_name
+            ):
+                raise ValueError(f"{key} must be an environment variable name")
+            dynamic_env_vars[env_name] = str(value)
+    # cache_subdir_envs: {ENV: subdir}, more caches the model keeps inside its TT cache
+    # dir (so inside the model's persistent volume), e.g. a vision encoder's weights.
+    for env_name, subdir in (metadata.get("cache_subdir_envs") or {}).items():
+        if not isinstance(env_name, str) or not re.fullmatch(
+            r"[A-Z][A-Z0-9_]*", env_name
         ):
-            raise ValueError("model_path_env must be an environment variable name")
-        dynamic_env_vars[model_path_env] = str(weights_dir)
+            raise ValueError(
+                "cache_subdir_envs keys must be environment variable names"
+            )
+        if not isinstance(subdir, str) or not re.fullmatch(r"[A-Za-z0-9_.-]+", subdir):
+            raise ValueError("cache_subdir_envs values must be plain directory names")
+        dynamic_env_vars[env_name] = str(Path(os.getenv("TT_CACHE_PATH")) / subdir)
 
     # Set dynamic environment variables
     logger.info("setting dynamic runtime environment variables:")
@@ -1435,7 +1458,355 @@ def inject_tt_colocated_fabric_config(default_vllm_args):
     )
 
 
+# Submesh engines (DeviceModelSpec.submesh_engines): the spec's data parallelism runs as one vLLM engine per device
+# group instead of one engine over the whole mesh. This launcher discovers the groups, starts a copy of itself per group
+# (the copy sees SUBMESH_ENGINE_INDEX_ENV and its group in SUBMESH_ENGINE_DEVICES_ENV / SUBMESH_ENGINE_MESH_ENV) on port
+# service_port + 1 + index, and serves engine_proxy on the service port, so clients keep one endpoint. An engine
+# schedules prefill and decode on its own, so one group prefills while the others decode.
+SUBMESH_ENGINE_INDEX_ENV = "TT_SUBMESH_ENGINE_INDEX"
+SUBMESH_ENGINE_DEVICES_ENV = "TT_SUBMESH_ENGINE_DEVICES"
+SUBMESH_ENGINE_MESH_ENV = "TT_SUBMESH_ENGINE_MESH"
+SUBMESH_ENGINE_STOP_TIMEOUT_S = 120.0
+SUBMESH_ENGINE_DISCOVERY_TIMEOUT_S = 300.0
+
+
+def submesh_engine_count(model_spec: dict) -> Optional[int]:
+    """The number of submesh engines, the spec's data_parallel_size, when the spec sets submesh_engines; else None."""
+    device_model_spec = model_spec.get("device_model_spec", {})
+    if not device_model_spec.get("submesh_engines"):
+        return None
+    vllm_args = device_model_spec.get("vllm_args", {})
+    data_parallel_size = int(
+        vllm_args.get("data_parallel_size", vllm_args.get("data-parallel-size", 1))
+    )
+    if data_parallel_size < 2:
+        raise ValueError(
+            "submesh_engines runs one engine per data-parallel rank: data_parallel_size must be at least 2, "
+            f"got {data_parallel_size}"
+        )
+    return data_parallel_size
+
+
+def discover_submesh_engine_groups(count: int) -> List[Tuple[str, str]]:
+    """Each engine's (TT_VISIBLE_DEVICES, MESH_DEVICE): the machine's mesh (MESH_DEVICE) split into ``count``
+    submeshes, discovered as vllm-tt-plugin's standard DP discovers its ranks' groups (on a Galaxy split 4 ways, its
+    1 x 8 rows). Chip ids depend on the machine, so they are not part of the spec. A spawned process opens the mesh,
+    so this one holds no device when the engines start."""
+    from vllm_tt_plugin.utils.dp_discovery import (
+        run_standard_dp_visible_device_group_discovery,
+    )
+
+    ctx = multiprocessing.get_context("spawn")
+    parent_conn, child_conn = ctx.Pipe(duplex=False)
+    proc = ctx.Process(
+        target=run_standard_dp_visible_device_group_discovery,
+        args=(child_conn, os.environ.get("MESH_DEVICE"), count),
+        name="TTSubmeshEngineDiscovery",
+    )
+    proc.start()
+    child_conn.close()
+    try:
+        if not parent_conn.poll(SUBMESH_ENGINE_DISCOVERY_TIMEOUT_S):
+            proc.kill()
+            raise RuntimeError(
+                f"Submesh engine discovery timed out after {SUBMESH_ENGINE_DISCOVERY_TIMEOUT_S:.0f} s"
+            )
+        status, payload = parent_conn.recv()
+    except EOFError as error:
+        raise RuntimeError(
+            "Submesh engine discovery exited before returning device groups"
+        ) from error
+    finally:
+        parent_conn.close()
+        proc.join()
+    if status != "ok":
+        raise RuntimeError(f"Submesh engine discovery failed: {payload}")
+    if len(payload) != count:
+        raise RuntimeError(
+            f"Submesh engine discovery returned {len(payload)} device groups for {count} engines: {payload}"
+        )
+    groups = [(devices, f"({rows}, {cols})") for devices, (rows, cols) in payload]
+    logger.info(
+        "Submesh engine device groups: "
+        + ", ".join(f"{devices} as {mesh}" for devices, mesh in groups)
+    )
+    return groups
+
+
+def submesh_engine_port(service_port: int, index: int) -> int:
+    return service_port + 1 + index
+
+
+def _without_port_args(argv: List[str]) -> List[str]:
+    out, skip_value = [], False
+    for token in argv:
+        if skip_value:
+            skip_value = False
+            continue
+        name, separator, _ = token.partition("=")
+        if name in ("--port", "--service-port"):
+            skip_value = not separator
+            continue
+        out.append(token)
+    return out
+
+
+# The shared KV page store of a host's submesh engines (ttserve-kvstore): the engines' KV connector (vllm-tt-plugin
+# TTKVStoreConnector, configured by the spec's kv-transfer-config) keeps the KV of prompt prefixes in its
+# shared-memory pools, so a prefix one engine computed is loaded by the others instead of prefilled again.
+KVSTORE_CONNECTOR = "TTKVStoreConnector"
+KVSTORE_ENV = (
+    "TT_KVSTORE"  # "0": serve without the store even when the spec configures it
+)
+KVSTORE_BIN_ENV = (
+    "TT_KVSTORE_BIN"  # the store's binary (default: ttserve-kvstore on PATH)
+)
+KVSTORE_SHM_DIR_ENV = "TT_KVSTORE_SHM_DIR"  # the tmpfs of its pools (default /dev/shm)
+KVSTORE_DISABLED_ENV = "TT_KVSTORE_DISABLED"  # set for the engines when no store runs
+KVSTORE_START_TIMEOUT_S = 30.0
+KV_TRANSFER_KEYS = ("kv-transfer-config", "kv_transfer_config")
+
+
+def kvstore_settings(vllm_args: dict) -> Optional[dict]:
+    """The TTKVStoreConnector's settings in the spec's kv-transfer-config (socket, global_gib, swa_gib), or None when
+    the spec configures no such connector."""
+    for key in KV_TRANSFER_KEYS:
+        raw = vllm_args.get(key)
+        if not raw:
+            continue
+        try:
+            config = json.loads(raw) if isinstance(raw, str) else dict(raw)
+        except (ValueError, TypeError):
+            return None
+        if config.get("kv_connector") != KVSTORE_CONNECTOR:
+            return None
+        return dict(config.get("kv_connector_extra_config") or {})
+    return None
+
+
+def drop_kv_transfer_config(vllm_args: dict) -> None:
+    for key in KV_TRANSFER_KEYS:
+        vllm_args.pop(key, None)
+
+
+def start_kvstore(settings: dict):
+    """Start ttserve-kvstore for the engines' connector; returns its process, or None when the engines are to serve
+    without it: turned off (TT_KVSTORE=0), no binary in the image, too little room in the pools' tmpfs (in a
+    container: its --shm-size, DeviceModelSpec.docker_shm_size), or the store did not come up."""
+    if os.environ.get(KVSTORE_ENV, "1") == "0":
+        logger.info(f"Shared KV store off ({KVSTORE_ENV}=0)")
+        return None
+    binary = os.environ.get(KVSTORE_BIN_ENV) or shutil.which("ttserve-kvstore")
+    if not binary or not os.path.exists(binary):
+        logger.warning(
+            "The model spec configures the shared KV store but ttserve-kvstore is not installed: "
+            "serving without it"
+        )
+        return None
+    socket_path = settings.get("socket", "/tmp/ttserve-kvstore.sock")
+    gib = float(settings.get("global_gib", 48)) + float(settings.get("swa_gib", 8))
+    shm_dir = os.environ.get(KVSTORE_SHM_DIR_ENV, "/dev/shm")
+    free_gib = shutil.disk_usage(shm_dir).free / (1 << 30)
+    if free_gib < gib:
+        logger.warning(
+            f"The shared KV store's pools need {gib:.0f} GiB in {shm_dir}, which has {free_gib:.0f} GiB free "
+            "(a container's --shm-size): serving without it"
+        )
+        return None
+    if os.path.exists(socket_path):
+        os.unlink(socket_path)  # a previous store's
+    command = [
+        binary,
+        "--socket",
+        socket_path,
+        "--shm-dir",
+        shm_dir,
+        "--max-gib",
+        str(int(gib) + 1),
+    ]
+    logger.info(f"Starting the shared KV store: {shlex.join(command)}")
+    proc = subprocess.Popen(command, start_new_session=True)
+    deadline = time.monotonic() + KVSTORE_START_TIMEOUT_S
+    while not os.path.exists(socket_path):
+        if proc.poll() is not None or time.monotonic() > deadline:
+            logger.warning(
+                f"ttserve-kvstore did not come up (exit code {proc.poll()}): serving without it"
+            )
+            stop_kvstore(proc)
+            return None
+        time.sleep(0.1)
+    return proc
+
+
+def stop_kvstore(proc) -> None:
+    """Stop the store (it removes its pools' files on SIGTERM)."""
+    if proc is None or proc.poll() is not None:
+        return
+    proc.terminate()
+    try:
+        proc.wait(timeout=20)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait()
+
+
+def submesh_engine_command(
+    launcher_argv: List[str], service_port: int, index: int
+) -> List[str]:
+    """This launcher with the same arguments, serving engine ``index`` on its own port."""
+    return [
+        sys.executable,
+        os.path.abspath(__file__),
+        *_without_port_args(launcher_argv),
+        "--service-port",
+        str(submesh_engine_port(service_port, index)),
+    ]
+
+
+def configure_submesh_engine(engines: int, default_vllm_args: dict) -> None:
+    """In a submesh engine: the device group and mesh the launcher discovered for it, one engine's data parallelism, and
+    a share of the host's threads. Runs after the spec's env vars, which set the whole machine's MESH_DEVICE."""
+    index = os.environ[SUBMESH_ENGINE_INDEX_ENV]
+    os.environ["TT_VISIBLE_DEVICES"] = os.environ[SUBMESH_ENGINE_DEVICES_ENV]
+    os.environ["MESH_DEVICE"] = os.environ[SUBMESH_ENGINE_MESH_ENV]
+    # Torch's default intra-op pool (a thread per core) in every engine oversubscribes the host: the small torch ops on
+    # each step then wait on the other engines' spinning pools (MiMo-V2.6-Flash, four engines: a 23 ms speculative step
+    # took 61 ms).
+    os.environ.setdefault(
+        "OMP_NUM_THREADS", str(max(1, (os.cpu_count() or 1) // (2 * engines)))
+    )
+    default_vllm_args.pop("data-parallel-size", None)
+    default_vllm_args["data_parallel_size"] = 1
+    if os.environ.get(KVSTORE_DISABLED_ENV) == "1":
+        drop_kv_transfer_config(
+            default_vllm_args
+        )  # the launcher started no store for this run
+    logger.info(
+        f"Submesh engine {index}/{engines}: TT_VISIBLE_DEVICES={os.environ['TT_VISIBLE_DEVICES']} "
+        f"MESH_DEVICE={os.environ['MESH_DEVICE']} OMP_NUM_THREADS={os.environ['OMP_NUM_THREADS']}"
+    )
+
+
+async def serve_engine_proxy(
+    procs, backends: List[str], host: str, port: int, poll_s: float = 1.0
+) -> int:
+    """Serve engine_proxy on host:port until SIGINT / SIGTERM or an engine exits. Returns the exit code."""
+    from aiohttp import web
+
+    from engine_proxy import Router, make_app
+
+    runner = web.AppRunner(make_app(Router(backends)), access_log=None)
+    await runner.setup()
+    await web.TCPSite(runner, host, port).start()
+    logger.info(f"Engine proxy on {host}:{port} for {', '.join(backends)}")
+    stop = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        loop.add_signal_handler(sig, stop.set)
+    exit_code = 0
+    try:
+        while not stop.is_set():
+            exited = [
+                (index, proc)
+                for index, proc in enumerate(procs)
+                if proc.poll() is not None
+            ]
+            if exited:
+                index, proc = exited[0]
+                logger.error(
+                    f"Submesh engine {index} exited with {proc.returncode}; stopping the others"
+                )
+                exit_code = proc.returncode or 1
+                break
+            try:
+                await asyncio.wait_for(stop.wait(), poll_s)
+            except asyncio.TimeoutError:
+                pass
+    finally:
+        await runner.cleanup()
+    return exit_code
+
+
+def _signal_engine(proc, sig) -> None:
+    """Signal an engine's whole process group (its API server and EngineCore): killing only the API server, e.g.
+    while it waits for its engine to load, would leave the EngineCore running on the devices."""
+    try:
+        os.killpg(proc.pid, sig)
+    except (ProcessLookupError, PermissionError):
+        pass
+
+
+def stop_submesh_engines(
+    procs, timeout_s: float = SUBMESH_ENGINE_STOP_TIMEOUT_S
+) -> None:
+    """SIGTERM every engine (vLLM shuts down cleanly on it), then SIGKILL what is left after timeout_s. Not SIGINT: an
+    engine started while this launcher ignores SIGINT (started in the background by a shell) inherits it ignored, and
+    its EngineCore installs a handler only once the model is loaded, so SIGINT would not stop one that is loading."""
+    for proc in procs:
+        _signal_engine(proc, signal.SIGTERM)
+    deadline = time.monotonic() + timeout_s
+    for proc in procs:
+        try:
+            proc.wait(timeout=max(0.0, deadline - time.monotonic()))
+        except subprocess.TimeoutExpired:
+            _signal_engine(proc, signal.SIGKILL)
+            proc.wait()
+    for proc in procs:
+        # The group may outlive its leader (an EngineCore still shutting down).
+        _signal_engine(proc, signal.SIGKILL)
+
+
+def run_submesh_engines(
+    groups: List[Tuple[str, str]],
+    launcher_argv: List[str],
+    service_port: int,
+    host: str,
+    kvstore: Optional[dict] = None,
+) -> int:
+    """One engine per (TT_VISIBLE_DEVICES, MESH_DEVICE) group behind the proxy on service_port; returns the exit code.
+    ``kvstore``: the spec's TTKVStoreConnector settings (kvstore_settings): the shared KV store is started before the
+    engines and stopped after them; when it does not start the engines run without the connector."""
+    procs = []
+    store = None
+    engine_env = {}
+    if kvstore is not None:
+        store = start_kvstore(kvstore)
+        if store is None:
+            engine_env[KVSTORE_DISABLED_ENV] = "1"
+    try:
+        for index, (devices, mesh) in enumerate(groups):
+            command = submesh_engine_command(launcher_argv, service_port, index)
+            logger.info(
+                f"Starting submesh engine {index} on devices {devices} as {mesh}: {shlex.join(command)}"
+            )
+            env = dict(
+                os.environ,
+                **{
+                    SUBMESH_ENGINE_INDEX_ENV: str(index),
+                    SUBMESH_ENGINE_DEVICES_ENV: devices,
+                    SUBMESH_ENGINE_MESH_ENV: mesh,
+                    **engine_env,
+                },
+            )
+            procs.append(
+                subprocess.Popen(
+                    command,
+                    env=env,
+                    start_new_session=True,  # its own process group: stop_submesh_engines signals all of it
+                )
+            )
+        backends = [
+            f"http://127.0.0.1:{submesh_engine_port(service_port, i)}"
+            for i in range(len(groups))
+        ]
+        return asyncio.run(serve_engine_proxy(procs, backends, host, service_port))
+    finally:
+        stop_submesh_engines(procs)
+        stop_kvstore(store)
+
+
 def main():
+    launcher_argv = list(sys.argv[1:])
     # Step 1: Parse --model argument (if provided)
     args, remaining_sys_argv = parse_args()
     args.device = args.tt_device or args.device
@@ -1478,11 +1849,32 @@ def main():
     set_metal_timeout_env_vars()
     runtime_settings(model_spec, no_auth=args.no_auth)
     default_vllm_args = model_spec["device_model_spec"]["vllm_args"]
+    submesh_engines = submesh_engine_count(model_spec)
+    in_submesh_engine = os.environ.get(SUBMESH_ENGINE_INDEX_ENV) is not None
+    if submesh_engines and in_submesh_engine:
+        configure_submesh_engine(submesh_engines, default_vllm_args)
+    kvstore = kvstore_settings(default_vllm_args)
+    if kvstore is not None and not submesh_engines:
+        # The connector serves one lane per engine: without submesh engines there is no store to share.
+        logger.warning(
+            "kv-transfer-config needs submesh engines (one engine per device group): ignored"
+        )
+        drop_kv_transfer_config(default_vllm_args)
+        kvstore = None
     absorb_plugin_config_into_additional_config(default_vllm_args)
     inject_tt_data_parallel(default_vllm_args)
     inject_tt_weight_bridge_dir(default_vllm_args)
     inject_tt_colocated_fabric_config(default_vllm_args)
     set_vllm_sys_argv(args, remaining_sys_argv, default_vllm_args)
+    if submesh_engines and not in_submesh_engine:
+        # One engine per device group behind the proxy; the engines do the rest of the startup.
+        host = _extract_cli_arg_value(sys.argv[1:], "--host") or "0.0.0.0"
+        groups = discover_submesh_engine_groups(submesh_engines)
+        sys.exit(
+            run_submesh_engines(
+                groups, launcher_argv, resolve_service_port(), host, kvstore
+            )
+        )
     configure_quetzal_provider(model_spec)
 
     # Step 5: Start trace capture if needed

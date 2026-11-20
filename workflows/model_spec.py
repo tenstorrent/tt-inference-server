@@ -265,6 +265,10 @@ class ImplSpec:
     impl_name: str
     repo_url: str
     code_path: str
+    # The impl whose persistent volume (and so TT tensor cache) this one uses: impls
+    # serving the same weights with the same cache layout share one volume instead of
+    # converting the cache again. None: the impl's own volume.
+    volume_impl_id: Optional[str] = None
 
 
 tt_transformers_impl = ImplSpec(
@@ -479,6 +483,38 @@ k2_horizon_7b_qb2_impl = ImplSpec(
     code_path="models/demos/k2_horizon_7b_qb2",
 )
 
+# XiaomiMiMo/MiMo-V2.6-Flash on Blackhole Galaxy: four TP=8 replicas, one per
+# mesh row (architectures TTMiMoV2ForCausalLM / TTMiMoV2OmniForCausalLM,
+# registered by vllm-tt-plugin).
+mimo_v2_6_flash_impl = ImplSpec(
+    impl_id="mimo_v2_6_flash",
+    impl_name="mimo-v2.6-flash",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/experimental/mimo_v2_6_flash",
+)
+# The same model with MTP speculative decoding (MIMO_SPEC_DECODE=mtp, the plugin's
+# model-owned drafter contract); a separate impl so run reports name it.
+mimo_v2_6_flash_mtp_impl = ImplSpec(
+    impl_id="mimo_v2_6_flash_mtp",
+    impl_name="mimo-v2.6-flash-mtp",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/experimental/mimo_v2_6_flash",
+)
+
+# The same model with image, video and audio input: the TT class
+# MiMoV2OmniForCausalLM (TT_MODEL_CLASS_OVERRIDES in its spec) on vLLM's upstream
+# MiMo-V2-Omni processor; a separate impl so its profile (VLM, modalities) gets
+# its own model_id beside the text entries.
+mimo_v2_6_flash_mm_impl = ImplSpec(
+    impl_id="mimo_v2_6_flash_mm",
+    impl_name="mimo-v2.6-flash-mm",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/experimental/mimo_v2_6_flash",
+    # The LLM weights are the text entries': reuse the default (MTP) entry's volume and
+    # its ~186 GB TT cache (the MTP files there are extra, the rest is the same set).
+    volume_impl_id="mimo_v2_6_flash_mtp",
+)
+
 # meta-models/Muse-Glimmer-30B TP4 on QB2 under models/demos/muse_glimmer_30b_qb2,
 # produced by the tt-model-bringup pipeline.
 muse_glimmer_30b_qb2_impl = ImplSpec(
@@ -498,6 +534,9 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "qwen38_27b_qb2": qwen38_27b_qb2_impl,
     "kolibri_1_qb2": kolibri_1_qb2_impl,
     "k2_horizon_7b_qb2": k2_horizon_7b_qb2_impl,
+    "mimo_v2_6_flash": mimo_v2_6_flash_impl,
+    "mimo_v2_6_flash_mtp": mimo_v2_6_flash_mtp_impl,
+    "mimo_v2_6_flash_mm": mimo_v2_6_flash_mm_impl,
     "muse_glimmer_30b_qb2": muse_glimmer_30b_qb2_impl,
     "llama3_70b_galaxy": llama3_70b_galaxy_impl,
     "llama31_8b_qb2": llama31_8b_qb2_impl,
@@ -581,6 +620,14 @@ class DeviceModelSpec:
     # TODO: address https://github.com/tenstorrent/tt-inference-server/issues/5388 (map this field into the
     # auto-generated Helm chart values)
     docker_shm_size: Optional[str] = None
+    # When true, the server runs its data parallelism as one vLLM engine per device group behind a prefix-cache aware
+    # proxy on the service port (vllm-tt-metal/src/run_vllm_api_server.py, engine_proxy.py), instead of one engine over
+    # the whole mesh. The launcher discovers the groups at startup, as vllm-tt-plugin's standard DP does: the machine's
+    # mesh (MESH_DEVICE) split into data_parallel_size submeshes, a Galaxy's 1 x 8 rows for 4. Chip ids depend on the
+    # machine, so the spec does not list them. Each engine runs --data-parallel-size 1 on its group, so one group
+    # prefills while the others decode. Clients see one endpoint; vllm_args keep the whole server's
+    # data_parallel_size (= the number of engines) and each engine's max_num_seqs.
+    submesh_engines: bool = False
     system_requirements: Optional[SystemRequirements] = None
     known_issues: List[KnownIssue] = field(default_factory=list)
     # When set, run_evals appends max_retries=<N> to lm-eval --model_args.
@@ -600,7 +647,12 @@ class DeviceModelSpec:
 
     def validate_data(self):
         """Validate that required specification is present."""
-        pass
+        if self.submesh_engines:
+            data_parallel_size = self.vllm_args.get("data_parallel_size")
+            assert isinstance(data_parallel_size, int) and data_parallel_size >= 2, (
+                "submesh_engines runs one engine per data-parallel rank: vllm_args.data_parallel_size must be at "
+                f"least 2 (got {data_parallel_size})"
+            )
 
     def _infer_data(self):
         """Infer missing data fields from other specification values."""

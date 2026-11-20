@@ -50,6 +50,26 @@ resolve_commit_to_full_sha() {
     return 1
 }
 
+# tt-shield's CIv2 VM build runners mount a pre-seeded image cache at /var/lib/containerd: a
+# per-job copy-on-write disk (virtio-dockercache) destroyed with the job, holding tt-metalium
+# images this build does not use (37G of its 98G seen). With them there, the dev image can run
+# out of space while containerd unpacks it ("no space left on device"). On those runners only
+# (the guard tt-shield's media-server reclaim uses), drop what the build does not need: at
+# "start" every unused image and the build cache, after the "base" image the bake's build cache.
+reclaim_ci_docker_space() {
+    local stage="$1"
+    if [[ ! -e /dev/disk/by-id/virtio-dockercache ]]; then
+        return 0
+    fi
+    echo "Reclaiming Docker space on the CI cache disk (${stage}) ..."
+    df -h /var/lib/containerd || true
+    if [[ "$stage" == "start" ]]; then
+        docker image prune -af || true
+    fi
+    docker builder prune -af || true
+    df -h /var/lib/containerd || true
+}
+
 # ==============================================================================
 # Main script logic
 # ==============================================================================
@@ -77,6 +97,7 @@ TT_VLLM_COMMIT_SHA_OR_TAG=b9564bf364e95a3850619fc7b2ed968cc71e30b7
 TT_QUETZAL_COMMIT_SHA=""
 TT_QUETZAL_SOURCE_DIR=""
 TAG_SUFFIX=""
+KVSTORE_BIN=""
 IMAGE_REPO="ghcr.io/tenstorrent/tt-inference-server"
 # ------------------------------------------------------------------------------
 # Process CLI options
@@ -163,6 +184,16 @@ while [ $# -gt 0 ]; do
             IMAGE_REPO="$2"
             shift
             ;;            
+        --kvstore-bin)
+            # The ttserve-kvstore binary (the shared KV page store of a host's submesh engines)
+            # to install in the image as /usr/local/bin/ttserve-kvstore.
+            if [ $# -lt 2 ] || [ ! -f "$2" ]; then
+                echo "⛔ Error: --kvstore-bin requires the path of the ttserve-kvstore binary."
+                exit 1
+            fi
+            KVSTORE_BIN="$(realpath "$2")"
+            shift
+            ;;
         *)
             echo "Unknown option: $1"
             exit 1
@@ -266,6 +297,7 @@ fi
 
 if [ "$build" = true ]; then
 
+    reclaim_ci_docker_space start
     echo "using TT_METAL_DOCKERFILE_URL: ${TT_METAL_DOCKERFILE_URL}"
 
     if ! check_image_not_exists_local "${TT_METAL_DOCKERFILE_URL}"; then
@@ -309,6 +341,7 @@ if [ "$build" = true ]; then
             ci-build
         cd "$repo_root"
         rm -rf "${tt_metal_build_dir}"
+        reclaim_ci_docker_space base
     fi
     
     # build dev image
@@ -341,15 +374,26 @@ generate_model_specs_json()
             )
         fi
 
+        KVSTORE_BUILD_ARGS=()
+        if [[ -n "$KVSTORE_BIN" ]]; then
+            # A context holding only the binary, named as the Dockerfile's kvstore_source stage.
+            KVSTORE_CONTEXT="$(mktemp -d)"
+            cp "$KVSTORE_BIN" "${KVSTORE_CONTEXT}/ttserve-kvstore"
+            KVSTORE_BUILD_ARGS+=(--build-context "kvstore_source=${KVSTORE_CONTEXT}")
+            export DOCKER_BUILDKIT=1
+        fi
+
         docker build \
         -t ${dev_image_tag} \
         --build-arg TT_METAL_DOCKERFILE_URL="${TT_METAL_DOCKERFILE_URL}" \
         --build-arg TT_METAL_COMMIT_SHA_OR_TAG="${TT_METAL_COMMIT_SHA_OR_TAG}" \
         --build-arg TT_VLLM_COMMIT_SHA_OR_TAG="${TT_VLLM_COMMIT_SHA_OR_TAG}" \
         "${QUETZAL_BUILD_ARGS[@]}" \
+        "${KVSTORE_BUILD_ARGS[@]}" \
         --build-arg CONTAINER_APP_UID="${CONTAINER_APP_UID}" \
         . -f vllm-tt-metal/vllm.tt-metal.src.dev.Dockerfile
 
+        if [[ -n "${KVSTORE_CONTEXT:-}" ]]; then rm -rf "${KVSTORE_CONTEXT}"; fi
         echo "✅ built image: ${dev_image_tag}"
     else
         echo "skipping, build_dev_image=${build_dev_image}"

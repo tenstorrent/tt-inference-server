@@ -18,6 +18,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Tuple
 
+from utils.cache_monitor import get_volume_impl_id
 from utils.pinned_artifacts import get_pinned_revision
 from workflows.log_setup import clean_log_file
 from workflows.multihost_orchestrator import (
@@ -322,8 +323,9 @@ def generate_docker_volume_name(model_spec) -> str:
     """Generate consistent volume name for model weights/cache persistence.
 
     The volume name excludes version to allow image upgrades without creating new volumes.
+    An impl with ``volume_impl_id`` uses that impl's volume (``get_volume_impl_id``).
     """
-    return f"volume_id_{model_spec.impl.impl_id}-{model_spec.model_name}"
+    return f"volume_id_{get_volume_impl_id(model_spec)}-{model_spec.model_name}"
 
 
 def collect_tt_triage_logs(

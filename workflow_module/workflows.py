@@ -491,6 +491,7 @@ class BenchmarksWorkflow(WorkflowExecution):
             blocks = run_spec_decode(
                 self.ctx,
                 preset=opts.preset,
+                temperature=opts.temperature,
                 warmup_requests=opts.warmup_requests,
                 auth_token=opts.auth_token,
                 metrics_urls=opts.metrics_urls,
