@@ -1,0 +1,28 @@
+# OpenAI MRCR v2, 8 needles, up to 128K tokens: the "MRCR v2, 8-needle 128K" row the
+# customer requirements take from the Gemma 4 model card. mrcr_score is the mean
+# SequenceMatcher ratio over the 500 samples in the bins up to 128K tokens. Needs the
+# multi-turn request expansion (EvalTask.expand_chat_messages); see mrcr_utils.py.
+task: mrcr_8needle_128k
+dataset_path: openai/mrcr
+dataset_kwargs:
+  data_files:
+    train: 8needle/*.parquet
+test_split: train
+output_type: generate_until
+process_docs: !function mrcr_utils.process_docs
+doc_to_text: !function mrcr_utils.doc_to_text
+doc_to_target: answer
+process_results: !function mrcr_utils.process_results
+num_fewshot: 0
+generation_kwargs:
+  until: []
+  do_sample: true
+  temperature: 1.0
+  top_p: 0.95
+  max_gen_toks: 32768
+metric_list:
+  - metric: mrcr_score
+    aggregation: mean
+    higher_is_better: true
+metadata:
+  version: 1.0

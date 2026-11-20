@@ -1,0 +1,25 @@
+# MMMLU (openai/MMMLU, 14 languages x 14,042 questions), the "MMMLU" row of the
+# Gemma 4 model card, as generative chain-of-thought (simple-evals protocol).
+# The score is the mean over every answered question (weight_by_size).
+group: mmmlu_cot
+task:
+  - mmmlu_cot_ar_xy
+  - mmmlu_cot_bn_bd
+  - mmmlu_cot_de_de
+  - mmmlu_cot_es_la
+  - mmmlu_cot_fr_fr
+  - mmmlu_cot_hi_in
+  - mmmlu_cot_id_id
+  - mmmlu_cot_it_it
+  - mmmlu_cot_ja_jp
+  - mmmlu_cot_ko_kr
+  - mmmlu_cot_pt_br
+  - mmmlu_cot_sw_ke
+  - mmmlu_cot_yo_ng
+  - mmmlu_cot_zh_cn
+aggregate_metric_list:
+  - metric: exact_match
+    aggregation: mean
+    weight_by_size: true
+metadata:
+  version: 1.0
