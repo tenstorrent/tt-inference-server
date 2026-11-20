@@ -34,23 +34,18 @@ results = []  # (ok, name)
 
 
 def checked_base_url(value):
-    """Accept only http(s) URLs of this machine, or of a host named in
-    VIDEO_TEST_ALLOWED_HOSTS (comma separated, for a test run against a remote T3K).
+    """Accept only an http URL of this machine (127.0.0.1 or localhost).
 
-    The test scripts send requests to whatever --base-url says. The check keeps them
-    from being pointed at an arbitrary host by mistake. The URL is rebuilt from its
-    parts, so a path, query or credentials in the argument are dropped.
+    These tests read the payload directory and the log of the server and look at the
+    process that listens on the port, so the server has to run on this machine. The
+    URL is rebuilt from its parts, so a path, query or credentials are dropped.
     """
     parsed = urllib.parse.urlparse(value)
-    allowed = {"127.0.0.1", "localhost", "::1"}
-    extra = os.environ.get("VIDEO_TEST_ALLOWED_HOSTS", "").split(",")
-    allowed |= {h.strip() for h in extra if h.strip()}
-    if parsed.scheme not in ("http", "https") or parsed.hostname not in allowed:
+    if parsed.scheme != "http" or parsed.hostname not in ("127.0.0.1", "localhost"):
         raise argparse.ArgumentTypeError(
-            f"{value!r}: only http(s) URLs of localhost are accepted; "
-            "set VIDEO_TEST_ALLOWED_HOSTS=<host> to test a remote server"
+            f"{value!r}: only http://127.0.0.1:<port> or http://localhost:<port> is accepted"
         )
-    return f"{parsed.scheme}://{parsed.netloc}"
+    return f"http://{parsed.netloc}"
 
 
 def p(*a):

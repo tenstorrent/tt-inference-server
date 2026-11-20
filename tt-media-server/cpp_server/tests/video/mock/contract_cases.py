@@ -15,37 +15,53 @@ mock:// and the download is 404.
 """
 
 import argparse
+import http.client
 import json
 import os
 import re
 import sys
 import time
-import urllib.error
 import urllib.parse
-import urllib.request
 
 PASS = 0
 FAIL = 0
 
 
 def checked_base_url(value):
-    """Accept only http(s) URLs of this machine, or of a host named in
-    VIDEO_TEST_ALLOWED_HOSTS (comma separated, for a test run against a remote T3K).
+    """Accept only an http URL of this machine (127.0.0.1 or localhost).
 
-    The test scripts send requests to whatever --base-url says. The check keeps them
-    from being pointed at an arbitrary host by mistake. The URL is rebuilt from its
-    parts, so a path, query or credentials in the argument are dropped.
+    The tests need the server, its payload directory and the device on the same
+    machine, so a remote host is never right. The URL is rebuilt from its parts, so
+    a path, query or credentials in the argument are dropped.
     """
     parsed = urllib.parse.urlparse(value)
-    allowed = {"127.0.0.1", "localhost", "::1"}
-    extra = os.environ.get("VIDEO_TEST_ALLOWED_HOSTS", "").split(",")
-    allowed |= {h.strip() for h in extra if h.strip()}
-    if parsed.scheme not in ("http", "https") or parsed.hostname not in allowed:
+    if parsed.scheme != "http" or parsed.hostname not in ("127.0.0.1", "localhost"):
         raise argparse.ArgumentTypeError(
-            f"{value!r}: only http(s) URLs of localhost are accepted; "
-            "set VIDEO_TEST_ALLOWED_HOSTS=<host> to test a remote server"
+            f"{value!r}: only http://127.0.0.1:<port> or http://localhost:<port> is accepted"
         )
-    return f"{parsed.scheme}://{parsed.netloc}"
+    return f"http://{parsed.netloc}"
+
+
+def http_call(base, method, path, data=None, headers=None, timeout=120):
+    """(status, headers, body bytes) for any status, also 4xx and 5xx.
+
+    The host is one of two constants, chosen by comparison, so the address that
+    was passed in never reaches the connection.
+    """
+    parsed = urllib.parse.urlparse(base)
+    if parsed.hostname == "127.0.0.1":
+        host = "127.0.0.1"
+    elif parsed.hostname == "localhost":
+        host = "localhost"
+    else:
+        raise ValueError(f"{base!r} is not a local address")
+    conn = http.client.HTTPConnection(host, int(parsed.port or 80), timeout=timeout)
+    try:
+        conn.request(method, path, body=data, headers=headers or {})
+        resp = conn.getresponse()
+        return resp.status, resp.headers, resp.read()
+    finally:
+        conn.close()
 
 
 def note(status, name, detail):
@@ -61,22 +77,18 @@ def note(status, name, detail):
 
 def request(base, method, path, body=None, auth=None):
     data = None if body is None else body.encode()
-    req = urllib.request.Request(base + path, data=data, method=method)
+    headers = {}
     if data is not None:
-        req.add_header("content-type", "application/json")
+        headers["content-type"] = "application/json"
     if auth:
-        req.add_header("authorization", f"Bearer {auth}")
+        headers["authorization"] = f"Bearer {auth}"
+    status, _, content = http_call(base, method, path, data, headers)
+    raw = content.decode()
     try:
-        with urllib.request.urlopen(req, timeout=120) as resp:
-            raw = resp.read().decode()
-            return resp.status, json.loads(raw) if raw.strip() else {}
-    except urllib.error.HTTPError as exc:
-        raw = exc.read().decode()
-        try:
-            payload = json.loads(raw) if raw.strip() else {}
-        except json.JSONDecodeError:
-            payload = {"raw": raw}
-        return exc.status, payload
+        payload = json.loads(raw) if raw.strip() else {}
+    except json.JSONDecodeError:
+        payload = {"raw": raw}
+    return status, payload
 
 
 GEN = "/v1/videos/generations"
@@ -88,14 +100,9 @@ TERMINAL = ("completed", "failed", "cancelled")
 
 def download(base, job_id, auth=None):
     """Raw GET of the mp4: (status, bytes)."""
-    req = urllib.request.Request(f"{base}{GEN}/{job_id}/download")
-    if auth:
-        req.add_header("authorization", f"Bearer {auth}")
-    try:
-        with urllib.request.urlopen(req, timeout=120) as resp:
-            return resp.status, resp.read()
-    except urllib.error.HTTPError as exc:
-        return exc.status, exc.read()
+    headers = {"authorization": f"Bearer {auth}"} if auth else {}
+    status, _, content = http_call(base, "GET", f"{GEN}/{job_id}/download", None, headers)
+    return status, content
 
 
 def submit(base, auth, body):

@@ -10,8 +10,8 @@ The tests are split into folders by what they need to run.
 
 The unit tests (job store, request parser, modes) are C++ tests in `tests/unit/api/`.
 
-The test scripts send requests only to `localhost` by default (`--base-url` is checked).
-To run them against a server on another machine, set `VIDEO_TEST_ALLOWED_HOSTS=<host>`.
+The test scripts talk only to a server on this machine (`--base-url` must be
+`http://127.0.0.1:<port>` or `http://localhost:<port>`).
 
 ## Contract test against a real server
 
