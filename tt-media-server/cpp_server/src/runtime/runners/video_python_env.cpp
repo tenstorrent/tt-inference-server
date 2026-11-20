@@ -5,6 +5,7 @@
 
 #include <pybind11/embed.h>
 
+#include <atomic>
 #include <cstdlib>
 #include <stdexcept>
 #include <string>
@@ -17,6 +18,8 @@ namespace py = pybind11;
 namespace tt::runners {
 
 namespace {
+
+std::atomic<bool> gPythonSignalHandlers{true};
 
 void prependEntry(py::list sysPath, const std::string& value) {
   if (value.empty()) return;
@@ -81,5 +84,11 @@ void prepareVideoPythonPath() {
   addMetalSitePackages(metalHome);
   TT_LOG_INFO("[VideoPython] Runner package directory: {}", dir.string());
 }
+
+void setVideoPythonSignalHandlers(bool enable) {
+  gPythonSignalHandlers.store(enable);
+}
+
+bool videoPythonSignalHandlers() { return gPythonSignalHandlers.load(); }
 
 }  // namespace tt::runners

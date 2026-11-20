@@ -17,4 +17,12 @@ std::filesystem::path resolveVideoPythonDir();
  *  Nothing from the Python tt-media-server is added. */
 void prepareVideoPythonPath();
 
+/** Whether the embedded interpreter, when VideoDeviceRunner starts it, installs
+ *  Python's own signal handlers (SIGINT, SIGPIPE). A worker process keeps the
+ *  default (true). When the interpreter lives inside the server process (single
+ *  process mode) it must be false: Python's SIGINT handler would replace the
+ *  server's shutdown handler. Set before the runner's warmup(). */
+void setVideoPythonSignalHandlers(bool enable);
+bool videoPythonSignalHandlers();
+
 }  // namespace tt::runners
