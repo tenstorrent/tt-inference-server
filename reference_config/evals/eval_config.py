@@ -13588,7 +13588,8 @@ _eval_config_list = [
             ),
         ],
     ),
-    # Hy4-preview (tencent/Hy4-preview, 770B MoE / 49B active, 1M context).
+    # Hy4-preview (tencent/Hy4-preview, 770B MoE / 49B active, 1M native context;
+    # served at 256K with MTP on, so the reasoning evals fit that window).
     # The card recommends temperature 0.9 / top_p 1.0; reasoning_effort
     # defaults to "high" (chat_template_kwargs reasoning_effort="no_think"
     # disables it), so thinking is on for every task below. Published scores
@@ -13621,15 +13622,17 @@ _eval_config_list = [
                     },
                 ),
                 model_kwargs={
-                    "max_length": 1024 * 1024,
-                    # A request may stream max_gen_toks (400K): ~1.5 h at the
-                    # Blackhole Galaxy's 13.5 ms/token sampled decode, ~3.3 h
-                    # at 30 ms/token. At 7200 s three CI streams were cut short
-                    # and lm_eval failed the task.
+                    # The MTP server serves a 256K window (a larger max context
+                    # grows the indexer buffer and shrinks the KV pool).
+                    "max_length": 256 * 1024,
+                    # A request may stream max_gen_toks (250K) of reasoning.
+                    # MiMo's CI streams at 400K were cut short at 7200 s and
+                    # lm_eval failed the task, so allow 4 h.
                     "timeout": 4 * 60 * 60,
                 },
                 gen_kwargs={
-                    "max_gen_toks": 400 * 1024,
+                    # 250K of the 256K window; GPQA prompts are ~2K tokens.
+                    "max_gen_toks": 250 * 1024,
                     "do_sample": "true",
                     "temperature": 0.9,
                     "top_p": 1.0,
@@ -13642,8 +13645,9 @@ _eval_config_list = [
             ),
             # Generate-then-answer LongBench v2 (chat API). Stock longbench2 is
             # multiple_choice/loglikelihood and cannot run on chat-only servers.
-            # Long-context sweep for Hy4-preview's 1M window; the card has no
-            # LongBench v2 score and no GPU reference exists yet.
+            # Long-context sweep over the 256K window the MTP server serves
+            # (the card has no LongBench v2 score and no GPU reference exists
+            # yet).
             EvalTask(
                 task_name="longbench2_generate",
                 max_concurrent=16,
@@ -13661,12 +13665,12 @@ _eval_config_list = [
                     },
                 ),
                 model_kwargs={
-                    "max_length": 1048576,
-                    # A request's time includes its queue on the server: a
-                    # Blackhole Galaxy lane holds ~1.27M tokens of KV, so of 16
-                    # concurrent 256K-900K prompts each lane prefills a few in
-                    # turn (~45 min for a 900K prompt) before decoding up to 64K
-                    # tokens. At 7200 s three CI requests were cut short.
+                    "max_length": 256 * 1024,
+                    # A request's time includes its queue on the server: with a
+                    # ~400K-token KV pool only a few 64K-190K prompts are
+                    # resident at once, so the rest wait before prefilling and
+                    # decoding up to 64K tokens. MiMo's CI requests were cut
+                    # short at 7200 s.
                     "timeout": 4 * 60 * 60,
                 },
                 gen_kwargs={
@@ -13679,10 +13683,10 @@ _eval_config_list = [
                 # ISL is measured on the raw context alone, so the ceiling also
                 # has to absorb the chat template, question and instruction
                 # wrapper on top of max_gen_toks (65536) before hitting the
-                # 1048576 window.
+                # 262144 window.
                 custom_dataset_kwargs={
-                    "minimum_isl": 256 * 1024,  # 256K
-                    "maximum_isl": 900 * 1000,  # 900K (< 1048576 - 64K gen)
+                    "minimum_isl": 64 * 1024,  # 64K
+                    "maximum_isl": 190 * 1000,  # 190K (< 262144 - 64K gen)
                     "pretrained": "tencent/Hy4-preview",
                     "tokenizer_num_proc": 32,
                 },

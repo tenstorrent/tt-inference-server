@@ -3411,7 +3411,7 @@ templates:
   device_model_specs:
     - device: GPU
       max_concurrency: 32
-      max_context: 1048576  # 1024 * 1024
+      max_context: 262144  # 256 * 1024: with MTP on, a larger max context shrinks the KV pool (indexer buffer grows)
       default_impl: true
   status: EXPERIMENTAL
   env_vars:
