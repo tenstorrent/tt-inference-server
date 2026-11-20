@@ -47,6 +47,10 @@ class VLLMBenchParser(LLMResultParser):
             "goodput_pct": _goodput_pct(raw),
             "error_request_count": _errors(raw.get("failed")),
         }
+        if raw.get("tt_endpoint"):
+            # Non-default benchmark endpoint (e.g. /v1/completions skips chat
+            # templating and chat-output parsing): name it in the report.
+            record["endpoint"] = str(raw["tt_endpoint"])
         output_block_size = _num_int(raw.get("tt_output_block_size")) or 1
         if output_block_size > 1:
             blocks_per_request = _blocks_per_request(

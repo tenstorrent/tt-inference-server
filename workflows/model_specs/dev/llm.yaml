@@ -31,6 +31,68 @@ templates:
         MESH_DEVICE: "(4, 8)"  # Override default TG->(8,4) to use (4,8) mesh grid
       vllm_args:
         data_parallel_size: 4
+    - device: P300X2
+      max_concurrency: 1  # max_num_seqs 1 builds the fused batch-1 decode (tt/fused_decode)
+      max_context: 131072  # 128 * 1024
+      default_impl: true
+      # vllm bench serve sets ignore_eos, which generates past the Harmony stop token; the chat endpoint's
+      # Harmony parser then rejects the continuation and the stream loses its usage (TPOT reads ~2x). The
+      # completions endpoint has no chat parsing (vllm-project/vllm#59254 fixes the parser in vLLM 0.32).
+      benchmark_endpoint: completions
+      env_vars:
+        # Accuracy: tt-metal turns gpt-oss-20b's release settings on by default (models/demos/gpt_oss/__init__.py,
+        # RELEASE_DEFAULTS_20B): K-GPTQ-rounded experts for decode and prefill and GPTQ-rounded dense weights (Hub,
+        # pinned revisions), exact MXFP4 for the top-1 routed expert in 6 layers, RMSNorm / RoPE / prefill precision
+        # fixes and the two decode speedups (without them GPQA scores 129/198, against the GPU reference's 72.8%).
+        # The settings passed GPQA on QuietBox 2 as this entry's previous GPT_OSS_* variables; the K-GPTQ prefill
+        # experts that replace GPT_OSS_PREFILL_BF4_ROUNDED have not been through GPQA yet. They need a tt-metal with
+        # those defaults (jerrywangTT/gptoss20b-qb2-release 6af4d4df or later); an older one needs the previous
+        # revision's variables.
+        GPT_OSS_FORCE_MODEL_LOAD: 1  # the weight-cache marker does not record these settings: load and pack every start
+      override_tt_config:
+        # the device settings of models/demos/gpt_oss/demo/text_demo.py on QuietBox 2 (tests/test_factory.py)
+        fabric_config: FABRIC_1D_RING
+        l1_small_size: 16384
+        trace_region_size: 100000000  # models/model_trace_region_sizes.yaml gpt-oss p300x2
+        sample_on_device_mode: decode_only
+      vllm_args:
+        override_generation_config: '{"top_k": 32}'  # keeps requests without top_k on device sampling
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    openai/gpt-oss-20b:
+      reasoning_parser_name: openai_gptoss
+      tool_call_parser_name: openai
+
+# gpt-oss-20b DFlash on the plugin's speculative contract (docs/SPEC_DECODE_CONTRACT.md
+# in vllm-tt-plugin): the z-lab drafter proposes 7 tokens per round, the target
+# verifies [last token, 7 drafts] in one pass (models/demos/gpt_oss/tt/dflash/).
+# Greedy requests speculate; sampled ones (temperature > 0, penalties, logprobs)
+# decode plain. Needs the drafter checkpoint: hf download z-lab/gpt-oss-20b-DFlash
+- weights:
+    - openai/gpt-oss-20b
+  impl: gpt_oss_dflash
+  inference_engine: VLLM
+  device_model_specs:
+    - device: P300X2
+      max_concurrency: 1  # one drafter session on the fused batch-1 decode
+      max_context: 131072  # 128 * 1024
+      env_vars:
+        TT_MODEL_CLASS_OVERRIDES: "TTGptOssForCausalLM=models.demos.gpt_oss.tt.dflash.vllm_model:GptOssDFlashForCausalLM"
+      override_tt_config:
+        fabric_config: FABRIC_1D_RING
+        l1_small_size: 16384
+        trace_region_size: 100000000  # the plain decode's and prefill's traces plus the DFlash round's
+        # 48 KB more kernel-config ring per worker (from the L1 allocator, Blackhole default 1461120 B): dispatch
+        # stages the next DFlash program's binaries while one runs (dflash_demo.py WORKER_L1_SIZE)
+        worker_l1_size: 1411968
+        sample_on_device_mode: decode_only
+      vllm_args:
+        override_generation_config: '{"top_k": 32}'  # keeps requests without top_k on device sampling
+        # the model's own drafter (vllm-tt-plugin model_owned_drafter); 7 drafts per round
+        speculative_config: '{"method": "custom_class", "model": "vllm_tt_plugin.model_owned_drafter", "num_speculative_tokens": 7}'
   status: EXPERIMENTAL
   has_builtin_warmup: true
   env_vars:
