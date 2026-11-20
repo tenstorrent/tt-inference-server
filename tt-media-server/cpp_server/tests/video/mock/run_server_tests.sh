@@ -4,9 +4,9 @@
 # Needs a built ./build/tt_media_server_cpp. Usage (from cpp_server):
 #   ./tests/video/mock/run_server_tests.sh
 # Phases (see server_cases.py): main, sync-error, limits, warmup, cancel-race.
-# With one DEVICE_IDS group the runner runs on a thread of the server process
-# (the default); TT_VIDEO_IN_PROCESS=0 ./tests/video/mock/run_server_tests.sh runs
-# the same phases against a separate worker process.
+# These phases use one DEVICE_IDS group, so the runner runs on a thread of the server
+# process. The worker process (several groups) is covered by worker_crash_cases.py,
+# lifecycle_cases.py and the cancel-race phase below, which starts two groups.
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -76,7 +76,7 @@ run_phase sync-error "" -- MAX_QUEUE_SIZE=3
 run_phase limits "" -- MAX_JOBS=2 MAX_QUEUE_SIZE=3
 run_phase warmup "" -- TT_VIDEO_MOCK_WARMUP_MS=6000
 # The race is between a worker process and the service (the shm queue and the
-# cancel marker); in process mode there is no such window, so this phase pins
-# the worker process.
-run_phase cancel-race "" -- TT_VIDEO_IN_PROCESS=0 TT_MEDIA_TEST_PRECLAIM_DELAY_MS=1500 TT_VIDEO_MOCK_DELAY_MS=3000
+# cancel marker); with one group there is no such window, so this phase starts two
+# groups, which means two worker processes.
+run_phase cancel-race "" -- "DEVICE_IDS=(0),(1)" TT_MEDIA_TEST_PRECLAIM_DELAY_MS=1500 TT_VIDEO_MOCK_DELAY_MS=3000
 exit $rc

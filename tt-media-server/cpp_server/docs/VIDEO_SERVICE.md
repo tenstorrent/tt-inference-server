@@ -14,7 +14,7 @@ Wan2.2. See [Tests](#tests) and [Known limitations](#known-limitations).
 
 | | In process | Worker process |
 |---|---|---|
-| chosen when | one `DEVICE_IDS` group (the usual T3K launch) and no multihost | several `DEVICE_IDS` groups, a multihost launch, or `TT_VIDEO_IN_PROCESS=0` |
+| chosen when | exactly one `DEVICE_IDS` group (the usual T3K launch, also with several chips in the group) | two or more `DEVICE_IDS` groups, one process per group |
 | runner lives in | a thread of the server process | one forked process per group (`--worker <i>`) |
 | queue | a deque in memory | shared-memory queue (`boost::interprocess::message_queue`) |
 | request / result | passed as objects | JSON files in `/tmp/tt-video-ipc-<server pid>/` |
@@ -23,11 +23,11 @@ Wan2.2. See [Tests](#tests) and [Known limitations](#known-limitations).
 | runner crash (segfault) | takes the server down | the worker is restarted (`TT_VIDEO_WORKER_MAX_RESTARTS`) |
 | warmup timeout | none (a hung warmup is not killed) | `WARMUP_TIMEOUT_MS` / weights distribution timeout |
 
-`TT_VIDEO_IN_PROCESS` is `0` or `1`; unset means "in process when there is exactly one
-`DEVICE_IDS` group and the launch is not multihost". `1` with several groups or on
-multihost stops the server at start. A Python exception in the runner is caught in
-both modes and fails only that job. Everything below describes the worker process
-mode unless it says otherwise; the API, statuses, limits, sweeper and output
+Only the number of `DEVICE_IDS` groups decides the mode; there is no variable for it. A
+multihost launch has one group (rank 0 serves HTTP), so it also runs in process; that
+combination has not been run on several hosts. A Python exception in the runner is
+caught in both modes and fails only that job. Everything below describes the worker
+process mode unless it says otherwise; the API, statuses, limits, sweeper and output
 directory work the same in both.
 
 ## How it works
@@ -390,10 +390,9 @@ Errors have the FastAPI-style `detail` and an OpenAI-style `error` object:
 | `JOB_RETENTION_SECONDS` | 86400 | How long a finished job (and its mp4) is kept |
 | `JOB_CLEANUP_INTERVAL_SECONDS` | 300 | Cleanup pass interval; `<= 0` disables the thread |
 | `JOB_MAX_STUCK_TIME_SECONDS` | 10800 | A running job with no progress for this long becomes `failed` (`stale_job`); `<= 0` disables |
-| `TT_VIDEO_IN_PROCESS` | auto | `1` runner on a thread of the server, `0` worker process; auto = in process for one `DEVICE_IDS` group, not multihost |
 | `TT_VIDEO_WORKER_MAX_RESTARTS` | 3 | Automatic worker restarts per hour (`0` disables; never for multihost; worker process mode only) |
 | `TT_VIDEO_OUTPUT_DIR` | `<binary dir>/../videos` | Where mp4 files are written |
-| `TT_VIDEO_PURGE_ON_START` | on | `0` keeps existing `*.mp4` files at start (see below) |
+| `TT_VIDEO_PURGE_ON_START` | on | `0` keeps the results of a previous run at start (see below) |
 | `SERVED_MODEL_NAME` | `MODEL_WEIGHTS_PATH`, else the runner name (e.g. `tt-wan2.2`) | Value of `model` in the job |
 | `USE_ASYNC_VIDEO` | async | Default mode when the request does not choose |
 
@@ -404,10 +403,17 @@ Test-only hooks (never set in production): `TT_VIDEO_MOCK_DELAY_MS`,
 ## Behaviour to be aware of
 
 - **Jobs live in memory only.** A server restart drops every job record.
-- **Startup purge.** With a real device runner, the server deletes `*.mp4` files
-  directly inside `TT_VIDEO_OUTPUT_DIR` at start, because after a restart none of
-  them has a record. This includes finished videos of the previous run. If another
-  server shares the directory, set `TT_VIDEO_PURGE_ON_START=0`.
+- **Startup purge.** With a real device runner, the server deletes the results of a
+  previous run directly inside `TT_VIDEO_OUTPUT_DIR` at start (files named
+  `<uuid>.mp4`, `<uuid>_silent.mp4`), because after a restart none of them has a
+  record. This includes finished videos. Other files, including other `*.mp4`, are
+  never touched. Each server keeps a lock on `.tt_video_server.lock` in the folder
+  while it runs; a server that finds the lock held by another one skips the purge
+  and logs a warning, so two servers can share a folder. `TT_VIDEO_PURGE_ON_START=0`
+  turns the purge off.
+- **Synchronous requests** (`?async=false`) have no job record: the mp4 is read into
+  the response and deleted at once, so the whole video is held in memory while it
+  is sent.
 - **Deletion is confined** to `TT_VIDEO_OUTPUT_DIR`: a result path outside it is
   never deleted (`..` and symlinks are resolved first).
 - **A stuck job is only marked failed.** The worker process is not interrupted; if
@@ -455,7 +461,6 @@ Details: [the report](tests/2026-11-14-video-real-device-extended-checks.md).
 - Text-to-video only: no image-to-video, reference-to-video or media upload.
 - No `org_id` filtering in the API, no per-step progress, no metrics/logs/checkpoints routes.
 - `GET /v1/videos/jobs` returns every job, without pagination or filters.
-- Synchronous requests leave their mp4 on disk until the next start.
 - A running generation cannot be interrupted (cancel waits for the end of the run).
 - **Worker crash on a device needs a chip reset.** With the mock runner the restart
   works (`kill -9` of the worker: the job it held becomes `failed`, the queued job is
@@ -465,6 +470,14 @@ Details: [the report](tests/2026-11-14-video-real-device-extended-checks.md).
   chips and start the server again. While a restarted worker is warming up,
   `/tt-liveness` still reports `model_ready=true` and `POST` is accepted. Details:
   [the report](tests/2026-11-14-video-curl-examples-and-worker-crash-real-device.md).
+- Worker process mode: a worker that is **idle** (waiting in the shared task queue) and is
+  killed with `SIGKILL` can leave the queue's process-shared condition variable in a state
+  that blocks the next `POST` for good (the HTTP thread sits in `pthread_cond_signal` inside
+  `message_queue::send`; the server keeps running but stops answering). Reproduced on the
+  mock runner with two groups, with the current and with the pre-in-process binary, so it
+  is not caused by in process mode. A worker killed while it runs a job does not trigger
+  it (the tests kill busy workers). A fix means not waiting on the shared condition
+  variable in the workers (poll) or a robust synchronisation primitive.
 - Worker process mode: a task taken by a worker that dies before it is claimed stays
   `queued` (the stuck-job sweep only fails running jobs); cancel and resubmit. Seen on
   the mock runner and on a T3K. It cannot happen in process mode, where there is no

@@ -5,12 +5,14 @@
 """Worker crash tests of the video service, on the mock runner (no device).
 
 Starts its own tt_media_server_cpp (private shm names and ports, a temporary
-output folder), kills the worker process with SIGKILL and checks what the
-service does:
+output folder) with two DEVICE_IDS groups (two worker processes; one group would
+run the runner in the server process), kills a worker process with SIGKILL and
+checks what the service does:
 
-  A. default restart limit: the job the dead worker had taken becomes `failed`
-     (`processing_error`), a new worker starts, the job that was waiting in the
-     queue is served by it, and a new job completes.
+  A. default restart limit: of the two jobs running, the one the dead worker had
+     taken becomes `failed` (`processing_error`) and the other completes, a new
+     worker starts, the job that was waiting in the queue is served, and a new
+     job completes.
   B. TT_VIDEO_WORKER_MAX_RESTARTS=1: the first crash is recovered, the second
      one makes the server exit with code 1.
   C. warmup failure of the device runner (a wrong TT_VIDEO_PYTHON_DIR, so
@@ -63,10 +65,11 @@ def start(port, tag, max_restarts, workdir, extra_env=None):
         TT_WARMUP_SIGNALS_QUEUE=f"wc{tag}_warm",
         TT_WORKER_METRICS_SHM=f"/wc{tag}_metrics",
         TT_VIDEO_WORKER_MAX_RESTARTS=str(max_restarts),
-        # These cases are about the worker process (kill it, restart it, shm
-        # queues). With one DEVICE_IDS group the server would otherwise run the
-        # runner in its own process; inprocess_cases.py covers that mode.
-        TT_VIDEO_IN_PROCESS="0",
+        # These cases are about worker processes (kill one, restart it, shm
+        # queues). One DEVICE_IDS group runs the runner in the server process, so
+        # the mock server gets two groups, hence two workers (the mock runner
+        # opens no chip). inprocess_cases.py covers one group.
+        DEVICE_IDS="(0),(1)",
     )
     for key, value in (extra_env or {}).items():
         if value is None:
@@ -134,11 +137,15 @@ def wait_until(predicate, timeout):
     return None
 
 
-def worker(port):
-    """(pid, is_alive) of the first worker from /tt-liveness, or (None, None)."""
-    for info in (liveness(port).get("worker_info") or {}).values():
-        return info.get("pid"), info.get("is_alive")
-    return None, None
+def workers(port):
+    """{worker id: (pid, is_alive)} from /tt-liveness."""
+    info = liveness(port).get("worker_info") or {}
+    return {k: (v.get("pid"), v.get("is_alive")) for k, v in info.items()}
+
+
+def worker(port, worker_id="0"):
+    """(pid, is_alive) of one worker from /tt-liveness, or (None, None)."""
+    return workers(port).get(worker_id, (None, None))
 
 
 def new_worker_ready(port, old_pid):
@@ -164,27 +171,39 @@ def wait_job(port, jid, wanted, timeout):
 
 
 def case_a(workdir):
-    print("=== A. kill -9 of the worker while a job runs and another one waits ===")
+    print("=== A. kill -9 of one of two workers while both run a job and a third waits ===")
     port = 18150
     proc, _ = start(port, "a", 3, workdir)
     try:
         note(bool(wait_until(lambda: model_ready(port), 60)), "server ready")
         pid0, _ = worker(port)
-        note(pid0 is not None, "worker pid is read from /tt-liveness", f"pid={pid0}")
+        pid1_other, _ = worker(port, "1")
+        note(
+            pid0 is not None and pid1_other is not None and pid0 != pid1_other,
+            "two worker pids are read from /tt-liveness",
+            f"pids={pid0},{pid1_other}",
+        )
         id1 = call(port, "POST", GENERATIONS, {"prompt": "job one"})[1]["id"]
         id2 = call(port, "POST", GENERATIONS, {"prompt": "job two"})[1]["id"]
+        id3 = call(port, "POST", GENERATIONS, {"prompt": "job three"})[1]["id"]
         s1, _ = wait_job(port, id1, ("in_progress",), 15)
-        note(s1 == "in_progress", "job 1 is in_progress", f"status={s1}")
-        note(job(port, id2)[0] == "queued", "job 2 is queued behind it")
+        s2, _ = wait_job(port, id2, ("in_progress",), 15)
+        note(
+            s1 == "in_progress" and s2 == "in_progress",
+            "jobs 1 and 2 are in_progress, one per worker",
+            f"status={s1},{s2}",
+        )
+        note(job(port, id3)[0] == "queued", "job 3 is queued behind them")
 
         os.kill(pid0, signal.SIGKILL)
         t0 = time.time()
         s1, body1 = wait_job(port, id1, FINAL, 40)
-        err = body1.get("error") or {}
+        s2, body2 = wait_job(port, id2, FINAL, 40)
+        errors = [(b.get("error") or {}).get("code") for b in (body1, body2)]
         note(
-            s1 == "failed" and err.get("code") == "processing_error",
-            "job 1 (taken by the dead worker) becomes failed/processing_error",
-            f"status={s1} code={err.get('code')} after {time.time() - t0:.1f}s",
+            sorted([s1, s2]) == ["completed", "failed"] and "processing_error" in errors,
+            "the job of the dead worker becomes failed/processing_error, the other completes",
+            f"status={s1},{s2} codes={errors} after {time.time() - t0:.1f}s",
         )
         pid1 = wait_until(lambda: new_worker_ready(port, pid0), 60)
         note(
@@ -192,21 +211,21 @@ def case_a(workdir):
             "a new worker process is started and the model is ready again",
             f"old pid={pid0} new pid={pid1} after {time.time() - t0:.1f}s",
         )
-        s2, _ = wait_job(port, id2, FINAL, 40)
-        note(
-            s2 == "completed",
-            "job 2 (still waiting in the queue) is served by the new worker",
-            f"status={s2}",
-        )
-        id3 = call(port, "POST", GENERATIONS, {"prompt": "job three"})[1]["id"]
         s3, _ = wait_job(port, id3, FINAL, 40)
-        note(s3 == "completed", "a new job after the restart completes", f"status={s3}")
+        note(
+            s3 == "completed",
+            "job 3 (still waiting in the queue) is served",
+            f"status={s3}",
+        )
+        id4 = call(port, "POST", GENERATIONS, {"prompt": "job four"})[1]["id"]
+        s4, _ = wait_job(port, id4, FINAL, 40)
+        note(s4 == "completed", "a new job after the restart completes", f"status={s4}")
     finally:
         stop(proc)
 
 
 def case_b(workdir):
-    print("=== B. restart limit: TT_VIDEO_WORKER_MAX_RESTARTS=1, kill the worker twice ===")
+    print("=== B. restart limit: TT_VIDEO_WORKER_MAX_RESTARTS=1, kill worker 0 twice ===")
     port = 18151
     proc, log = start(port, "b", 1, workdir)
     try:

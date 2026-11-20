@@ -38,9 +38,9 @@ Notes:
   not needed on a T3K, but it makes the setting explicit; `TT_VIDEO_TRACED=1` forces
   tracing.
 - With one `DEVICE_IDS` group (the usual T3K launch) the model runs on a thread of the
-  server process, not in a worker process; `TT_VIDEO_IN_PROCESS=0` brings the worker
-  process back (see `docs/VIDEO_SERVICE.md`, "Execution modes"). The scripts here work
-  with both; "no worker left" then means "no server left".
+  server process, not in a worker process; only several groups give worker processes
+  (see `docs/VIDEO_SERVICE.md`, "Execution modes"). "No worker left" then means "no
+  server left".
 - The runner is C++; its only Python is the adapter in `python/cpp_dit_adapters` (only
   tt-metal is needed), so `TT_PYTHON_PATH` is not used. `TT_VIDEO_PYTHON_DIR` overrides
   where the adapters are looked up (default `cpp_server/python`).

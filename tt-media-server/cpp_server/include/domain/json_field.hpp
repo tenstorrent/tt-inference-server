@@ -5,6 +5,7 @@
 
 #include <json/json.h>
 
+#include <cstdint>
 #include <stdexcept>
 #include <string>
 
@@ -20,6 +21,20 @@ inline int getInt(const Json::Value& val, const char* field) {
   if (!val.isIntegral())
     throw std::invalid_argument(std::string(field) + " must be an integer");
   return val.asInt();
+}
+
+/** Python ints are unbounded; a seed can use all 64 bits. */
+inline int64_t getInt64(const Json::Value& val, const char* field) {
+  if (!val.isIntegral() || !val.isInt64())
+    throw std::invalid_argument(std::string(field) + " must be an integer");
+  return val.asInt64();
+}
+
+/** Python floats are doubles: a float would echo 5.1 as 5.0999999046. */
+inline double getDouble(const Json::Value& val, const char* field) {
+  if (!val.isNumeric())
+    throw std::invalid_argument(std::string(field) + " must be a number");
+  return val.asDouble();
 }
 
 inline float getFloat(const Json::Value& val, const char* field) {

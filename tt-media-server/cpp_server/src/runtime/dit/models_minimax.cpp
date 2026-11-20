@@ -176,7 +176,7 @@ Json::Value MiniMaxModel::buildCall(const DiTRequest& r) const {
   call["height"] = r.height ? Json::Value(*r.height) : Json::Value();
   call["width"] = r.width ? Json::Value(*r.width) : Json::Value();
   call["num_inference_steps"] = numInferenceSteps();
-  call["seed"] = seed(r);
+  call["seed"] = static_cast<Json::Int64>(seed(r));
   addCallInputs(call, r);
   return call;
 }

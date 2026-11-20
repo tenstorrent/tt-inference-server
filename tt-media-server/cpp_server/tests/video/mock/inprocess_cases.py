@@ -9,9 +9,9 @@ queue is a deque in memory: no worker process, no shared memory, no request/resp
 files. Every case starts its own tt_media_server_cpp (private ports, shm names and
 output folder). Cases:
 
-  selection  one DEVICE_IDS group -> in process; two groups -> worker processes;
-             TT_VIDEO_IN_PROCESS=0 -> a worker process; =1 with two groups -> the
-             server refuses to start
+  selection  only the DEVICE_IDS groups decide: one group (also one with several chips)
+             -> in process; two groups -> two worker processes; a refused
+             configuration ends with exit code 1 and no metrics segment left
   shape      no child process, no shm queue, no ipc folder, liveness shows the
              server pid as the worker
   queue      a cancelled queued job is taken out of the queue (never reaches the
@@ -41,12 +41,12 @@ note = w.note
 
 
 def server(port, tag, workdir, **env):
-    """Start a mock server in process mode by default; returns (proc, log, out)."""
+    """Start a mock server with one DEVICE_IDS group (in process); returns (proc, log, out)."""
     out = workdir / f"{tag}_videos"
     base = {
         "TT_VIDEO_MOCK_DELAY_MS": "0",
         "TT_VIDEO_OUTPUT_DIR": str(out),
-        "TT_VIDEO_IN_PROCESS": None,  # None: not set, the server decides
+        "DEVICE_IDS": None,  # None: not set (worker_crash_cases.start sets two groups)
     }
     base.update(env)
     proc, log = w.start(
@@ -87,7 +87,7 @@ def ipc_dirs():
 # ----------------------------------------------------------------------------------
 def case_selection(wd):
     print("=== selection: when the runner runs in the server process ===")
-    # one group, nothing set: in process
+    # one group (DEVICE_IDS not set): in process
     port = 18170
     proc, log, _ = server(port, "s1", wd)
     try:
@@ -100,18 +100,18 @@ def case_selection(wd):
     finally:
         w.stop(proc)
 
-    # TT_VIDEO_IN_PROCESS=0: a worker process
+    # one group with several chips (a T3K launch): still one runner, in process
     port = 18171
-    proc, log, _ = server(port, "s2", wd, TT_VIDEO_IN_PROCESS=0)
+    proc, log, _ = server(port, "s2", wd, DEVICE_IDS="(0,1,2,3)")
     try:
-        note(ready(port), "TT_VIDEO_IN_PROCESS=0: ready")
+        note(ready(port), "DEVICE_IDS=(0,1,2,3): ready")
         pid, _ = w.worker(port)
-        note(pid is not None and pid != proc.pid, "the worker is a separate process", f"pid={pid} server={proc.pid}")
-        note(len(children(proc.pid)) == 1, "one child process", str(children(proc.pid)))
+        note(pid == proc.pid, "one group with four chips is also in process", f"pid={pid} server={proc.pid}")
+        note(children(proc.pid) == [], "no child process", str(children(proc.pid)))
     finally:
         w.stop(proc)
 
-    # two groups: worker processes, even when the variable is not set
+    # two groups: one worker process per group
     port = 18172
     proc, log, _ = server(port, "s3", wd, DEVICE_IDS="(0),(1)")
     try:
@@ -122,13 +122,14 @@ def case_selection(wd):
     finally:
         w.stop(proc)
 
-    # =1 with two groups is refused
+    # a refused configuration (an unknown runner type): exit 1, not an abort
     port = 18173
-    proc, log, _ = server(port, "s4", wd, DEVICE_IDS="(0),(1)", TT_VIDEO_IN_PROCESS=1)
+    proc, log, _ = server(port, "s4", wd, MODEL_RUNNER_TYPE="no_such_runner")
     try:
         exited = w.wait_until(lambda: proc.poll() is not None, 30)
-        note(bool(exited) and proc.returncode != 0, "TT_VIDEO_IN_PROCESS=1 with two groups: the server does not start", f"code={proc.poll()}")
-        note("needs exactly one DEVICE_IDS group" in log.read_text(errors="replace"), "the log says why")
+        note(bool(exited) and proc.returncode == 1, "an unknown MODEL_RUNNER_TYPE: the server does not start (exit 1, not an abort)", f"code={proc.poll()}")
+        note("Unknown video MODEL_RUNNER_TYPE" in log.read_text(errors="replace"), "the log says why")
+        note(not shm_with("wcips4_"), "no metrics shm segment is left behind by the refused start", str(shm_with("wcips4_")))
     finally:
         w.stop(proc)
 
@@ -238,6 +239,22 @@ def case_shutdown(wd):
     finally:
         w.stop(proc)
 
+    # SIGINT is handled like SIGTERM (the device runner's interpreter must not take it over)
+    port = 18179
+    proc, log, _ = server(port, "d3", wd)
+    try:
+        note(ready(port), "idle server ready (SIGINT case)")
+        t0 = time.time()
+        proc.send_signal(signal.SIGINT)
+        try:
+            code = proc.wait(timeout=30)
+        except subprocess.TimeoutExpired:
+            code = None
+        note(code == 0 and time.time() - t0 < 10, "SIGINT when idle: exit code 0 at once", f"code={code} after {time.time() - t0:.1f}s")
+        note(not shm_with("wcipd3_"), "no metrics shm segment is left after SIGINT", str(shm_with("wcipd3_")))
+    finally:
+        w.stop(proc)
+
     port = 18178
     proc, log, _ = server(port, "d2", wd, TT_VIDEO_MOCK_DELAY_MS=30000)
     try:
@@ -263,7 +280,7 @@ def case_shutdown(wd):
 def case_warmup(wd):
     print("=== warmup: the device runner fails its warmup in process mode ===")
     port = 18179
-    env = dict(TT_VIDEO_PYTHON_DIR="/nonexistent", MODEL_RUNNER_TYPE=None, TT_VIDEO_IN_PROCESS=1)
+    env = dict(TT_VIDEO_PYTHON_DIR="/nonexistent", MODEL_RUNNER_TYPE=None)
     proc, log, _ = server(port, "w", wd, **env)
     try:
         t0 = time.time()

@@ -78,8 +78,8 @@ def main():
         new = sorted(set(c.ls(c.OUTDIR)) - set(files0))
         c.p("  new files in the output folder:", new)
         c.note(
-            len(new) == 2,
-            "both mp4 files are on disk (the dropped sync one stays, documented limitation)",
+            len(new) == 1,
+            "only the queued job's mp4 is on disk (the dropped sync one is deleted once its result is read)",
             str(new),
         )
     st, jobs = c.jreq("GET", "/v1/videos/jobs")
