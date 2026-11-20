@@ -50,12 +50,14 @@ class JobMetricsCallback(JobCallback):
     before they run, since compiling the kernels they use for the first time
     takes minutes, and the end of the loop is logged with its duration since
     ``on_train_start``.
-    Loss itself is only logged every ``metrics.train.steps_freq`` steps, plus once at
-    the end of validation.
+    Loss itself is only logged every ``metrics.train.frequency`` steps and on the
+    run's last step, plus once at the end of validation.
     """
 
     def _reset(self) -> None:
         self._running_loss = None
+        self._running_steps = 0
+        self._total_steps = None
         self._val_batch = 0
         self._compile_announced = set()
         self._train_started_at = None
@@ -69,9 +71,11 @@ class JobMetricsCallback(JobCallback):
             self._running_loss = window_loss
         else:
             self._running_loss = self._running_loss + window_loss
+        self._running_steps += 1
 
     def on_train_start(self, trainer, *args, **kwargs):
         self._train_started_at = time.monotonic()
+        self._total_steps = trainer.total_steps()
         n_batches = None
         try:
             n_batches = len(trainer.train_dataloader)
@@ -126,12 +130,16 @@ class JobMetricsCallback(JobCallback):
             extra={"log_type": "info", "step": global_step},
         )
 
-        steps_freq = trainer.config.metrics.train.steps_freq
-        if global_step % steps_freq:
+        frequency = trainer.config.metrics.train.frequency
+        if global_step % frequency and global_step != self._total_steps:
             return
 
-        self.last_train_loss = trainer.loss_to_float(self._running_loss) / steps_freq
+        # The last step's window may be shorter than frequency.
+        self.last_train_loss = (
+            trainer.loss_to_float(self._running_loss) / self._running_steps
+        )
         self._running_loss = None
+        self._running_steps = 0
         self._record(trainer, "train_loss", self.last_train_loss, log_type="info")
 
     def on_validation_end(self, trainer, val_loss, *args, **kwargs):
@@ -204,24 +212,56 @@ class JobMetricsCallback(JobCallback):
 
 class AdapterCheckpointCallback(JobCallback):
     """Saves the LoRA adapter every ``frequency`` optimizer steps of a "step"
-    ``checkpoint.save_strategy``."""
+    ``checkpoint.save_strategy``, and on the run's last step.
+
+    Every checkpoint carries the train and validation loss of its own step: the
+    frequency must be a multiple of the metrics' ``frequency``, and the last step
+    logs and validates too.
+    """
 
     def __init__(self, logger, metrics: JobMetricsCallback):
         super().__init__(logger)
         self._metrics = metrics
+        self._total_steps = None
+
+    def _reset(self) -> None:
+        self._total_steps = None
+
+    def on_train_start(self, trainer, *args, **kwargs):
+        self._check_config(trainer)
+        self._total_steps = trainer.total_steps()
+
+    def _check_config(self, trainer) -> None:
+        # Raising here stops the job before it trains.
+        strategy = trainer.config.checkpoint.save_strategy
+        if strategy.type != "step":
+            return
+        metrics = trainer.config.metrics
+        fields = [("metrics.train.frequency", metrics.train.frequency)]
+        if trainer.validation_enabled:
+            fields.append(
+                ("metrics.validation.frequency", metrics.validation.frequency)
+            )
+        for field, metrics_frequency in fields:
+            if strategy.frequency % metrics_frequency:
+                raise ValueError(
+                    f"checkpoint.save_strategy.frequency ({strategy.frequency}) must "
+                    f"be a multiple of {field} ({metrics_frequency}), so every checkpoint "
+                    "carries the metrics of its own step"
+                )
 
     def on_step_end(self, trainer, global_step, *args, **kwargs):
         strategy = trainer.config.checkpoint.save_strategy
         if strategy.type != "step":
             return
-        if global_step % strategy.frequency:
+        if global_step % strategy.frequency and global_step != self._total_steps:
             return
         self._save(trainer)
 
     def _save(self, trainer) -> None:
         checkpoint_id = f"ckpt-step-{trainer.global_step}"
         checkpoint_path = os.path.join(
-            trainer.config.checkpoint.project_dir, checkpoint_id
+            trainer.config.checkpoint.save_strategy.project_dir, checkpoint_id
         )
         try:
             trainer.save_checkpoint(

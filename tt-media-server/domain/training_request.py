@@ -74,12 +74,12 @@ class StoppingCriteria(_Options):
 
 
 class TrainMetricsOptions(_Options):
-    steps_freq: int = Field(default=10, ge=1)
+    frequency: int = Field(default=10, ge=1)
 
 
 class ValidationMetricsOptions(_Options):
     # 0 disables validation.
-    steps_freq: int = Field(default=50, ge=0)
+    frequency: int = Field(default=50, ge=0)
 
 
 class MetricsOptions(_Options):

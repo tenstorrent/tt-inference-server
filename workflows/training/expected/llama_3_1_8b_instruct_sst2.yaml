@@ -36,9 +36,9 @@ request:
     limit: 15
   metrics:
     train:
-      steps_freq: 5
+      frequency: 5
     validation:
-      steps_freq: 5
+      frequency: 5
   checkpoint:
     save_strategy:
       type: none
@@ -55,6 +55,6 @@ checks:
   # that happens to be "decreasing"). Tune after regeneration.
   final_train_loss_max: 5.0
 
-# Per-checkpoint expectations (steps must line up with metrics.train.steps_freq /
-# metrics.validation.steps_freq).
+# Per-checkpoint expectations (steps must line up with metrics.train.frequency /
+# metrics.validation.frequency).
 expected_losses: []

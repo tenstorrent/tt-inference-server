@@ -26,8 +26,8 @@ const PARAM_DISPLAY_NAMES = {
     gradient_accumulation_steps: "Gradient Accumulation Steps",
     "stopping_criteria.type": "Stop After",
     "stopping_criteria.limit": "Stopping Limit",
-    "metrics.train.steps_freq": "Training Steps Frequency",
-    "metrics.validation.steps_freq": "Validation Steps Frequency",
+    "metrics.train.frequency": "Training Steps Frequency",
+    "metrics.validation.frequency": "Validation Steps Frequency",
     "checkpoint.save_strategy.type": "Save Strategy",
     "checkpoint.save_strategy.frequency": "Save Frequency",
 };
@@ -119,8 +119,8 @@ async function submitJob(e) {
             limit: parseInt($('stopping_limit').value),
         },
         metrics: {
-            train: { steps_freq: parseInt($('train_steps_freq').value) },
-            validation: { steps_freq: parseInt($('validation_steps_freq').value) },
+            train: { frequency: parseInt($('train_frequency').value) },
+            validation: { frequency: parseInt($('validation_frequency').value) },
         },
     };
 

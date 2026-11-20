@@ -66,7 +66,7 @@ def runner():
 
 def _fake_trainer(
     grad_accum=1,
-    steps_freq=1,
+    frequency=1,
     num_epochs=1,
     max_steps=None,
     val_batches=None,
@@ -74,7 +74,7 @@ def _fake_trainer(
 ):
     trainer = MagicMock()
     trainer.config.gradient_accumulation_steps = grad_accum
-    trainer.config.metrics.train.steps_freq = steps_freq
+    trainer.config.metrics.train.frequency = frequency
     if max_steps is None:
         trainer.config.stopping_criteria.type = "epoch"
         trainer.config.stopping_criteria.limit = num_epochs
@@ -182,7 +182,7 @@ class TestJobConfig:
             max_length=256,
             seed=23,
             stopping_criteria={"type": "epoch", "limit": 3},
-            metrics={"train": {"steps_freq": 5}, "validation": {"steps_freq": 20}},
+            metrics={"train": {"frequency": 5}, "validation": {"frequency": 20}},
             checkpoint={"save_strategy": {"type": "step", "frequency": 25}},
         )
         config = runner._job_config(request)
@@ -200,7 +200,7 @@ class TestJobConfig:
         assert config.stopping_criteria.type == "epoch"
         assert config.stopping_criteria.limit == 3
         assert config.gradient_accumulation_steps == 4
-        assert config.metrics.validation.steps_freq == 20
+        assert config.metrics.validation.frequency == 20
         assert config.max_length == 256
         assert config.seed == 23
         assert config.model.lora.r == 16
@@ -212,10 +212,10 @@ class TestJobConfig:
             "o_proj",
         ]
         assert config.model.lora.task_type == "CAUSAL_LM"
-        assert config.metrics.train.steps_freq == 5
+        assert config.metrics.train.frequency == 5
         assert config.checkpoint.save_strategy.type == "step"
         assert config.checkpoint.save_strategy.frequency == 25
-        assert config.checkpoint.project_dir == "/tmp/job"
+        assert config.checkpoint.save_strategy.project_dir == "/tmp/job"
 
     def test_optimizer_defaults_to_adamw(self, runner):
         [optimizer] = runner._job_config(_request()).optimizer
@@ -364,9 +364,9 @@ class TestTrainingRequest:
     def test_built_in_datasets_need_no_custom_options(self):
         assert _request().dataset.custom_options is None
 
-    def test_validation_steps_freq_zero_is_allowed(self):
-        request = _request(metrics={"validation": {"steps_freq": 0}})
-        assert request.metrics.validation.steps_freq == 0
+    def test_validation_frequency_zero_is_allowed(self):
+        request = _request(metrics={"validation": {"frequency": 0}})
+        assert request.metrics.validation.frequency == 0
 
     def test_stops_after_500_steps_by_default(self):
         stopping = _request().stopping_criteria
@@ -423,7 +423,7 @@ class TestRun:
         await runner.warmup()
         request = _request(
             optimizer={"lr": 1e-4},
-            metrics={"train": {"steps_freq": 1}},
+            metrics={"train": {"frequency": 1}},
             checkpoint={"save_strategy": {"type": "step", "frequency": 1}},
         )
         trainer_class = type(runner._trainer)
@@ -448,7 +448,7 @@ class TestRun:
     async def test_a_failed_save_records_no_checkpoint(self, runner):
         await runner.warmup()
         request = _request(
-            metrics={"train": {"steps_freq": 1}},
+            metrics={"train": {"frequency": 1}},
             checkpoint={"save_strategy": {"type": "step", "frequency": 1}},
         )
         trainer_class = type(runner._trainer)
@@ -691,7 +691,7 @@ class TestJobMetricsCallback:
     def test_records_window_loss_after_an_optimizer_step(self):
         request = _request()
         callback = self._callback(request)
-        trainer = _fake_trainer(grad_accum=2, steps_freq=1)
+        trainer = _fake_trainer(grad_accum=2, frequency=1)
 
         callback.on_optimizer_step_end(trainer, 3.0)
         assert request._training_metrics == []
@@ -703,7 +703,7 @@ class TestJobMetricsCallback:
     def test_averages_steps_within_the_logging_window(self):
         request = _request()
         callback = self._callback(request)
-        trainer = _fake_trainer(grad_accum=1, steps_freq=2)
+        trainer = _fake_trainer(grad_accum=1, frequency=2)
 
         for step, loss in enumerate((1.0, 3.0), start=1):
             callback.on_optimizer_step_end(trainer, loss)
@@ -716,7 +716,7 @@ class TestJobMetricsCallback:
     def test_logs_epoch_and_step_every_step_without_loss(self):
         request = _request()
         callback = self._callback(request)
-        trainer = _fake_trainer(grad_accum=1, steps_freq=2, num_epochs=3)
+        trainer = _fake_trainer(grad_accum=1, frequency=2, num_epochs=3)
 
         for step, loss in enumerate((1.0, 3.0), start=1):
             callback.on_optimizer_step_end(trainer, loss)
@@ -742,7 +742,7 @@ class TestJobMetricsCallback:
 
     def test_labels_the_step_limit_of_a_step_criterion(self):
         callback = self._callback(_request())
-        trainer = _fake_trainer(steps_freq=10, max_steps=500)
+        trainer = _fake_trainer(frequency=10, max_steps=500)
 
         _end_step(callback, trainer, 7)
 
@@ -794,7 +794,7 @@ class TestJobMetricsCallback:
 
     def test_announces_each_compile_once_before_its_first_pass(self):
         callback = self._callback(_request())
-        trainer = _fake_trainer(steps_freq=10, num_epochs=2, val_batches=2)
+        trainer = _fake_trainer(frequency=10, num_epochs=2, val_batches=2)
 
         # The initial validation pass, then two training steps, in `Trainer.train` order.
         callback.on_validation_start(trainer)
@@ -902,7 +902,7 @@ class TestAdapterCheckpointCallback:
         trainer = _fake_trainer()
         trainer.config.checkpoint.save_strategy.type = save_strategy
         trainer.config.checkpoint.save_strategy.frequency = frequency
-        trainer.config.checkpoint.project_dir = project_dir
+        trainer.config.checkpoint.save_strategy.project_dir = project_dir
         return trainer
 
     def test_saves_adapter_on_matching_step(self):

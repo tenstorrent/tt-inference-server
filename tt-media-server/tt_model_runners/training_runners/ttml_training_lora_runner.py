@@ -47,8 +47,6 @@ OPTIMIZER_CONFIGS = {
     TrainingOptimizers.ADAMW.value: AdamWConfig,
 }
 
-SAVE_STRATEGIES = {"step": StepSave, "none": NoSave}
-
 
 class TtmlTrainingLoraRunner(BaseDeviceRunner):
     def __init__(self, device_id: str, num_torch_threads: int = 1):
@@ -186,7 +184,6 @@ class TtmlTrainingLoraRunner(BaseDeviceRunner):
 
     def _job_config(self, request: TrainingRequest) -> SFTTrainerConfig:
         optimizer = request.optimizer
-        save_strategy = request.checkpoint.save_strategy
         lora = request.model.lora
         return SFTTrainerConfig(
             model=ModelConfig(
@@ -210,11 +207,11 @@ class TtmlTrainingLoraRunner(BaseDeviceRunner):
             ),
             metrics=MetricsConfig(
                 train=TrainMetricsConfig(
-                    steps_freq=request.metrics.train.steps_freq,
+                    frequency=request.metrics.train.frequency,
                     metric_names=["loss"],
                 ),
                 validation=ValidationMetricsConfig(
-                    steps_freq=request.metrics.validation.steps_freq,
+                    frequency=request.metrics.validation.frequency,
                     metric_names=["loss"],
                 ),
             ),
@@ -223,11 +220,15 @@ class TtmlTrainingLoraRunner(BaseDeviceRunner):
                 use_wandb=False,
                 wandb_run_name=f"tt-media-server-{self.device_id}",
             ),
-            # Only AdapterCheckpointCallback saves, and these are all it reads.
-            checkpoint=CheckpointConfig(
-                save_strategy=SAVE_STRATEGIES[save_strategy.type](
-                    **save_strategy.model_dump(exclude={"type"})
-                ),
-                project_dir=request._output_model_path or "",
-            ),
+            # Only AdapterCheckpointCallback saves, and the save strategy is all it reads.
+            checkpoint=CheckpointConfig(save_strategy=self._save_strategy(request)),
+        )
+
+    def _save_strategy(self, request: TrainingRequest):
+        save_strategy = request.checkpoint.save_strategy
+        if save_strategy.type == "none":
+            return NoSave()
+        return StepSave(
+            frequency=save_strategy.frequency,
+            project_dir=request._output_model_path or "",
         )
