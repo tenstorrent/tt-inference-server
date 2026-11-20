@@ -53,6 +53,7 @@ Notes:
 |---|---|
 | `cancel/` | cancelling jobs: in the queue, while running, the race with `CLAIMED` |
 | `jobs/` | job queue, `download` and `Range`, repeatability, sync mode, validation |
+| `multihost/` | the multihost code path run under `tt-run` on one T3K (`run_tt_run_t3k.sh` starts the ranks, `multihost_cases.py` starts and stops them itself; 2 ranks is the layout tt-metal tests). The first start of a layout builds a per-rank weight cache (about an hour). Nothing else may use the chips while it runs |
 | (shared) `common.py` | helpers: HTTP calls, waiting for statuses, reading the log, the PASS/FAIL list. Not a test |
 
 The tests that use the mock runner (`server_cases.py`, `contract_cases.py`,
