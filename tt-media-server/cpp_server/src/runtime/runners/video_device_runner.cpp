@@ -155,7 +155,7 @@ bool VideoDeviceRunner::warmup() {
               videoConfig.pythonRunner);
   const bool ownsInterpreter = !Py_IsInitialized();
   if (ownsInterpreter) {
-    py::initialize_interpreter();
+    py::initialize_interpreter(videoPythonSignalHandlers());
   }
   bool warmupFailed = false;
   try {

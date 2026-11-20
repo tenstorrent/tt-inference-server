@@ -48,7 +48,7 @@ Json::Value ImageModel::buildCall(const DiTRequest& r) const {
   call["negative_prompt"] =
       r.negativePrompt ? Json::Value(*r.negativePrompt) : Json::Value();
   call["num_inference_steps"] = steps(r);
-  call["seed"] = seed(r);
+  call["seed"] = static_cast<Json::Int64>(seed(r));
   return call;
 }
 
@@ -93,7 +93,7 @@ Json::Value FluxKontextModel::buildCall(const DiTRequest& r) const {
   call["image"] = r.image ? Json::Value(*r.image) : Json::Value();
   call["num_inference_steps"] = steps(r);
   call["guidance_scale"] = kKontextGuidanceScale;
-  call["seed"] = seed(r);
+  call["seed"] = static_cast<Json::Int64>(seed(r));
   call["traced"] = traced();
   return call;
 }

@@ -51,7 +51,7 @@ Json::Value WanModel::buildCall(const DiTRequest& r) const {
   call["num_inference_steps"] = steps(r);
   call["guidance_scale"] = guidanceScale();
   call["guidance_scale_2"] = guidanceScale2();
-  call["seed"] = seed(r);
+  call["seed"] = static_cast<Json::Int64>(seed(r));
   call["traced"] = traced();
   if (usesNegativePrompt() && r.negativePrompt && !r.negativePrompt->empty()) {
     call["negative_prompts"].append(*r.negativePrompt);
@@ -115,7 +115,7 @@ Json::Value WanProdiaModel::buildCall(const DiTRequest& r) const {
   call["height"] = height_;
   call["width"] = width_;
   call["num_frames"] = kWan22NumFrames;
-  call["seed"] = seed(r);
+  call["seed"] = static_cast<Json::Int64>(seed(r));
   call["traced"] = traced();
   return call;
 }

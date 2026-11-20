@@ -45,7 +45,7 @@ Json::Value MochiModel::buildCall(const DiTRequest& r) const {
   call["negative_prompts"].append(r.negativePrompt.value_or(""));
   call["num_inference_steps"] = steps(r);
   call["guidance_scale"] = kMochiGuidanceScale;
-  call["seed"] = seed(r);
+  call["seed"] = static_cast<Json::Int64>(seed(r));
   return call;
 }
 
@@ -135,7 +135,7 @@ Json::Value LtxModel::buildCall(const DiTRequest& r) const {
   call["num_frames"] = kLtxNumFrames;
   call["height"] = kLtxHeight;
   call["width"] = kLtxWidth;
-  call["seed"] = seed(r);
+  call["seed"] = static_cast<Json::Int64>(seed(r));
   call["fps"] = kLtxFps;
   return call;
 }

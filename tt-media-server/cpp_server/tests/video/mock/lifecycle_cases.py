@@ -17,6 +17,9 @@ folder), so it can run next to a server that owns a device. Cases:
   sync2        two synchronous requests at once: the second waits, both succeed
   restart      what /tt-liveness and POST do while a restarted worker is warming up
   preclaim     the worker dies after taking a task and before CLAIMED
+
+One DEVICE_IDS group runs the runner in the server process; the cases that are about a
+worker process (sigterm, restart, preclaim) start the server with two groups.
   stress       hundreds of concurrent POST/GET/cancel/DELETE
   bigtable     GET /v1/videos/jobs with 10000 jobs, with the sweeper running
   downloads    many parallel downloads of one mp4 (whole file and Range)
@@ -46,10 +49,18 @@ KEY = w.KEY
 note = w.note
 
 
-def server(port, tag, workdir, **env):
-    """Start a mock server; returns (proc, log, output_dir)."""
+def server(port, tag, workdir, process=False, **env):
+    """Start a mock server; returns (proc, log, output_dir).
+
+    One DEVICE_IDS group (the default here) runs the runner in the server process;
+    `process=True` gives two groups, so two worker processes, for the cases that are
+    about a worker (kill it, shm queues, the ipc folder)."""
     out = workdir / f"{tag}_videos"
-    base = {"TT_VIDEO_MOCK_DELAY_MS": "0", "TT_VIDEO_OUTPUT_DIR": str(out)}
+    base = {
+        "TT_VIDEO_MOCK_DELAY_MS": "0",
+        "TT_VIDEO_OUTPUT_DIR": str(out),
+        "DEVICE_IDS": "(0),(1)" if process else None,
+    }
     base.update(env)
     proc, log = w.start(
         port, tag, 3, workdir, {k: (None if v is None else str(v)) for k, v in base.items()}
@@ -167,11 +178,12 @@ def case_sigterm(wd):
     print("=== sigterm: SIGTERM in the middle of a job ===")
     port = 18162
     before = ipc_dirs()
-    proc, log, out = server(port, "sg", wd, TT_VIDEO_MOCK_DELAY_MS=15000)
+    proc, log, out = server(port, "sg", wd, process=True, TT_VIDEO_MOCK_DELAY_MS=15000)
     try:
         note(ready(port), "server ready")
         pid = proc.pid
-        wpid, _ = w.worker(port)
+        wpids = [p for p, _ in w.workers(port).values()]
+        note(len(wpids) == 2, "two worker processes", str(wpids))
         create(port)
         create(port)
         w.wait_until(
@@ -191,11 +203,13 @@ def case_sigterm(wd):
             code = None
         took = time.time() - t0
         note(code is not None, "the server exits after SIGTERM", f"code={code} after {took:.1f}s")
-        alive = (
-            os.path.exists(f"/proc/{wpid}")
-            and Path(f"/proc/{wpid}/stat").read_text().split()[2] != "Z"
-        )
-        note(not alive, "the worker process is gone", f"worker pid={wpid}")
+        alive = [
+            p
+            for p in wpids
+            if os.path.exists(f"/proc/{p}")
+            and Path(f"/proc/{p}/stat").read_text().split()[2] != "Z"
+        ]
+        note(not alive, "the worker processes are gone", f"worker pids={wpids}")
         note(not (ipc_dirs() & mine), "the ipc folder is removed")
         note(shm_with("wcsg_") == [], "the shm queues are removed", str(shm_with("wcsg_")))
     finally:
@@ -238,20 +252,20 @@ def case_disconnect(wd):
         time.sleep(7)
         files = sorted(p.name for p in out.glob("*")) if out.exists() else []
         print(f"  output folder after the dropped request finished: {files}")
-        # Known limitation (docs/VIDEO_SERVICE.md): the mp4 of a synchronous request stays on
-        # disk until the next start, whether the client stayed or not. The task itself runs to
-        # the end either way.
+        # A synchronous request has no job record, so its mp4 is read into the response and
+        # deleted at once, whether the client stayed or not. The task itself runs to the end
+        # either way (the log says its result was handed over).
         note(
-            len(files) == 1,
-            "the dropped request ran to the end (its mp4 exists, as for a finished sync request)",
+            files == [],
+            "the dropped request left no mp4 behind (read into the response, then deleted)",
             f"files={files}",
         )
-        raw_sync_request(port)
+        st_line, _ = raw_sync_request(port)
         files2 = sorted(p.name for p in out.glob("*")) if out.exists() else []
         note(
-            len(files2) == 2,
-            "a normal sync request also leaves its mp4 (documented limitation)",
-            f"files={files2}",
+            st_line is not None and " 200 " in st_line and files2 == [],
+            "a normal sync request answers 200 and leaves no mp4 either",
+            f"status={st_line!r} files={files2}",
         )
         jobs = w.call(port, "GET", "/v1/videos/jobs")[1]
         note(not jobs, "a synchronous request leaves no job record", str(jobs)[:80])
@@ -293,11 +307,19 @@ def case_restart(wd):
     print("=== restart: liveness and POST while a restarted worker warms up ===")
     port = 18165
     proc, log, out = server(
-        port, "rs", wd, TT_VIDEO_MOCK_WARMUP_MS=6000, TT_VIDEO_MOCK_DELAY_MS=1000
+        port, "rs", wd, process=True, TT_VIDEO_MOCK_WARMUP_MS=6000, TT_VIDEO_MOCK_DELAY_MS=3000
     )
     try:
         note(ready(port, 90), "server ready (first warmup 6 s)")
         pid0, _ = w.worker(port)
+        # Both workers are kept busy before the kill. Killing an IDLE worker (one waiting
+        # in the shared task queue) can leave the queue's condition variable in a state
+        # that blocks the next push for good; see docs/VIDEO_SERVICE.md, Known limitations.
+        busy = [create(port, f"busy{i}")[1]["id"] for i in range(2)]
+        note(
+            all(w.wait_job(port, j, ("in_progress",), 10)[0] == "in_progress" for j in busy),
+            "both workers are running a job",
+        )
         os.kill(pid0, signal.SIGKILL)
         t0 = time.time()
         seen = []
@@ -341,6 +363,7 @@ def case_preclaim(wd):
         port,
         "pc",
         wd,
+        process=True,
         TT_MEDIA_TEST_PRECLAIM_DELAY_MS=4000,
         JOB_CLEANUP_INTERVAL_SECONDS=1,
         JOB_MAX_STUCK_TIME_SECONDS=3,
@@ -348,9 +371,14 @@ def case_preclaim(wd):
     try:
         note(ready(port), "server ready")
         pid0, _ = w.worker(port)
+        pid_other, _ = w.worker(port, "1")
+        # two tasks, so that both workers hold one and wait in the hook (an idle worker
+        # is not killed, see case_restart)
         _, j = create(port)
-        time.sleep(1.5)  # the worker holds the task and waits in the hook
+        create(port, "second")
+        time.sleep(1.5)
         os.kill(pid0, signal.SIGKILL)
+        os.kill(pid_other, signal.SIGKILL)
         pid1 = w.wait_until(lambda: w.new_worker_ready(port, pid0), 30)
         note(pid1 is not None, "a new worker starts")
         time.sleep(8)

@@ -3,11 +3,13 @@
 
 #pragma once
 
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
 #include <deque>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -19,6 +21,7 @@
 #include "domain/video/video_response.hpp"
 #include "domain/video_generate_request.hpp"
 #include "ipc/media_payload_ipc.hpp"
+#include "runtime/runners/media_runner.hpp"
 #include "runtime/worker/worker_manager.hpp"
 #include "services/request_pipeline.hpp"
 #include "services/video_job_store.hpp"
@@ -31,7 +34,15 @@ namespace tt::services {
  * returns the job metadata (id, status=queued) immediately; the client polls
  * `getJob` until `completed` and then downloads the mp4 via `resultPath`.
  * The device runner opens the chip, runs the Python DiT model selected by
- * MODEL_RUNNER, and the JSON `video_path` is the mp4 written for that job. */
+ * MODEL_RUNNER, and the JSON `video_path` is the mp4 written for that job.
+ *
+ * Two ways to run the device runner:
+ *  - worker process(es) (several DEVICE_IDS groups, or a multihost launch):
+ *    tasks travel through the shared-memory queue as described above;
+ *  - in process (one DEVICE_IDS group): the runner lives on a thread of this
+ *    server process and the queue is a plain deque in memory. No shared
+ *    memory, no request/response files, no second process. A cancelled job that
+ *    is still queued is removed from the deque. Chosen by `useInProcess()`. */
 class VideoService
     : public BaseAsyncService<domain::VideoGenerateRequest,
                               domain::video::VideoResponse,
@@ -41,7 +52,25 @@ class VideoService
                std::unique_ptr<tt::worker::WorkerManager> workerManager,
                std::unique_ptr<tt::ipc::media_payload::MediaPayloadQueueSet>
                    queueManager);
+  /** In-process mode: no WorkerManager, no shared-memory queues. The runner is
+   *  created and warmed up on the service's own thread (start()). */
+  explicit VideoService(config::VideoConfig config);
   ~VideoService() override;
+
+  /** True when the runner runs on a thread of the server: exactly one
+   *  DEVICE_IDS group. Several groups run one worker process each. Nothing else
+   *  (no variable) changes the choice. */
+  static bool useInProcess();
+
+  void start() override;
+  void stop() override;
+  bool isModelReady() const override;
+  bool hasFatalError() const override;
+
+  /** Same as the base class, plus the in-process queue. Used by the sync
+   *  (`?async=false`) endpoint. */
+  void submitRequestAsync(domain::VideoGenerateRequest request,
+                          Callback onComplete);
 
   std::string runnerInUse() const override;
   std::string servedModelName() const;
@@ -55,6 +84,11 @@ class VideoService
    *  directory cannot be written (the controller answers 503). Only checked
    *  for the real device runner; the mock runner writes no files. */
   std::string outputDirError() const;
+
+  /** Deletes the mp4 of a synchronous request after its bytes were read (it
+   *  has no job record, so nothing else would). Same rule as the job store:
+   *  inside the output directory when there is one, never a `mock://` path. */
+  void discardSyncResult(const std::string& path) const;
 
   /** Public job id (UUID) -> internal task id; nullopt = unknown/malformed. */
   std::optional<uint32_t> resolveJobId(const std::string& publicId) const;
@@ -81,14 +115,18 @@ class VideoService
                        std::chrono::steady_clock::time_point doneTime) override;
   void onStopped() override;
   bool tryRecoverWorker(size_t workerIdx) override;
+  size_t currentQueueSize() const override;
+  std::vector<tt::worker::WorkerInfo> getWorkerInfo() const override;
 
  private:
   std::string payloadPath(uint32_t taskId, const char* prefix) const;
   void removeCancelMarker(uint32_t taskId) const;
+  void prepareOutputDir();
 
   config::VideoConfig videoConfig;
   std::filesystem::path payloadDir;
   std::filesystem::path outputDir_;  // empty when the runner writes no mp4
+  int outputDirLockFd_ = -1;         // flock on the output dir, see .cpp
   void startSweeper();
   void stopSweeper();
 
@@ -107,6 +145,36 @@ class VideoService
   std::mutex sweeperMutex_;
   std::condition_variable sweeperCv_;
   bool sweeperStop_ = false;
+
+  // ---- in-process mode (inProcess_) ----------------------------------------
+  struct InProcessTask {
+    domain::VideoGenerateRequest request;
+    Callback onComplete;
+    std::chrono::steady_clock::time_point submitTime;
+  };
+  void enqueueInProcess(domain::VideoGenerateRequest request,
+                        Callback onComplete);
+  void inProcessLoop();
+  void serveInProcessTask(InProcessTask& task);
+  void failQueuedInProcess(const std::string& error);
+  domain::video::VideoResponse runInProcessTask(const InProcessTask& task);
+
+  bool inProcess_ = false;
+  std::unique_ptr<
+      tt::runners::IMediaRunner<domain::VideoGenerateRequest, std::string>>
+      inRunner_;
+  std::thread inThread_;
+  mutable std::mutex inMutex_;  // guards inQueue_, inRunning_, inStop_
+  std::condition_variable inCv_;
+  std::deque<InProcessTask> inQueue_;
+  std::optional<uint32_t> inRunning_;  // task the runner is working on
+  bool inStop_ = false;
+  bool inStarted_ = false;
+  std::atomic<bool> inReady_{false};
+  std::atomic<bool> inFailed_{false};
+  std::atomic<bool> inLoopExited_{false};
+  mutable std::mutex inFailureMutex_;
+  std::string inFailureReason_;
 
   // Automatic worker restart (not used for multihost launches).
   size_t maxWorkerRestarts_ = 3;

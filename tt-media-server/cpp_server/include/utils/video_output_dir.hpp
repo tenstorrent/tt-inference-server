@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <fcntl.h>
+#include <sys/file.h>
 #include <unistd.h>
 
 #include <atomic>
@@ -45,9 +47,8 @@ inline std::string checkDirWritable(const std::filesystem::path& dir) {
   fs::create_directories(dir, ec);
   if (ec) return "cannot create '" + dir.string() + "': " + ec.message();
   static std::atomic<uint64_t> counter{0};
-  const fs::path probe =
-      dir / (".write-check-" + std::to_string(::getpid()) + "-" +
-             std::to_string(counter.fetch_add(1)));
+  const fs::path probe = dir / (".write-check-" + std::to_string(::getpid()) +
+                                "-" + std::to_string(counter.fetch_add(1)));
   errno = 0;
   {
     std::ofstream out(probe, std::ios::binary);
@@ -86,10 +87,49 @@ inline bool isInsideDir(const std::string& path,
   return true;
 }
 
+/** True for the names this server's runners give a result: `<uuid>.mp4`,
+ *  `<uuid>_silent.mp4` (the muted copy of an audio export) and the temp file of
+ *  an interrupted faststart remux. Anything else in the folder is not ours. */
+inline bool isOwnResultName(const std::string& name) {
+  static constexpr size_t kUuidLen = 36;
+  if (name.size() < kUuidLen) return false;
+  for (size_t i = 0; i < kUuidLen; ++i) {
+    const char c = name[i];
+    if (i == 8 || i == 13 || i == 18 || i == 23) {
+      if (c != '-') return false;
+    } else if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) {
+      return false;
+    }
+  }
+  const std::string rest = name.substr(kUuidLen);
+  return rest == ".mp4" || rest == "_silent.mp4" ||
+         rest == ".mp4.faststart.tmp.mp4";
+}
+
 /**
- * Deletes regular `*.mp4` files that sit directly in `root` (no recursion, no
- * symlinks followed). Meant for startup, when the in-memory job table is empty,
- * so every such file is an orphan of a previous run. Returns how many were
+ * Takes a lock on `<root>/.tt_video_server.lock` and keeps it until the
+ * returned descriptor is closed (or the process dies). Returns the descriptor,
+ * or -1 with `heldByOther` true when another server holds it, false when the
+ * file could not be opened (for example a folder that is not writable).
+ */
+inline int lockOutputDir(const std::filesystem::path& root, bool& heldByOther) {
+  heldByOther = false;
+  const std::string path = (root / ".tt_video_server.lock").string();
+  const int fd = ::open(path.c_str(), O_RDWR | O_CREAT | O_CLOEXEC, 0644);
+  if (fd < 0) return -1;
+  if (::flock(fd, LOCK_EX | LOCK_NB) != 0) {
+    heldByOther = (errno == EWOULDBLOCK);
+    ::close(fd);
+    return -1;
+  }
+  return fd;
+}
+
+/**
+ * Deletes this server's own result files (`isOwnResultName`) that sit directly
+ * in `root` (no recursion, no symlinks followed). Meant for startup, when the
+ * in-memory job table is empty, so every such file is an orphan of a previous
+ * run. Files with any other name are left alone. Returns how many were
  * removed.
  */
 inline size_t purgeOrphanMp4(const std::filesystem::path& root) {
@@ -101,7 +141,7 @@ inline size_t purgeOrphanMp4(const std::filesystem::path& root) {
        it.increment(ec)) {
     std::error_code e2;
     if (it->is_symlink(e2) || !it->is_regular_file(e2)) continue;
-    if (it->path().extension() != ".mp4") continue;
+    if (!isOwnResultName(it->path().filename().string())) continue;
     if (fs::remove(it->path(), e2)) ++removed;
   }
   return removed;

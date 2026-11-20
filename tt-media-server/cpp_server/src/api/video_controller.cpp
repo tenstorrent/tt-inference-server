@@ -6,6 +6,8 @@
 #include <json/json.h>
 
 #include <filesystem>
+#include <fstream>
+#include <functional>
 #include <iomanip>
 #include <optional>
 #include <sstream>
@@ -56,8 +58,12 @@ std::string generationTimeHeader(double seconds) {
 
 // Same shape as Python's synchronous FileResponse: the body is the mp4, the
 // filename is video_<task_id>.mp4, and X-Generation-Time carries the seconds.
+// A synchronous request has no job record, so nothing would ever delete its
+// file: the bytes are read into the response and the file is discarded here
+// (also when the client has already gone away).
 drogon::HttpResponsePtr syncFileResponse(
-    const domain::video::VideoResponse& response) {
+    const domain::video::VideoResponse& response,
+    const std::function<void(const std::string&)>& discard) {
   namespace fs = std::filesystem;
   std::error_code ec;
   if (response.videoPath.empty()) {
@@ -79,8 +85,21 @@ drogon::HttpResponsePtr syncFileResponse(
   }
   const std::string filename =
       "video_" + std::to_string(response.task_id) + ".mp4";
-  auto resp = drogon::HttpResponse::newFileResponse(
-      response.videoPath, filename, drogon::CT_CUSTOM, "video/mp4");
+  std::string bytes(static_cast<size_t>(size), '\0');
+  {
+    std::ifstream in(response.videoPath, std::ios::binary);
+    if (!in.read(bytes.data(), static_cast<std::streamsize>(bytes.size()))) {
+      return videoError(
+          drogon::k500InternalServerError,
+          "Video generation failed: cannot read " + response.videoPath,
+          "server_error");
+    }
+  }
+  discard(response.videoPath);
+  auto resp = drogon::HttpResponse::newHttpResponse();
+  resp->setBody(std::move(bytes));
+  resp->setContentTypeCodeAndCustomString(drogon::CT_CUSTOM, "video/mp4");
+  resp->addHeader("Content-Disposition", "attachment; filename=" + filename);
   resp->addHeader("X-Generation-Time",
                   generationTimeHeader(response.generationTimeSeconds));
   return resp;
@@ -166,13 +185,16 @@ void VideoController::generate(const drogon::HttpRequestPtr& req,
     try {
       service->submitRequestAsync(
           std::move(*request),
-          [callbackPtr](domain::video::VideoResponse response) {
+          [this, callbackPtr](domain::video::VideoResponse response) {
             if (!response.error.empty()) {
               (*callbackPtr)(videoError(drogon::k500InternalServerError,
                                         response.error, "server_error"));
               return;
             }
-            (*callbackPtr)(syncFileResponse(response));
+            (*callbackPtr)(
+                syncFileResponse(response, [this](const std::string& path) {
+                  service->discardSyncResult(path);
+                }));
           });
     } catch (const tt::services::QueueFullException& e) {
       auto resp = videoError(drogon::k429TooManyRequests, e.what(),
@@ -255,6 +277,12 @@ void VideoController::download(const drogon::HttpRequestPtr& req,
   // the whole file is sent.
   const std::string filename = std::filesystem::path(*path).filename().string();
   const uint64_t size = std::filesystem::file_size(*path, ec);
+  if (ec) {
+    // The file went away between the check above and now (eviction, DELETE).
+    callback(videoError(drogon::k404NotFound, "Video content not available",
+                        "invalid_request_error"));
+    return;
+  }
   const auto range =
       tt::utils::parseByteRange(req->getHeader("range"), ec ? 0 : size);
 

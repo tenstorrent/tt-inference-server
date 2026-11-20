@@ -16,8 +16,8 @@ tests/video/real_device for what each variable does). Example, from cpp_server:
         --dit-cache <tt_dit weight cache> --api-key <token>
 
 Phases (each is a separate server start):
-  1. purge on start: planted files in TT_VIDEO_OUTPUT_DIR (only top-level *.mp4 files
-     go), a job, DELETE removes its mp4, seed 7 video kept for phase 3
+  1. purge on start: planted files in TT_VIDEO_OUTPUT_DIR (only top-level files named like
+     a result, <uuid>.mp4 and <uuid>_silent.mp4, go; other mp4 files stay), a job, DELETE removes its mp4, seed 7 video kept for phase 3
   2. SIGTERM while idle: clean exit; the next start works WITHOUT `tt-smi -r`;
      TT_VIDEO_PURGE_ON_START=0 keeps the planted files; seed 7 again (same video as in
      phase 1 after a restart?)
@@ -40,6 +40,13 @@ import urllib.error
 import urllib.request
 
 GEN = "/v1/videos/generations"
+# Names the server gives its results (<uuid>.mp4, <uuid>_silent.mp4): only these are purged.
+OLD1 = "11111111-1111-4111-8111-111111111111.mp4"
+OLD2 = "22222222-2222-4222-8222-222222222222.mp4"
+OLD3 = "33333333-3333-4333-8333-333333333333_silent.mp4"
+KEEP = "44444444-4444-4444-8444-444444444444.mp4"
+LOCK = ".tt_video_server.lock"
+OTHERS = ("link.mp4", "holiday.mp4")
 results = []
 T0 = time.time()
 
@@ -238,9 +245,10 @@ def main():
     # ---------------------------------------------------------------- phase 1: purge, delete, seed
     p("=== phase 1: purge on start, DELETE, seed 7")
     planted = {
-        "old1.mp4": b"orphan 1",
-        "old2.mp4": b"orphan 2",
-        "x_silent.mp4": b"silent",
+        OLD1: b"orphan 1",
+        OLD2: b"orphan 2",
+        OLD3: b"silent",
+        "holiday.mp4": b"the user's own clip, not named like a result",
         "audio.wav": b"wav",
         "notes.txt": b"txt",
     }
@@ -258,8 +266,9 @@ def main():
     left = sorted(os.listdir(out))
     p("  output folder after the start:", left)
     note(
-        left == sorted(["audio.wav", "notes.txt", "sub", "link.mp4"]),
-        "purge removed the top-level *.mp4 files only (kept: .wav, .txt, subfolder, symlink)",
+        left == sorted(["audio.wav", "notes.txt", "sub", "link.mp4", "holiday.mp4", LOCK]),
+        "purge removed the server's own top-level results only (kept: .wav, .txt, subfolder, "
+        "symlink, holiday.mp4, and the lock file the server created)",
         str(left),
     )
     note(
@@ -277,10 +286,10 @@ def main():
     )
     st, v1 = srv.call("GET", f"{GEN}/{j['id']}/download", raw=True)
     open(os.path.join(work, "seed7_run1.mp4"), "wb").write(v1)
-    files = [f for f in os.listdir(out) if f.endswith(".mp4") and f != "link.mp4"]
+    files = [f for f in os.listdir(out) if f.endswith(".mp4") and f not in OTHERS]
     note(len(files) == 1, "the finished video is one mp4 in the output folder", str(files))
     st, _ = srv.call("DELETE", f"{GEN}/{j['id']}")
-    after = [f for f in os.listdir(out) if f.endswith(".mp4") and f != "link.mp4"]
+    after = [f for f in os.listdir(out) if f.endswith(".mp4") and f not in OTHERS]
     note(st == 200 and after == [], "DELETE removes the job and its mp4", f"http{st} left={after}")
     st, j2 = srv.call("GET", f"{GEN}/{j['id']}")
     note(st == 404, "the deleted job is gone (404)", f"http{st}")
@@ -290,7 +299,14 @@ def main():
     pid = server_pid(srv)
     desc = descendants(pid)
     ipc_mine = f"tt-video-ipc-{pid}"
-    note(ipc_mine in os.listdir("/tmp"), "the ipc folder exists while the server runs", ipc_mine)
+    # One DEVICE_IDS group runs the runner on a thread of the server (no worker process,
+    # no ipc folder); only several groups give worker processes.
+    in_process = "Creating in-process video service" in srv.log_text()
+    p("  execution mode:", "in-process (no worker, no ipc folder)" if in_process else "worker process")
+    if in_process:
+        note(ipc_mine not in os.listdir("/tmp"), "in-process mode: no ipc folder is created", ipc_mine)
+    else:
+        note(ipc_mine in os.listdir("/tmp"), "the ipc folder exists while the server runs", ipc_mine)
     shm_run = shm_names()
     t0 = time.time()
     code = srv.terminate(signal.SIGTERM, 120)
@@ -309,7 +325,7 @@ def main():
     note(ipc_mine not in os.listdir("/tmp"), "the ipc folder is removed")
     note("graceful" in srv.log_text(), "the log says the shutdown was graceful")
     note(not media_shm(), "the shm queues of the service are removed", str(media_shm()))
-    keep = os.path.join(out, "keep_me.mp4")
+    keep = os.path.join(out, KEEP)
     open(keep, "wb").write(b"keep")
     srv = Server(
         args, out, os.path.join(work, "phase2.log"), {"TT_VIDEO_PURGE_ON_START": "0"}
@@ -323,7 +339,7 @@ def main():
     if not ok:
         srv.kill_all()
         return finish()
-    note(os.path.exists(keep), "TT_VIDEO_PURGE_ON_START=0 keeps the mp4 files")
+    note(os.path.exists(keep), "TT_VIDEO_PURGE_ON_START=0 keeps a result-named mp4")
     st, j = srv.submit(seed=7)
     srv.wait_job(j["id"], ("completed", "failed"), 600)
     st, v2 = srv.call("GET", f"{GEN}/{j['id']}/download", raw=True)

@@ -256,7 +256,16 @@ int main(int argc, char* argv[]) {
   const size_t numWorkers = tt::config::numWorkers();
   auto shm = tt::worker::WorkerMetricsShm::create(shmName, numWorkers);
 
-  tt::utils::service_factory::initializeServices();
+  // A refused configuration (for example an unknown MODEL_RUNNER_TYPE) is
+  // thrown from here. Left uncaught it ends in std::terminate, which runs no
+  // destructors and leaves the metrics shm segment behind; returning lets
+  // `shm` unlink it.
+  try {
+    tt::utils::service_factory::initializeServices();
+  } catch (const std::exception& e) {
+    TT_LOG_ERROR("[Main] Service initialization failed: {}", e.what());
+    return 1;
+  }
 
   // Start the configured service on the main thread. Services whose start()
   // is slow (e.g. image warmup) own their own background thread internally;

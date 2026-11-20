@@ -449,7 +449,8 @@ BlazeConfig blazeConfig();
 ImageConfig imageEngineConfig();
 
 /** Build VideoConfig from environment variables. Reads MODEL_RUNNER_TYPE.
- * The only accepted value in this slice is video_mock. */
+ * Accepted values: video_device (the default; MODEL_RUNNER names the model) and
+ * video_mock (no device). Throws for anything else. */
 VideoConfig videoEngineConfig();
 
 /** Build TtsConfig from environment variables and runtime settings.

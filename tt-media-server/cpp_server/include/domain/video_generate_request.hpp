@@ -5,6 +5,7 @@
 
 #include <json/json.h>
 
+#include <cstdint>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -35,12 +36,12 @@ struct VideoGenerateRequest : BaseRequest {
   std::string prompt;
   std::optional<std::string> negativePrompt;
   std::optional<int> numInferenceSteps;
-  std::optional<int> seed;
+  std::optional<int64_t> seed;
   std::optional<std::string> aspectRatio;
   std::optional<int> height;
   std::optional<int> width;
-  std::optional<float> fps;
-  std::optional<float> duration;
+  std::optional<double> fps;
+  std::optional<double> duration;
   std::optional<int> numFrames;
   // [{"image": "<base64>", "frame_pos": 0}, ...]
   std::optional<Json::Value> imagePrompts;
@@ -54,7 +55,7 @@ struct VideoGenerateRequest : BaseRequest {
     json["prompt"] = prompt;
     if (negativePrompt) json["negative_prompt"] = *negativePrompt;
     if (numInferenceSteps) json["num_inference_steps"] = *numInferenceSteps;
-    if (seed) json["seed"] = *seed;
+    if (seed) json["seed"] = static_cast<Json::Int64>(*seed);
     if (aspectRatio) json["aspect_ratio"] = *aspectRatio;
     if (height) json["height"] = *height;
     if (width) json["width"] = *width;
@@ -201,7 +202,7 @@ struct VideoGenerateRequest : BaseRequest {
       req.numInferenceSteps = kDefaultVideoInferenceSteps;
     }
     if (present("seed")) {
-      req.seed = json_field::getInt(json["seed"], "seed");
+      req.seed = json_field::getInt64(json["seed"], "seed");
     }
     if (present("aspect_ratio")) {
       req.aspectRatio =
@@ -223,14 +224,14 @@ struct VideoGenerateRequest : BaseRequest {
       }
     }
     if (present("fps")) {
-      req.fps = json_field::getFloat(json["fps"], "fps");
-      if (*req.fps <= 0.0F) {
+      req.fps = json_field::getDouble(json["fps"], "fps");
+      if (*req.fps <= 0.0) {
         throw std::invalid_argument("fps must be positive");
       }
     }
     if (present("duration")) {
-      req.duration = json_field::getFloat(json["duration"], "duration");
-      if (*req.duration <= 0.0F) {
+      req.duration = json_field::getDouble(json["duration"], "duration");
+      if (*req.duration <= 0.0) {
         throw std::invalid_argument("duration must be positive");
       }
     }
