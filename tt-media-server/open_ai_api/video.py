@@ -9,13 +9,9 @@ import time as _time
 from typing import Annotated, Optional
 
 from config.constants import (
-    I2V_MODEL_NAMES,
     I2V_MODEL_RUNNERS,
     JobTypes,
-    ModelNames,
     ModelRunners,
-    NON_REF2VA_H3_MODEL_NAMES,
-    REF2VA_MODEL_NAMES,
     REF2VA_MODEL_RUNNERS,
 )
 from config.settings import settings
@@ -206,24 +202,7 @@ def _is_i2v_only_deployment() -> bool:
     except ValueError:
         return False
 
-    if runner in I2V_MODEL_RUNNERS:
-        return True
-
-    # Every video runner except SP_RUNNER maps 1:1 to its model, so the check
-    # above is already conclusive for them and MODEL must not override it —
-    # a stale env var should never make a T2V deployment reject text prompts.
-    # SP_RUNNER proxies to a multihost peer and serves either T2V or I2V, so it
-    # is the one case where MODEL carries information the runner does not.
-    if runner is not ModelRunners.SP_RUNNER:
-        return False
-
-    model_env = os.getenv("MODEL")
-    if not model_env:
-        return False
-    try:
-        return ModelNames(model_env) in I2V_MODEL_NAMES
-    except ValueError:
-        return False
+    return runner in I2V_MODEL_RUNNERS
 
 
 def _is_ref2va_deployment() -> bool:
@@ -232,62 +211,19 @@ def _is_ref2va_deployment() -> bool:
         runner = ModelRunners(settings.model_runner)
     except ValueError:
         return False
-    if runner in REF2VA_MODEL_RUNNERS:
-        return True
-    if runner is not ModelRunners.SP_RUNNER:
-        return False
-    model_env = os.getenv("MODEL")
-    if not model_env:
-        return False
-    try:
-        return ModelNames(model_env) in REF2VA_MODEL_NAMES
-    except ValueError:
-        return False
+    return runner in REF2VA_MODEL_RUNNERS
 
 
 def _is_h3_t2va_deployment() -> bool:
-    """True when this process serves plain MiniMax-H3 T2VA (no conditioning).
-
-    Same resolution order as the two checks above: an in-process runner is
-    conclusive; the SP frontend only knows the peer's task through MODEL.
-    """
+    """True when this process serves plain MiniMax-H3 T2VA (no conditioning)."""
     try:
         runner = ModelRunners(settings.model_runner)
     except ValueError:
         return False
-    if runner is ModelRunners.TT_MINIMAX_H3_T2VA:
-        return True
-    if runner is ModelRunners.TT_MINIMAX_H3_FASTH3:
-        return True
-    if runner is not ModelRunners.SP_RUNNER:
-        return False
-    model_env = os.getenv("MODEL")
-    if not model_env:
-        return False
-    try:
-        return ModelNames(model_env) in {
-            ModelNames.MINIMAX_H3,
-            ModelNames.MINIMAX_H3_FASTH3,
-        }
-    except ValueError:
-        return False
-
-
-def _sp_peer_is_known_non_ref2va() -> bool:
-    """True only when MODEL names an H3 task that provably is not Ref2VA.
-
-    The SP frontend proxies to a peer whose ``MODEL_RUNNER`` it cannot see, so
-    ``MODEL`` is its only evidence. Recognising *any* model name is not enough:
-    MODEL is advisory on an SP frontend and may name something unrelated to the
-    peer's H3 task, so only the T2VA/FL2VA names are conclusive here.
-    """
-    model_env = os.getenv("MODEL")
-    if not model_env:
-        return False
-    try:
-        return ModelNames(model_env) in NON_REF2VA_H3_MODEL_NAMES
-    except ValueError:
-        return False
+    return runner in (
+        ModelRunners.TT_MINIMAX_H3_T2VA,
+        ModelRunners.TT_MINIMAX_H3_FASTH3,
+    )
 
 
 def reject_text_to_video_on_i2v_deployment() -> None:
@@ -351,21 +287,8 @@ def reject_i2v_on_t2va_deployment() -> None:
 
 
 def reject_ref2va_on_wrong_deployment() -> None:
-    """Block /ref2va on a deployment known to serve T2VA or FL2VA.
-
-    An in-process runner is conclusive. ``sp_runner`` is a SHM proxy that does
-    not load weights; the peer ``video_runner`` owns ``MODEL_RUNNER``, so the
-    frontend only refuses when MODEL names a T2VA/FL2VA model, i.e. when the
-    peer would silently drop the references. Any other MODEL — unset, a Wan
-    model, an unrecognised string — leaves it permissive.
-    """
+    """Block /ref2va on a deployment that does not serve Ref2VA."""
     if _is_ref2va_deployment():
-        return
-    try:
-        runner = ModelRunners(settings.model_runner)
-    except ValueError:
-        runner = None
-    if runner is ModelRunners.SP_RUNNER and not _sp_peer_is_known_non_ref2va():
         return
     raise HTTPException(
         status_code=422,
