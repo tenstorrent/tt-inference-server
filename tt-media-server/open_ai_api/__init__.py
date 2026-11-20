@@ -15,6 +15,7 @@ from open_ai_api import (
     cnn,
     embedding,
     fine_tuning,
+    generations,
     image,
     llm,
     models,
@@ -68,6 +69,9 @@ SERVICE_ROUTER_MAP: dict[str, list[ServiceRoute]] = {
     ],
     ModelServices.EMBEDDING.value: [
         ServiceRoute(embedding.router, "/v1", None, ["Embeddings"]),
+    ],
+    ModelServices.GENERATION.value: [
+        ServiceRoute(generations.router, "", None, ["Generations"]),
     ],
 }
 

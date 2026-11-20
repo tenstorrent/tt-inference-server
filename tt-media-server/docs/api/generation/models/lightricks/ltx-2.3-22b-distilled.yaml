@@ -65,7 +65,7 @@ components:
       additionalProperties: false
       required: [prompt]
       description: |
-        One output shape for now: 1920×1080, 6 s at 25 fps. The shape fields
+        One output shape for now: 1920×1088, 6 s at 25 fps. The shape fields
         are kept so more can be allowed later without a schema change.
       properties:
         prompt:
@@ -82,7 +82,7 @@ components:
           enum: [1080p]
           default: 1080p
           description: |
-            Size tier: `1080p` is 1920×1080 at `16:9`.
+            Size tier: `1080p` is 1920×1088 at `16:9`.
         duration:
           type: integer
           enum: [6]

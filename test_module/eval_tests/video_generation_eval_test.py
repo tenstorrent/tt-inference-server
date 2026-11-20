@@ -27,10 +27,11 @@ from utils.sdxl_accuracy_utils.clip_encoder import CLIPEncoder
 from utils.sdxl_accuracy_utils.sdxl_accuracy_utils import sdxl_get_prompts
 
 from .._test_common import (
-    VIDEO_GENERATION_ENDPOINT,
     _load_fixture_image_base64,
     build_video_generation_payload,
+    get_video_download_url,
     get_video_generation_submit_endpoint,
+    get_video_job_endpoint,
     is_i2v_video_model,
 )
 
@@ -229,6 +230,7 @@ class VideoGenerationEvalsTest(BaseTest):
                 # Poll for completion
                 video_path = self._poll_video_completion(
                     base_url=base_url,
+                    model_name=model_name,
                     job_id=job_id,
                     headers=headers,
                 )
@@ -259,6 +261,7 @@ class VideoGenerationEvalsTest(BaseTest):
     def _poll_video_completion(
         self,
         base_url: str,
+        model_name: str,
         job_id: str,
         headers: dict,
         polling_interval: int = DEFAULT_VIDEO_POLLING_INTERVAL_SECONDS,
@@ -275,7 +278,7 @@ class VideoGenerationEvalsTest(BaseTest):
         while time.time() - start_time < timeout:
             try:
                 response = requests.get(
-                    f"{base_url}/{VIDEO_GENERATION_ENDPOINT}/{job_id}",
+                    f"{base_url}/{get_video_job_endpoint(model_name, job_id)}",
                     headers=headers,
                     timeout=30,
                 )
@@ -290,7 +293,7 @@ class VideoGenerationEvalsTest(BaseTest):
                 logger.info(f"Job {job_id} status: {status}")
 
                 if status == VIDEO_JOB_STATUS_COMPLETED:
-                    return self._download_video(base_url, job_id, headers)
+                    return self._download_video(base_url, model_name, job_id, headers)
                 elif status in [VIDEO_JOB_STATUS_FAILED, VIDEO_JOB_STATUS_CANCELLED]:
                     logger.error(f"Video generation {status}: {job_id}")
                     return ""
@@ -304,7 +307,9 @@ class VideoGenerationEvalsTest(BaseTest):
         logger.error(f"Video generation timed out after {timeout}s")
         return ""
 
-    def _download_video(self, base_url: str, job_id: str, headers: dict) -> str:
+    def _download_video(
+        self, base_url: str, model_name: str, job_id: str, headers: dict
+    ) -> str:
         """Download generated video.
 
         Returns:
@@ -319,7 +324,7 @@ class VideoGenerationEvalsTest(BaseTest):
             video_path = output_dir / f"{job_id}.mp4"
 
             response = requests.get(
-                f"{base_url}/{VIDEO_GENERATION_ENDPOINT}/{job_id}/download",
+                get_video_download_url(base_url, model_name, job_id, headers),
                 headers=headers,
                 timeout=300,
                 stream=True,
