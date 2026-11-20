@@ -43,7 +43,7 @@ class TestGemmaTrainingServiceCreateJob:
     @pytest.fixture
     def mock_settings(self):
         settings = MagicMock()
-        settings.model_runner = "training-gemma-lora"
+        settings.model_runner = "ttml-training-lora"
         settings.training_model = ModelNames.GEMMA_1_1_2B_IT.value
         settings.device = "p150"
         settings.download_weights_from_service = False
@@ -74,7 +74,7 @@ class TestLlamaTrainingServiceCreateJob:
     @pytest.fixture
     def mock_settings(self):
         settings = MagicMock()
-        settings.model_runner = "training-lora"
+        settings.model_runner = "ttml-training-lora"
         settings.training_model = ModelNames.LLAMA_3_1_8B.value
         settings.device = "p300"
         settings.download_weights_from_service = False

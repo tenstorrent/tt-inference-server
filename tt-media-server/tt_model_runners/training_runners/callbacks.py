@@ -2,22 +2,22 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-"""Callbacks bridging tt-blacksmith's ``Trainer`` to the fine-tuning job API."""
+"""Callbacks bridging ttml's ``Trainer`` to the fine-tuning job API."""
 
 import os
 import time
 import traceback
 from datetime import timedelta
 
-from blacksmith.tools.trainer.callback import Callback
+from ttml.experimental.trainer import Callback
 
 
 class StopTraining(Exception):
     """Raised from a callback to end the training loop early.
 
-    Like any exception, it goes through ``on_error`` and propagates out of
+    Like any exception, it goes through ``on_train_error`` and propagates out of
     ``Trainer.train()``. The runner treats it as a successful end of the job, and
-    the job callbacks' ``on_error`` tell it apart from a real failure.
+    the job callbacks' ``on_train_error`` tell it apart from a real failure.
     """
 
 
@@ -45,16 +45,19 @@ class JobMetricsCallback(JobCallback):
     """Feeds train/validation losses to the job's metrics and logs.
 
     Progress (epoch/step, validation batch index) is logged every step so the
-    job stream moves while tqdm stays on process stdout. Each graph a job
-    compiles (train forward, train backward, validation) is announced right
-    before its first run, since compiling it takes minutes, and the end of the
-    loop is logged with its duration since ``on_train_start``. Loss itself is
-    only logged every ``metrics.steps_freq`` steps, plus once at the end of
-    validation.
+    job stream moves while tqdm stays on process stdout. A job's first train
+    forward, train backward, optimizer and validation passes are announced
+    before they run, since compiling the kernels they use for the first time
+    takes minutes, and the end of the loop is logged with its duration since
+    ``on_train_start``.
+    Loss itself is only logged every ``metrics.train.frequency`` steps and on the
+    run's last step, plus once at the end of validation.
     """
 
     def _reset(self) -> None:
         self._running_loss = None
+        self._running_steps = 0
+        self._total_steps = None
         self._val_batch = 0
         self._compile_announced = set()
         self._train_started_at = None
@@ -62,16 +65,17 @@ class JobMetricsCallback(JobCallback):
         self.last_val_loss = None
 
     def on_optimizer_step_end(self, trainer, window_loss, *args, **kwargs):
-        # window_loss is the device-side sum of scaled micro-batch losses for this
-        # accumulation window (the per-step mean). Summing on the device keeps the
-        # host readback to once per logging window.
+        # window_loss is the mean loss of the step's micro-batches. The logging
+        # window's sum is read with `loss_to_float` once, when it is logged.
         if self._running_loss is None:
             self._running_loss = window_loss
         else:
             self._running_loss = self._running_loss + window_loss
+        self._running_steps += 1
 
     def on_train_start(self, trainer, *args, **kwargs):
         self._train_started_at = time.monotonic()
+        self._total_steps = trainer.total_steps()
         n_batches = None
         try:
             n_batches = len(trainer.train_dataloader)
@@ -83,11 +87,13 @@ class JobMetricsCallback(JobCallback):
         self._logger.info(msg, extra={"log_type": "info", "step": trainer.global_step})
 
     def on_forward_start(self, trainer, batch, *args, **kwargs):
-        self._announce_compile(trainer, "train forward", phase="train")
+        self._announce_compile(trainer, "train forward")
 
     def on_backward_start(self, trainer, loss, *args, **kwargs):
-        # The backward graph compiles lazily, on the first backward call.
-        self._announce_compile(trainer, "train backward", phase="train")
+        self._announce_compile(trainer, "train backward")
+
+    def on_optimizer_step_start(self, trainer, *args, **kwargs):
+        self._announce_compile(trainer, "optimizer")
 
     def on_validation_start(self, trainer, *args, **kwargs):
         self._val_batch = 0
@@ -103,7 +109,7 @@ class JobMetricsCallback(JobCallback):
 
     def on_validation_batch_start(self, trainer, batch, *args, **kwargs):
         # Validation has no forward hook; its forward runs right after this one.
-        self._announce_compile(trainer, "validation", phase="validation")
+        self._announce_compile(trainer, "validation")
 
     def on_validation_batch_end(self, trainer, batch, loss, *args, **kwargs):
         self._val_batch += 1
@@ -124,12 +130,16 @@ class JobMetricsCallback(JobCallback):
             extra={"log_type": "info", "step": global_step},
         )
 
-        steps_freq = trainer.config.metrics.steps_freq
-        if global_step % steps_freq:
+        frequency = trainer.config.metrics.train.frequency
+        if global_step % frequency and global_step != self._total_steps:
             return
 
-        self.last_train_loss = trainer.loss_to_float(self._running_loss) / steps_freq
+        # The last step's window may be shorter than frequency.
+        self.last_train_loss = (
+            trainer.loss_to_float(self._running_loss) / self._running_steps
+        )
         self._running_loss = None
+        self._running_steps = 0
         self._record(trainer, "train_loss", self.last_train_loss, log_type="info")
 
     def on_validation_end(self, trainer, val_loss, *args, **kwargs):
@@ -139,33 +149,35 @@ class JobMetricsCallback(JobCallback):
     def on_train_end(self, trainer, *args, **kwargs):
         self._log_training_end(trainer, cancelled=False)
 
-    def on_error(self, trainer, exception, *args, **kwargs):
-        # max_steps and cancellation end the loop with StopTraining, so on_train_end never fires.
-        if not isinstance(exception, StopTraining):
-            return
-        cancel_event = getattr(self._request, "_cancel_event", None)
-        cancelled = cancel_event is not None and cancel_event.is_set()
-        self._log_training_end(trainer, cancelled=cancelled)
+    def on_train_error(self, trainer, exception, *args, **kwargs):
+        # Cancellation ends the loop with StopTraining, so on_train_end never fires.
+        if isinstance(exception, StopTraining):
+            self._log_training_end(trainer, cancelled=True)
 
     @staticmethod
     def _epoch_step_label(trainer) -> str:
-        num_epochs = getattr(trainer.config, "num_epochs", None)
-        epoch = trainer.epoch + 1
-        epoch_part = f"Epoch {epoch}/{num_epochs}" if num_epochs else f"Epoch {epoch}"
-        return f"{epoch_part} | Step {trainer.global_step}"
+        # The stopping criterion's limit is shown next to what it counts.
+        stopping = trainer.config.stopping_criteria
+        epoch_part = f"Epoch {trainer.epoch + 1}"
+        step_part = f"Step {trainer.global_step}"
+        if stopping.type == "epoch":
+            epoch_part += f"/{stopping.limit}"
+        else:
+            step_part += f"/{stopping.limit}"
+        return f"{epoch_part} | {step_part}"
 
-    def _announce_compile(self, trainer, graph: str, phase: str) -> None:
-        if graph in self._compile_announced:
+    def _announce_compile(self, trainer, pass_name: str) -> None:
+        if pass_name in self._compile_announced:
             return
-        self._compile_announced.add(graph)
+        self._compile_announced.add(pass_name)
         self._logger.info(
-            f"{self._epoch_step_label(trainer)} | Compiling {graph} graph on first "
-            f"{phase} step; this can take several minutes...",
+            f"{self._epoch_step_label(trainer)} | First {pass_name} pass; compiling "
+            "its kernels on first use can take several minutes...",
             extra={"log_type": "info", "step": trainer.global_step},
         )
 
     def _log_training_end(self, trainer, cancelled: bool) -> None:
-        # Raising from on_error would replace StopTraining and fail the job.
+        # Raising from on_train_error would replace StopTraining and fail the job.
         if self._train_started_at is None:
             return
         elapsed = timedelta(seconds=round(time.monotonic() - self._train_started_at))
@@ -190,39 +202,76 @@ class JobMetricsCallback(JobCallback):
                 "epoch": trainer.epoch,
                 "metric_name": name,
                 "value": round(value, 6),
-                "learning_rate": trainer.optimizer.param_groups[0]["lr"],
+                # TODO: record every optimizer's learning rate once the metrics
+                # store has a column for several; jobs train with one optimizer.
+                "learning_rate": trainer.current_learning_rate()[0],
                 "timestamp": time.time(),
             }
         )
 
 
 class AdapterCheckpointCallback(JobCallback):
-    """Saves the LoRA adapter every ``checkpoint.steps_freq`` optimizer steps."""
+    """Saves the LoRA adapter every ``frequency`` optimizer steps of a "step"
+    ``checkpoint.save_strategy``, and on the run's last step.
+
+    Every checkpoint carries the train and validation loss of its own step: the
+    frequency must be a multiple of the metrics' ``frequency``, and the last step
+    logs and validates too.
+    """
 
     def __init__(self, logger, metrics: JobMetricsCallback):
         super().__init__(logger)
         self._metrics = metrics
+        self._total_steps = None
+
+    def _reset(self) -> None:
+        self._total_steps = None
+
+    def on_train_start(self, trainer, *args, **kwargs):
+        self._check_config(trainer)
+        self._total_steps = trainer.total_steps()
+
+    def _check_config(self, trainer) -> None:
+        # Raising here stops the job before it trains.
+        strategy = trainer.config.checkpoint.save_strategy
+        if strategy.type != "step":
+            return
+        metrics = trainer.config.metrics
+        fields = [("metrics.train.frequency", metrics.train.frequency)]
+        if trainer.validation_enabled:
+            fields.append(
+                ("metrics.validation.frequency", metrics.validation.frequency)
+            )
+        for field, metrics_frequency in fields:
+            if strategy.frequency % metrics_frequency:
+                raise ValueError(
+                    f"checkpoint.save_strategy.frequency ({strategy.frequency}) must "
+                    f"be a multiple of {field} ({metrics_frequency}), so every checkpoint "
+                    "carries the metrics of its own step"
+                )
 
     def on_step_end(self, trainer, global_step, *args, **kwargs):
-        config = trainer.config.checkpoint
-        if config.save_strategy != "step":
+        strategy = trainer.config.checkpoint.save_strategy
+        if strategy.type != "step":
             return
-        if global_step % config.steps_freq:
+        if global_step % strategy.frequency and global_step != self._total_steps:
             return
         self._save(trainer)
 
     def _save(self, trainer) -> None:
         checkpoint_id = f"ckpt-step-{trainer.global_step}"
         checkpoint_path = os.path.join(
-            trainer.config.checkpoint.project_dir, checkpoint_id
+            trainer.config.checkpoint.save_strategy.project_dir, checkpoint_id
         )
         try:
-            state_dict = {
-                key: value.cpu()
-                for key, value in trainer.model.state_dict().items()
-                if "lora_" in key
-            }
-            trainer.model.save_pretrained(checkpoint_path, state_dict=state_dict)
+            trainer.save_checkpoint(
+                checkpoint_path,
+                {
+                    "step": trainer.global_step,
+                    "epoch": trainer.epoch,
+                    "metrics": self._checkpoint_metrics(),
+                },
+            )
         except Exception as exception:
             self._logger.error(
                 f"Failed to save checkpoint at step {trainer.global_step}: {exception}"
@@ -256,7 +305,7 @@ class AdapterCheckpointCallback(JobCallback):
 
 
 class JobControlCallback(JobCallback):
-    """Enforces ``max_steps`` and cancellation, and logs real failures to the job."""
+    """Enforces cancellation and logs real failures to the job."""
 
     def _reset(self) -> None:
         self.stop_reason = None
@@ -279,16 +328,9 @@ class JobControlCallback(JobCallback):
 
     def on_train_batch_end(self, trainer, *args, **kwargs):
         self._touch_progress()
-        request = self._request
         # Checked per micro-batch, so cancellation stays responsive even when
         # `global_step` only advances every `gradient_accumulation_steps` batches.
         self._stop_if_cancelled(trainer)
-        if request.max_steps > 0 and trainer.global_step >= request.max_steps:
-            self._stop(
-                trainer,
-                f"Reached max_steps={request.max_steps} at step {trainer.global_step}, "
-                "stopping training.",
-            )
 
     def _stop_if_cancelled(self, trainer) -> None:
         request = self._request
@@ -309,12 +351,19 @@ class JobControlCallback(JobCallback):
         )
         raise StopTraining(reason)
 
-    def on_error(self, trainer, exception, *args, **kwargs):
+    def on_setup_error(self, trainer, exception, *args, **kwargs):
+        self._log_failure(trainer, f"Job failed during setup: {exception}")
+
+    def on_train_error(self, trainer, exception, *args, **kwargs):
         if isinstance(exception, StopTraining):
             return
+        self._log_failure(
+            trainer, f"Job failed at step {trainer.global_step}: {exception}"
+        )
+
+    def _log_failure(self, trainer, message: str) -> None:
         self._logger.error(
-            f"Job failed at step {trainer.global_step}: {exception}",
-            extra={"log_type": "error", "step": trainer.global_step},
+            message, extra={"log_type": "error", "step": trainer.global_step}
         )
         self._logger.error(
             f"Full traceback: {traceback.format_exc()}",

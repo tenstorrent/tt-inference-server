@@ -7,25 +7,20 @@ templates:
 # =============================================================================
 # Training templates
 # =============================================================================
+# ttml (tt-metal's tt-train) runs on the tt-metal media server image, which
+# carries ttml only when built with --build-arg BUILD_TT_TRAIN=true.
 - weights:
     - meta-llama/Llama-3.1-8B-Instruct
-  impl: trainer_training_lora
+  impl: ttml_training_lora
   model_type: TRAINING
-  inference_engine: FORGE
+  inference_engine: MEDIA
   status: EXPERIMENTAL
   uses_tensor_model_cache: false
   env_vars:
-    MODEL_RUNNER: "trainer-training-lora"
+    MODEL_RUNNER: "ttml-training-lora"
     TRAINING_MODEL: "Llama-3.1-8B-Instruct"
     ENABLE_JOB_PERSISTENCE: true
-    TT_METAL_PINNED_MEMORY_CACHE_LIMIT_BYTES: "0"
   device_model_specs:
     - device: P150
-      max_concurrency: 1
-      max_context: 1024
-    - device: P300
-      max_concurrency: 1
-      max_context: 1024
-    - device: P300X2
       max_concurrency: 1
       max_context: 1024

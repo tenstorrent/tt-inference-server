@@ -2,20 +2,31 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-from unittest.mock import MagicMock, patch
+from pathlib import Path
+from unittest.mock import ANY, MagicMock, patch
 
 import pytest
-from config.constants import DatasetLoaders, ModelNames, SupportedModels
+import yaml
+from config.constants import (
+    MODEL_SERVICE_RUNNER_MAP,
+    ModelNames,
+    ModelRunners,
+    ModelServices,
+    SupportedModels,
+)
 from domain.training_request import TrainingRequest
+from pydantic import ValidationError
+from ttml.experimental.trainer import AdamWConfig
 
-MODEL_ID = ModelNames.GEMMA_1_1_2B_IT.value
-HF_REPO_ID = SupportedModels.GEMMA_1_1_2B_IT.value
+MODEL_ID = ModelNames.LLAMA_3_1_8B_INSTRUCT.value
+HF_REPO_ID = SupportedModels.LLAMA_3_1_8B_INSTRUCT.value
 
 
 def _settings(mesh_shape=(1, 1)):
     settings = MagicMock()
     settings.device = "p150"
     settings.device_mesh_shape = mesh_shape
+    settings.model_runner = ModelRunners.TTML_TRAINING_LORA.value
     settings.training_model = MODEL_ID
     settings.use_dynamic_batcher = False
     return settings
@@ -25,11 +36,11 @@ def _build_runner(settings):
     with patch(
         "tt_model_runners.base_device_runner.get_settings", return_value=settings
     ), patch("tt_model_runners.base_device_runner.setup_runner_environment"):
-        from tt_model_runners.forge_training_runners.trainer_training_lora_runner import (
-            TrainerTrainingLoraRunner,
+        from tt_model_runners.training_runners.ttml_training_lora_runner import (
+            TtmlTrainingLoraRunner,
         )
 
-        runner = TrainerTrainingLoraRunner("0")
+        runner = TtmlTrainingLoraRunner("0")
 
     # Swapped in before warmup, since the callbacks capture it there. The
     # runner logs with `extra=`, which conftest's shared MockLogger rejects.
@@ -54,16 +65,26 @@ def runner():
 
 
 def _fake_trainer(
-    grad_accum=1, steps_freq=1, num_epochs=1, val_batches=None, train_batches=None
+    grad_accum=1,
+    frequency=1,
+    num_epochs=1,
+    max_steps=None,
+    val_batches=None,
+    train_batches=None,
 ):
     trainer = MagicMock()
     trainer.config.gradient_accumulation_steps = grad_accum
-    trainer.config.metrics.steps_freq = steps_freq
-    trainer.config.num_epochs = num_epochs
+    trainer.config.metrics.train.frequency = frequency
+    if max_steps is None:
+        trainer.config.stopping_criteria.type = "epoch"
+        trainer.config.stopping_criteria.limit = num_epochs
+    else:
+        trainer.config.stopping_criteria.type = "step"
+        trainer.config.stopping_criteria.limit = max_steps
     trainer.global_step = 0
     trainer.epoch = 0
-    trainer.optimizer.param_groups = [{"lr": 0.001}]
-    # Losses stand in for device tensors; only `loss_to_float` reads them.
+    trainer.current_learning_rate.return_value = [0.001]
+    # The callbacks read losses only through `loss_to_float`.
     trainer.loss_to_float.side_effect = float
     if train_batches is None:
         trainer.train_dataloader.__len__.side_effect = TypeError()
@@ -86,8 +107,19 @@ def _train_raising(exception):
     """What `Trainer.train` does when the loop raises: notify, then re-raise."""
 
     def train(trainer):
-        trainer.callback_handler("on_error", exception)
+        trainer.callback_handler("on_train_error", exception)
         raise exception
+
+    return train
+
+
+def _train_one_step(loss):
+    """What `Trainer.train` tells the callbacks about one optimizer step."""
+
+    def train(trainer):
+        trainer.global_step = 1
+        trainer.callback_handler("on_optimizer_step_end", loss)
+        trainer.callback_handler("on_step_end", 1)
 
     return train
 
@@ -100,11 +132,28 @@ def _job_failures(runner):
     ]
 
 
+class TestRegistration:
+    def test_the_runner_fabric_builds_it(self):
+        settings = _settings()
+        with patch("tt_model_runners.runner_fabric.settings", settings), patch(
+            "tt_model_runners.base_device_runner.get_settings", return_value=settings
+        ), patch("tt_model_runners.base_device_runner.setup_runner_environment"):
+            from tt_model_runners.runner_fabric import get_device_runner
+
+            runner = get_device_runner("0")
+
+        assert type(runner).__name__ == "TtmlTrainingLoraRunner"
+        assert runner.model_name == HF_REPO_ID
+
+    def test_is_a_training_runner(self):
+        training_runners = MODEL_SERVICE_RUNNER_MAP[ModelServices.TRAINING]
+        assert ModelRunners.TTML_TRAINING_LORA in training_runners
+
+
 class TestWarmup:
     @pytest.mark.asyncio
     async def test_builds_trainer_and_callbacks(self, runner):
         assert await runner.warmup() is True
-        assert runner._trainer is not None
         # The control callback must run last so the metrics and checkpoint
         # callbacks still see the step it stops on.
         assert runner._trainer.callback_handler.callbacks == [
@@ -126,104 +175,126 @@ class TestWarmup:
 class TestJobConfig:
     def test_maps_request_fields(self, runner):
         request = _request(
+            model={"lora": {"r": 16, "alpha": 32}},
+            optimizer={"lr": 1e-4, "weight_decay": 0.0},
             batch_size=8,
-            learning_rate=1e-4,
-            num_epochs=3,
             gradient_accumulation_steps=4,
-            dataset_max_sequence_length=256,
-            lora_r=16,
-            lora_alpha=32,
-            steps_freq=5,
-            save_interval=25,
+            max_length=256,
             seed=23,
+            stopping_criteria={"type": "epoch", "limit": 3},
+            metrics={"train": {"frequency": 5}, "validation": {"frequency": 20}},
+            checkpoint={"save_strategy": {"type": "step", "frequency": 25}},
         )
         config = runner._job_config(request)
 
-        assert config.seed == 23
-        assert config.dataset_id == "sst2"
-        assert config.model_name == HF_REPO_ID
+        assert config.dataset.id == "sst2"
+        assert config.model.name == HF_REPO_ID
+        assert config.dtype == "bfloat16"
         assert config.batch_size == 8
-        assert config.learning_rate == 1e-4
-        assert config.num_epochs == 3
+        [optimizer] = config.optimizer
+        assert isinstance(optimizer, AdamWConfig)
+        assert optimizer.lr == 1e-4
+        assert optimizer.weight_decay == 0.0
+        # No modules: it trains every adapter weight.
+        assert not hasattr(optimizer, "modules")
+        assert config.stopping_criteria.type == "epoch"
+        assert config.stopping_criteria.limit == 3
         assert config.gradient_accumulation_steps == 4
+        assert config.metrics.validation.frequency == 20
         assert config.max_length == 256
-        assert config.lora.r == 16
-        assert config.lora.alpha == 32
-        assert config.lora.target_modules == ["q_proj", "v_proj"]
-        assert config.lora.task_type == "CAUSAL_LM"
-        assert config.metrics.steps_freq == 5
-        assert config.checkpoint.project_dir == "/tmp/job"
-        assert config.checkpoint.save_strategy == "step"
-        assert config.checkpoint.steps_freq == 25
+        assert config.seed == 23
+        assert config.model.lora.r == 16
+        assert config.model.lora.alpha == 32
+        assert config.model.lora.target_modules == [
+            "q_proj",
+            "k_proj",
+            "v_proj",
+            "o_proj",
+        ]
+        assert config.model.lora.task_type == "CAUSAL_LM"
+        assert config.metrics.train.frequency == 5
+        assert config.checkpoint.save_strategy.type == "step"
+        assert config.checkpoint.save_strategy.frequency == 25
+        assert config.checkpoint.save_strategy.project_dir == "/tmp/job"
+
+    def test_optimizer_defaults_to_adamw(self, runner):
+        [optimizer] = runner._job_config(_request()).optimizer
+        assert isinstance(optimizer, AdamWConfig)
 
     def test_seed_defaults_to_zero(self, runner):
         assert runner._job_config(_request()).seed == 0
 
-    def test_save_interval_zero_disables_step_saves(self, runner):
-        config = runner._job_config(_request(save_interval=0))
-        assert config.checkpoint.save_strategy == "none"
-
-    def test_checkpoints_are_never_rotated(self, runner):
-        assert runner._job_config(_request()).checkpoint.keep_all_checkpoints is True
-
-    def test_never_initializes_from_a_checkpoint(self, runner):
-        assert runner._job_config(_request()).checkpoint.init_from_checkpoint is False
-
-    def test_checkpoint_dir_is_the_job_output_path(self, runner):
-        request = _request()
-        request._output_model_path = "/adapters/job-a"
-        assert runner._job_config(request).checkpoint.project_dir == "/adapters/job-a"
-
     def test_weight_decay_defaults_to_adamws_own(self, runner):
-        assert runner._job_config(_request()).weight_decay == 0.01
+        assert runner._job_config(_request()).optimizer[0].weight_decay == 0.01
 
-    def test_weight_decay_is_client_settable(self, runner):
-        assert runner._job_config(_request(weight_decay=0.0)).weight_decay == 0.0
+    def test_no_save_disables_step_saves(self, runner):
+        config = runner._job_config(
+            _request(checkpoint={"save_strategy": {"type": "none"}})
+        )
+        assert config.checkpoint.save_strategy.type == "none"
 
-    def test_built_in_datasets_carry_no_custom_config(self, runner):
-        assert runner._job_config(_request()).custom_dataset is None
+    def test_passes_a_step_limit_to_the_trainer(self, runner):
+        config = runner._job_config(
+            _request(stopping_criteria={"type": "step", "limit": 15})
+        )
+        assert config.stopping_criteria.type == "step"
+        assert config.stopping_criteria.limit == 15
+
+    def test_built_in_datasets_carry_no_custom_options(self, runner):
+        assert runner._job_config(_request()).dataset.custom_options is None
+
+    def test_passes_the_dataset_id_as_given(self, runner):
+        # ttml matches dataset ids case-insensitively.
+        config = runner._job_config(_request(dataset={"id": "SST2"}))
+        assert config.dataset.id == "SST2"
 
     def test_maps_a_custom_dataset(self, runner):
         config = runner._job_config(
             _request(
-                dataset_loader=DatasetLoaders.CUSTOM.value,
-                train_dataset_path="/datasets/train.jsonl",
-                val_dataset_path="/datasets/val.jsonl",
-                file_type="jsonl",
-                template="alpaca",
-                column_mapping={"instruction": "prompt", "output": "response"},
+                dataset={
+                    "id": "custom",
+                    "custom_options": {
+                        "file_type": "jsonl",
+                        "train_dataset_path": "/datasets/train.jsonl",
+                        "val_dataset_path": "/datasets/val.jsonl",
+                        "template": "alpaca",
+                        "column_mapping": {
+                            "instruction": "prompt",
+                            "output": "response",
+                        },
+                    },
+                }
             )
         )
 
-        assert config.dataset_id == "custom"
-        assert config.custom_dataset.file_type == "jsonl"
-        assert config.custom_dataset.train_dataset_path == "/datasets/train.jsonl"
-        assert config.custom_dataset.val_dataset_path == "/datasets/val.jsonl"
-        assert config.custom_dataset.template == "alpaca"
-        assert config.custom_dataset.column_mapping == {
+        assert config.dataset.id == "custom"
+        custom_options = config.dataset.custom_options
+        assert custom_options.file_type == "jsonl"
+        assert custom_options.train_dataset_path == "/datasets/train.jsonl"
+        assert custom_options.val_dataset_path == "/datasets/val.jsonl"
+        assert custom_options.template == "alpaca"
+        assert custom_options.column_mapping == {
             "instruction": "prompt",
             "output": "response",
         }
 
-    def test_a_custom_dataset_may_omit_validation_and_columns(self, runner):
+    def test_a_custom_dataset_may_omit_all_but_the_train_path(self, runner):
         config = runner._job_config(
             _request(
-                dataset_loader=DatasetLoaders.CUSTOM.value,
-                train_dataset_path="/datasets/train.json",
-                file_type="json",
-                template="alpaca",
+                dataset={
+                    "id": "custom",
+                    "custom_options": {"train_dataset_path": "/datasets/train.json"},
+                }
             )
         )
 
-        # blacksmith skips validation without a path and infers the columns by
-        # name without a mapping.
-        assert config.custom_dataset.val_dataset_path is None
-        assert config.custom_dataset.column_mapping is None
-
-    def test_never_configures_a_mesh(self, runner):
-        config = runner._job_config(_request())
-        assert config.mesh_shape is None
-        assert config.model_sharding_patterns is None
+        # ttml's defaults; it runs no validation batches without a path, and
+        # reads the template's fields from same-named columns without a mapping.
+        custom_options = config.dataset.custom_options
+        assert custom_options.file_type == "json"
+        assert custom_options.template == "alpaca"
+        assert custom_options.val_dataset_path is None
+        assert custom_options.column_mapping is None
 
     def test_wandb_is_disabled(self, runner):
         assert runner._job_config(_request()).logging.use_wandb is False
@@ -237,24 +308,21 @@ class TestValidate:
         with pytest.raises(ValueError, match="does not match"):
             runner._validate(_request(device_type="p300"))
 
-    def test_accepts_a_supported_dtype(self, runner):
-        runner._validate(_request(dtype="torch.float32"))
-
-    def test_rejects_unsupported_dtype(self, runner):
-        with pytest.raises(ValueError, match="Unsupported dtype"):
-            runner._validate(_request(dtype="torch.float8"))
+    def test_leaves_the_dtype_to_the_trainer(self, runner):
+        # The trainer's setup rejects it, before it opens the device.
+        runner._validate(_request(dtype="float32"))
 
     def test_rejects_unknown_dataset(self, runner):
-        with pytest.raises(ValueError, match="Unsupported dataset_loader"):
-            runner._validate(_request(dataset_loader="nonexistent"))
+        with pytest.raises(ValueError, match="Unsupported dataset.id"):
+            runner._validate(_request(dataset={"id": "nonexistent"}))
 
     def test_rejects_other_optimizer(self, runner):
-        with pytest.raises(ValueError, match="Unsupported optimizer"):
-            runner._validate(_request(optimizer="sgd"))
+        with pytest.raises(ValueError, match="Unsupported optimizer.type"):
+            runner._validate(_request(optimizer={"type": "sgd"}))
 
-    def test_rejects_other_ignored_index(self, runner):
-        with pytest.raises(ValueError, match="Unsupported ignored_index"):
-            runner._validate(_request(ignored_index=0))
+    def test_rejects_full_fine_tuning(self, runner):
+        with pytest.raises(ValueError, match="Full fine-tuning is not supported"):
+            runner._validate(_request(model={"lora": None}))
 
 
 class TestTrainingRequest:
@@ -278,33 +346,63 @@ class TestTrainingRequest:
             request.touch_progress()
             assert tracker.value == 111.0
 
-    def test_a_custom_dataset_requires_path_file_type_and_template(self):
-        with pytest.raises(ValueError, match="train_dataset_path"):
-            _request(
-                dataset_loader=DatasetLoaders.CUSTOM.value,
-                file_type="json",
-                template="alpaca",
-            )
-        with pytest.raises(ValueError, match="file_type"):
-            _request(
-                dataset_loader=DatasetLoaders.CUSTOM.value,
-                train_dataset_path="/datasets/train.json",
-                template="alpaca",
-            )
-        with pytest.raises(ValueError, match="template"):
-            _request(
-                dataset_loader=DatasetLoaders.CUSTOM.value,
-                train_dataset_path="/datasets/train.json",
-                file_type="json",
-            )
+    def test_a_custom_dataset_requires_custom_options(self):
+        with pytest.raises(ValidationError, match="custom_options is required"):
+            _request(dataset={"id": "Custom"})
 
-    def test_built_in_datasets_need_no_paths(self):
-        assert _request().train_dataset_path is None
-        assert _request().file_type is None
-        assert _request().template is None
+    def test_custom_options_require_a_train_path(self):
+        with pytest.raises(ValidationError, match="train_dataset_path"):
+            _request(dataset={"id": "custom", "custom_options": {"template": "alpaca"}})
 
-    def test_val_steps_freq_zero_is_allowed(self):
-        assert _request(val_steps_freq=0).val_steps_freq == 0
+    def test_trains_lora_by_default(self):
+        assert _request().model.lora.r == 4
+        assert _request(model={}).model.lora.r == 4
+
+    def test_lora_can_be_null(self):
+        assert _request(model={"lora": None}).model.lora is None
+
+    def test_built_in_datasets_need_no_custom_options(self):
+        assert _request().dataset.custom_options is None
+
+    def test_validation_frequency_zero_is_allowed(self):
+        request = _request(metrics={"validation": {"frequency": 0}})
+        assert request.metrics.validation.frequency == 0
+
+    def test_stops_after_500_steps_by_default(self):
+        stopping = _request().stopping_criteria
+        assert (stopping.type, stopping.limit) == ("step", 500)
+
+    def test_saves_every_100_steps_by_default(self):
+        strategy = _request().checkpoint.save_strategy
+        assert (strategy.type, strategy.frequency) == ("step", 100)
+
+    @pytest.mark.parametrize(
+        "fields",
+        [
+            {"lora_r": 8},
+            {"dataset_loader": "SST2"},
+            {"save_interval": 0},
+            {"model": {"lora": {"rank": 8}}},
+            {"stopping_criteria": {"type": "step", "limit": 10, "max": 3}},
+        ],
+    )
+    def test_rejects_unknown_fields(self, fields):
+        with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+            _request(**fields)
+
+    def test_accepts_the_nightly_workflows_request(self):
+        expected = (
+            Path(__file__).parents[2]
+            / "workflows/training/expected/llama_3_1_8b_instruct_sst2.yaml"
+        )
+        body = yaml.safe_load(expected.read_text())["request"]
+        request = _request(**body)
+        assert request.stopping_criteria.limit == 15
+        assert request.checkpoint.save_strategy.type == "none"
+
+    def test_rejects_an_unknown_save_strategy(self):
+        with pytest.raises(ValidationError):
+            _request(checkpoint={"save_strategy": {"type": "epoch"}})
 
 
 class TestRun:
@@ -321,6 +419,51 @@ class TestRun:
     # These patch the class rather than the instance: run()'s finally
     # calls trainer.cleanup(), which clears the instance __dict__.
     @pytest.mark.asyncio
+    async def test_records_a_step_and_saves_it_through_the_trainer(self, runner):
+        await runner.warmup()
+        request = _request(
+            optimizer={"lr": 1e-4},
+            metrics={"train": {"frequency": 1}},
+            checkpoint={"save_strategy": {"type": "step", "frequency": 1}},
+        )
+        trainer_class = type(runner._trainer)
+
+        with patch.object(trainer_class, "train", _train_one_step(2.0)), patch.object(
+            trainer_class, "save_checkpoint", autospec=True
+        ) as save_checkpoint:
+            runner.run([request])
+
+        [metric] = request._training_metrics
+        assert metric["metric_name"] == "train_loss"
+        assert metric["value"] == 2.0
+        assert metric["learning_rate"] == 1e-4
+        save_checkpoint.assert_called_once_with(
+            ANY,
+            "/tmp/job/ckpt-step-1",
+            {"step": 1, "epoch": 0, "metrics": {"train_loss": 2.0}},
+        )
+        assert [c["id"] for c in request._training_checkpoints] == ["ckpt-step-1"]
+
+    @pytest.mark.asyncio
+    async def test_a_failed_save_records_no_checkpoint(self, runner):
+        await runner.warmup()
+        request = _request(
+            metrics={"train": {"frequency": 1}},
+            checkpoint={"save_strategy": {"type": "step", "frequency": 1}},
+        )
+        trainer_class = type(runner._trainer)
+
+        with patch.object(trainer_class, "train", _train_one_step(2.0)), patch.object(
+            trainer_class, "save_checkpoint", side_effect=OSError("disk full")
+        ):
+            assert runner.run([request]) == ["/tmp/job"]
+
+        assert request._training_checkpoints == []
+        runner.logger.error.assert_any_call(
+            "Failed to save checkpoint at step 1: disk full"
+        )
+
+    @pytest.mark.asyncio
     async def test_reraises_training_failure_and_reports_it_once(self, runner):
         await runner.warmup()
         boom = RuntimeError("device fell over")
@@ -334,12 +477,10 @@ class TestRun:
 
     @pytest.mark.asyncio
     async def test_stop_training_ends_the_job_successfully(self, runner):
-        from tt_model_runners.forge_training_runners.blacksmith_callbacks import (
-            StopTraining,
-        )
+        from tt_model_runners.training_runners.callbacks import StopTraining
 
         await runner.warmup()
-        stop = StopTraining("Reached max_steps=2")
+        stop = StopTraining("Job cancelled at step 2")
 
         with patch.object(type(runner._trainer), "train", _train_raising(stop)):
             assert runner.run([_request()]) == ["/tmp/job"]
@@ -347,7 +488,7 @@ class TestRun:
         assert _job_failures(runner) == []
 
     @pytest.mark.asyncio
-    async def test_reports_pre_training_failure_to_callbacks(self, runner):
+    async def test_reports_a_setup_failure_to_callbacks(self, runner):
         await runner.warmup()
         boom = RuntimeError("dataset missing")
 
@@ -355,7 +496,7 @@ class TestRun:
             with pytest.raises(RuntimeError, match="dataset missing"):
                 runner.run([_request()])
 
-        assert _job_failures(runner) == ["Job failed at step 0: dataset missing"]
+        assert _job_failures(runner) == ["Job failed during setup: dataset missing"]
 
     @pytest.mark.asyncio
     async def test_announces_the_weight_download_before_the_model_loads(self, runner):
@@ -395,30 +536,6 @@ class TestRun:
 
         assert runner._trainer.config is None
 
-    @pytest.mark.asyncio
-    async def test_drops_compiled_graphs_after_each_job(self, runner):
-        await runner.warmup()
-
-        with patch(
-            "tt_model_runners.forge_training_runners.trainer_training_lora_runner.torch"
-        ) as torch:
-            runner.run([_request()])
-
-        torch._dynamo.reset.assert_called_once_with()
-
-    @pytest.mark.asyncio
-    async def test_failed_dynamo_reset_keeps_the_job_error(self, runner):
-        await runner.warmup()
-
-        with patch.object(
-            type(runner._trainer), "train", side_effect=RuntimeError("boom")
-        ), patch(
-            "tt_model_runners.forge_training_runners.trainer_training_lora_runner.torch"
-        ) as torch:
-            torch._dynamo.reset.side_effect = RuntimeError("reset failed")
-            with pytest.raises(RuntimeError, match="boom"):
-                runner.run([_request()])
-
 
 class TestCleanup:
     @pytest.mark.asyncio
@@ -443,42 +560,31 @@ class TestCleanup:
 
 class TestJobControlCallback:
     def _callback(self, request):
-        from tt_model_runners.forge_training_runners.blacksmith_callbacks import (
-            JobControlCallback,
-        )
+        from tt_model_runners.training_runners.callbacks import JobControlCallback
 
         callback = JobControlCallback(MagicMock())
         callback.bind(request)
         return callback
 
-    def test_stops_at_max_steps(self):
-        from tt_model_runners.forge_training_runners.blacksmith_callbacks import (
-            StopTraining,
-        )
+    def test_is_a_ttml_callback(self):
+        from tt_model_runners.training_runners.callbacks import JobCallback
+        from ttml.experimental.trainer import Callback
 
-        request = _request(max_steps=2)
-        request._cancel_event = None
+        assert issubclass(JobCallback, Callback)
+
+    def test_does_not_stop_a_running_job(self):
+        # The trainer's stopping criterion ends the run, not this callback.
+        request = _request()
+        request._cancel_event = MagicMock()
+        request._cancel_event.is_set.return_value = False
         callback = self._callback(request)
-        trainer = _fake_trainer()
-
-        trainer.global_step = 1
-        callback.on_train_batch_end(trainer)
-
-        trainer.global_step = 2
-        with pytest.raises(StopTraining, match="max_steps=2"):
-            callback.on_train_batch_end(trainer)
-
-    def test_does_not_stop_when_max_steps_is_zero(self):
-        request = _request(max_steps=0)
-        request._cancel_event = None
-        callback = self._callback(request)
-        trainer = _fake_trainer()
+        trainer = _fake_trainer(max_steps=2)
         trainer.global_step = 1000
 
         callback.on_train_batch_end(trainer)
 
     def test_training_batch_updates_progress_heartbeat(self):
-        request = _request(max_steps=0)
+        request = _request()
         request._cancel_event = None
         tracker = MagicMock()
         tracker.value = 1.0
@@ -497,7 +603,7 @@ class TestJobControlCallback:
         "callback_method", ["on_train_start", "on_validation_start"]
     )
     def test_phase_start_updates_progress_heartbeat(self, callback_method):
-        request = _request(max_steps=0)
+        request = _request()
         tracker = MagicMock()
         tracker.value = 1.0
         request._progress_tracker = tracker
@@ -512,11 +618,9 @@ class TestJobControlCallback:
         assert tracker.value == 11.0
 
     def test_stops_on_cancel(self):
-        from tt_model_runners.forge_training_runners.blacksmith_callbacks import (
-            StopTraining,
-        )
+        from tt_model_runners.training_runners.callbacks import StopTraining
 
-        request = _request(max_steps=0)
+        request = _request()
         request._cancel_event = MagicMock()
         request._cancel_event.is_set.return_value = True
         callback = self._callback(request)
@@ -525,11 +629,9 @@ class TestJobControlCallback:
             callback.on_train_batch_end(_fake_trainer())
 
     def test_stops_on_cancel_during_validation(self):
-        from tt_model_runners.forge_training_runners.blacksmith_callbacks import (
-            StopTraining,
-        )
+        from tt_model_runners.training_runners.callbacks import StopTraining
 
-        request = _request(max_steps=0)
+        request = _request()
         request._cancel_event = MagicMock()
         request._cancel_event.is_set.return_value = True
         callback = self._callback(request)
@@ -541,15 +643,13 @@ class TestJobControlCallback:
         assert "Job cancelled at step 0" in callback._logger.info.call_args.args[0]
 
     def test_stop_is_not_logged_as_an_error(self):
-        from tt_model_runners.forge_training_runners.blacksmith_callbacks import (
-            StopTraining,
-        )
+        from tt_model_runners.training_runners.callbacks import StopTraining
 
         request = _request()
         request._cancel_event = None
         callback = self._callback(request)
 
-        callback.on_error(_fake_trainer(), StopTraining("max steps"))
+        callback.on_train_error(_fake_trainer(), StopTraining("Job cancelled"))
         callback._logger.error.assert_not_called()
 
     def test_real_failure_is_logged(self):
@@ -558,7 +658,7 @@ class TestJobControlCallback:
         callback = self._callback(request)
         boom = RuntimeError("boom")
 
-        callback.on_error(_fake_trainer(), boom)
+        callback.on_train_error(_fake_trainer(), boom)
         error_messages = [
             call.args[0] for call in callback._logger.error.call_args_list
         ]
@@ -567,12 +667,22 @@ class TestJobControlCallback:
         )
         assert any("Full traceback:" in msg for msg in error_messages)
 
+    def test_setup_failure_is_logged(self):
+        request = _request()
+        request._cancel_event = None
+        callback = self._callback(request)
+
+        callback.on_setup_error(_fake_trainer(), RuntimeError("no weights"))
+        error_messages = [
+            call.args[0] for call in callback._logger.error.call_args_list
+        ]
+        assert error_messages[0] == "Job failed during setup: no weights"
+        assert "Full traceback:" in error_messages[1]
+
 
 class TestJobMetricsCallback:
     def _callback(self, request):
-        from tt_model_runners.forge_training_runners.blacksmith_callbacks import (
-            JobMetricsCallback,
-        )
+        from tt_model_runners.training_runners.callbacks import JobMetricsCallback
 
         callback = JobMetricsCallback(MagicMock())
         callback.bind(request)
@@ -581,7 +691,7 @@ class TestJobMetricsCallback:
     def test_records_window_loss_after_an_optimizer_step(self):
         request = _request()
         callback = self._callback(request)
-        trainer = _fake_trainer(grad_accum=2, steps_freq=1)
+        trainer = _fake_trainer(grad_accum=2, frequency=1)
 
         callback.on_optimizer_step_end(trainer, 3.0)
         assert request._training_metrics == []
@@ -593,20 +703,20 @@ class TestJobMetricsCallback:
     def test_averages_steps_within_the_logging_window(self):
         request = _request()
         callback = self._callback(request)
-        trainer = _fake_trainer(grad_accum=1, steps_freq=2)
+        trainer = _fake_trainer(grad_accum=1, frequency=2)
 
         for step, loss in enumerate((1.0, 3.0), start=1):
             callback.on_optimizer_step_end(trainer, loss)
             _end_step(callback, trainer, step)
 
         assert [m["value"] for m in request._training_metrics] == [2.0]
-        # One host readback per logging window, not one per step.
+        # Read once per logging window, not once per step.
         trainer.loss_to_float.assert_called_once_with(4.0)
 
     def test_logs_epoch_and_step_every_step_without_loss(self):
         request = _request()
         callback = self._callback(request)
-        trainer = _fake_trainer(grad_accum=1, steps_freq=2, num_epochs=3)
+        trainer = _fake_trainer(grad_accum=1, frequency=2, num_epochs=3)
 
         for step, loss in enumerate((1.0, 3.0), start=1):
             callback.on_optimizer_step_end(trainer, loss)
@@ -629,6 +739,14 @@ class TestJobMetricsCallback:
         assert loss_messages == [
             "Epoch 1/3 | Step 2 | train_loss: 2.000000",
         ]
+
+    def test_labels_the_step_limit_of_a_step_criterion(self):
+        callback = self._callback(_request())
+        trainer = _fake_trainer(frequency=10, max_steps=500)
+
+        _end_step(callback, trainer, 7)
+
+        assert callback._logger.info.call_args_list[0].args[0] == "Epoch 1 | Step 7/500"
 
     def test_logs_train_batch_count_at_train_start(self):
         request = _request()
@@ -672,10 +790,11 @@ class TestJobMetricsCallback:
         assert callback.last_val_loss == 1.25
         assert request._training_metrics[0]["metric_name"] == "val_loss"
         assert request._training_metrics[0]["value"] == 1.25
+        assert request._training_metrics[0]["learning_rate"] == 0.001
 
-    def test_announces_each_compile_once_before_its_first_step(self):
+    def test_announces_each_compile_once_before_its_first_pass(self):
         callback = self._callback(_request())
-        trainer = _fake_trainer(steps_freq=10, num_epochs=2, val_batches=2)
+        trainer = _fake_trainer(frequency=10, num_epochs=2, val_batches=2)
 
         # The initial validation pass, then two training steps, in `Trainer.train` order.
         callback.on_validation_start(trainer)
@@ -685,24 +804,29 @@ class TestJobMetricsCallback:
         for step in (1, 2):
             callback.on_forward_start(trainer, batch=None)
             callback.on_backward_start(trainer, loss=1.0)
+            callback.on_optimizer_step_start(trainer)
             _end_step(callback, trainer, step)
 
         messages = [call.args[0] for call in callback._logger.info.call_args_list]
         assert messages == [
             "Epoch 1/2 | Step 0 | Starting validation (2 batches)",
             (
-                "Epoch 1/2 | Step 0 | Compiling validation graph on first validation "
-                "step; this can take several minutes..."
+                "Epoch 1/2 | Step 0 | First validation pass; compiling its kernels "
+                "on first use can take several minutes..."
             ),
             "Epoch 1/2 | Step 0 | Validation batch 1/2",
             "Epoch 1/2 | Step 0 | Validation batch 2/2",
             (
-                "Epoch 1/2 | Step 0 | Compiling train forward graph on first train "
-                "step; this can take several minutes..."
+                "Epoch 1/2 | Step 0 | First train forward pass; compiling its kernels "
+                "on first use can take several minutes..."
             ),
             (
-                "Epoch 1/2 | Step 0 | Compiling train backward graph on first train "
-                "step; this can take several minutes..."
+                "Epoch 1/2 | Step 0 | First train backward pass; compiling its kernels "
+                "on first use can take several minutes..."
+            ),
+            (
+                "Epoch 1/2 | Step 0 | First optimizer pass; compiling its kernels "
+                "on first use can take several minutes..."
             ),
             "Epoch 1/2 | Step 1",
             "Epoch 1/2 | Step 2",
@@ -718,14 +842,14 @@ class TestJobMetricsCallback:
 
         messages = [call.args[0] for call in callback._logger.info.call_args_list]
         assert len(messages) == 2
-        assert all("Compiling train forward graph" in message for message in messages)
+        assert all("First train forward pass" in message for message in messages)
 
     def _end_training(self, request, hook, *args):
         """Starts training at t=100s, ends it through `hook` at t=165s, returns the end logs."""
         callback = self._callback(request)
         trainer = _fake_trainer(num_epochs=2)
         with patch(
-            "tt_model_runners.forge_training_runners.blacksmith_callbacks.time.monotonic",
+            "tt_model_runners.training_runners.callbacks.time.monotonic",
             side_effect=[100.0, 165.0],
         ):
             callback.on_train_start(trainer)
@@ -739,36 +863,26 @@ class TestJobMetricsCallback:
             "Epoch 1/2 | Step 3 | Training finished in 0:01:05"
         ]
 
-    def test_stopping_at_max_steps_also_finishes_training(self):
-        from tt_model_runners.forge_training_runners.blacksmith_callbacks import (
-            StopTraining,
-        )
-
-        stop = StopTraining("Reached max_steps=3")
-        assert self._end_training(_request(), "on_error", stop) == [
-            "Epoch 1/2 | Step 3 | Training finished in 0:01:05"
-        ]
-
     def test_logs_the_training_time_when_cancelled(self):
-        from tt_model_runners.forge_training_runners.blacksmith_callbacks import (
-            StopTraining,
-        )
+        from tt_model_runners.training_runners.callbacks import StopTraining
 
         request = _request()
         request._cancel_event = MagicMock()
         request._cancel_event.is_set.return_value = True
         stop = StopTraining("Job cancelled at step 3")
-        assert self._end_training(request, "on_error", stop) == [
+        assert self._end_training(request, "on_train_error", stop) == [
             "Epoch 1/2 | Step 3 | Training cancelled after 0:01:05"
         ]
 
     def test_a_failure_does_not_end_training_with_a_time(self):
-        assert self._end_training(_request(), "on_error", RuntimeError("boom")) == []
+        assert (
+            self._end_training(_request(), "on_train_error", RuntimeError("boom")) == []
+        )
 
 
 class TestAdapterCheckpointCallback:
     def _callback(self, request):
-        from tt_model_runners.forge_training_runners.blacksmith_callbacks import (
+        from tt_model_runners.training_runners.callbacks import (
             AdapterCheckpointCallback,
             JobMetricsCallback,
         )
@@ -782,44 +896,35 @@ class TestAdapterCheckpointCallback:
     def _trainer(
         self,
         save_strategy="step",
-        steps_freq=2,
+        frequency=2,
         project_dir="/tmp/job",
     ):
         trainer = _fake_trainer()
-        trainer.config.checkpoint.save_strategy = save_strategy
-        trainer.config.checkpoint.steps_freq = steps_freq
-        trainer.config.checkpoint.project_dir = project_dir
-        lora = MagicMock()
-        lora.cpu.return_value = "adapter-tensor"
-        trainer.model.state_dict.return_value = {
-            "model.layers.0.weight": MagicMock(),
-            "model.layers.0.q_proj.lora_A.weight": lora,
-        }
+        trainer.config.checkpoint.save_strategy.type = save_strategy
+        trainer.config.checkpoint.save_strategy.frequency = frequency
+        trainer.config.checkpoint.save_strategy.project_dir = project_dir
         return trainer
 
     def test_saves_adapter_on_matching_step(self):
         request = _request()
         callback, _ = self._callback(request)
-        trainer = self._trainer(steps_freq=2)
+        trainer = self._trainer(frequency=2)
 
         _end_step(callback, trainer, 1)
-        trainer.model.save_pretrained.assert_not_called()
+        trainer.save_checkpoint.assert_not_called()
 
         _end_step(callback, trainer, 2)
-        trainer.model.save_pretrained.assert_called_once()
-        path, kwargs = trainer.model.save_pretrained.call_args
-        assert path[0] == "/tmp/job/ckpt-step-2"
-        assert kwargs["state_dict"] == {
-            "model.layers.0.q_proj.lora_A.weight": "adapter-tensor"
-        }
+        trainer.save_checkpoint.assert_called_once_with(
+            "/tmp/job/ckpt-step-2", {"step": 2, "epoch": 0, "metrics": {}}
+        )
         assert [c["id"] for c in request._training_checkpoints] == ["ckpt-step-2"]
 
     def test_writes_under_the_job_project_dir(self):
         request = _request()
         callback, _ = self._callback(request)
-        trainer = self._trainer(steps_freq=1, project_dir="/adapters/job-b")
+        trainer = self._trainer(frequency=1, project_dir="/adapters/job-b")
         _end_step(callback, trainer, 1)
-        assert trainer.model.save_pretrained.call_args.args[0] == (
+        assert trainer.save_checkpoint.call_args.args[0] == (
             "/adapters/job-b/ckpt-step-1"
         )
 
@@ -828,10 +933,10 @@ class TestAdapterCheckpointCallback:
         callback, _ = self._callback(request)
         trainer = self._trainer(save_strategy="none")
         _end_step(callback, trainer, 2)
-        trainer.model.save_pretrained.assert_not_called()
+        trainer.save_checkpoint.assert_not_called()
 
     def test_does_not_save_a_final_or_epoch_adapter(self):
-        from tt_model_runners.forge_training_runners.blacksmith_callbacks import (
+        from tt_model_runners.training_runners.callbacks import (
             AdapterCheckpointCallback,
         )
 
@@ -841,12 +946,12 @@ class TestAdapterCheckpointCallback:
     def test_records_train_and_val_loss(self):
         request = _request()
         callback, metrics = self._callback(request)
-        trainer = self._trainer(steps_freq=1)
+        trainer = self._trainer(frequency=1)
         metrics.last_train_loss = 0.5
         metrics.last_val_loss = 1.25
         _end_step(callback, trainer, 1)
 
-        assert request._training_checkpoints[0]["metrics"] == {
-            "train_loss": 0.5,
-            "val_loss": 1.25,
-        }
+        expected = {"train_loss": 0.5, "val_loss": 1.25}
+        assert request._training_checkpoints[0]["metrics"] == expected
+        # The checkpoint's own metadata carries the same losses.
+        assert trainer.save_checkpoint.call_args.args[1]["metrics"] == expected

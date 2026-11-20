@@ -90,7 +90,7 @@
                 },
                 "impl": {
                   "type": "string",
-                  "description": "Optional. run.py --impl value (hyphenated impl_name), e.g. trainer-training-lora."
+                  "description": "Optional. run.py --impl value (hyphenated impl_name), e.g. ttml-training-lora."
                 },
                 "ci": {
                   "type": "object",
@@ -139,7 +139,7 @@
                       },
                       "impl": {
                         "type": "string",
-                        "description": "Optional. run.py --impl value (hyphenated impl_name), e.g. trainer-training-lora."
+                        "description": "Optional. run.py --impl value (hyphenated impl_name), e.g. ttml-training-lora."
                       },
                       "ci": {
                         "type": "object",
