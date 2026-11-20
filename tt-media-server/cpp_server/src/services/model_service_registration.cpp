@@ -305,7 +305,7 @@ void registerVideo() {
       config::ModelService::VIDEO, [cfg]() -> std::shared_ptr<IService> {
         // One DEVICE_IDS group: the runner runs on a thread of this process and
         // the queue is in memory (no worker process, no shared memory). Several
-        // groups keep the worker processes.
+        // groups, or a multihost launch, keep the worker processes.
         if (VideoService::useInProcess()) {
           TT_LOG_INFO(
               "[RegisterVideo] Creating in-process video service (one device "

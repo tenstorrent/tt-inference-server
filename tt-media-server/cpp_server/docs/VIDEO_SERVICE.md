@@ -23,7 +23,8 @@ Wan2.2. See [Tests](#tests) and [Known limitations](#known-limitations).
 | warmup timeout | none (a hung warmup is not killed) | `WARMUP_TIMEOUT_MS` / weights distribution timeout |
 
 Only the number of `DEVICE_IDS` groups decides the mode; there is no variable for it. A
-Python exception in the runner is
+multihost launch has one group (rank 0 serves HTTP), so it also runs in process; that
+combination has not been run on several hosts. A Python exception in the runner is
 caught in both modes and fails only that job. Everything below describes the worker
 process mode unless it says otherwise; the API, statuses, limits, sweeper and output
 directory work the same in both.
@@ -144,7 +145,7 @@ implement `adapterName()`, `adapterOptions()` and `buildCall()`; override
 `deviceParams()` or `validate()` where the model differs. Add one row to
 `src/runtime/dit/dit_registry.cpp` and, in `python/cpp_dit_adapters/`, an adapter
 registered with `@register("<name>")` that builds the pipeline and calls it. Mesh
-selection, warmup and export come from the shared code.
+selection, warmup, export and the multihost lockstep come from the shared code.
 Tests: `build/dit_runner_test` (C++) and `tests/video/python` (adapters).
 
 ## Trying it with curl
@@ -509,14 +510,15 @@ codes, error cases and the `Range` behaviour are the same):
   folder is enough, no restart. A disk that fills up in the middle of a generation can
   still fail that one job.
 - Orphan `/tmp/tt-video-ipc-<pid>` folders of killed servers are not removed.
-- A stuck-job sweep against a real device hang, a full disk, and several workers are
-  not tested on a device.
+- A stuck-job sweep against a real device hang, a full disk, several workers and
+  multihost launches are not tested on a device.
 - On a T3K, Wan2.2 (T2V and I2V) runs untraced by default: with tracing the output
   is noise. Other devices keep the Python server's default (traced);
   `TT_VIDEO_TRACED=1` turns tracing on explicitly, `0` turns it off.
 - Only `tt-wan2.2` (text-to-video) has run on a device through this server;
   `tt-wan2.2-i2v` is covered by device-free tests of its pipeline arguments (C++)
-  and adapter (a fake pipeline).
+  and adapter (a fake pipeline). The multihost lockstep is tested with a fake
+  transport, not on several hosts.
 - No `/v1/videos/generations/i2v/upload` (multipart) and no media URL download: images
   and references are sent as base64 in the JSON body.
 
@@ -524,7 +526,7 @@ codes, error cases and the `Range` behaviour are the same):
 
 | What | Where |
 |---|---|
-| C++ runner layer without a device (every model's mesh, device parameters, validation and pipeline call, mp4 export with and without sound) | `tests/unit/dit/dit_runner_test.cpp`, run `build/dit_runner_test` |
+| C++ runner layer without a device (every model's mesh, device parameters, validation and pipeline call, mp4 export with and without sound, multihost lockstep) | `tests/unit/dit/dit_runner_test.cpp`, run `build/dit_runner_test` |
 | Python adapters without a device (fake `tt_dit` pipelines; the mesh and runner tables against the Python server) | `tests/video/python/test_cpp_dit_adapters.py`, run with `python -m pytest tests/video/python` |
 | Canary monitor states, tiers and settings | `tests/unit/services/canary_monitor_test.cpp`, run `build/canary_monitor_test` |
 | Unit tests (job store, request validation, Range, faststart, UUID) | `tests/unit/api/video_generate_request_test.cpp`, `tests/unit/api/video_job_store_test.cpp`, run with `ctest` |

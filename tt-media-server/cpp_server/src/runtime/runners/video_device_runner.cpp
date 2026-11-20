@@ -71,8 +71,9 @@ std::string requireMp4(const std::string& path) {
   return path;
 }
 
-// The runner for cfg.pythonRunner with its mesh open. The caller stores it
-// before warmup() so that stop() closes the mesh if warmup throws.
+// The runner for cfg.pythonRunner with its mesh open (wrapped for lockstep on a
+// multihost launch). The caller stores it before warmup() so that stop() closes
+// the mesh if warmup throws.
 tt::dit::RunnerConfig runnerConfigOf(const config::VideoConfig& cfg) {
   tt::dit::RunnerConfig runnerConfig;
   runnerConfig.modelRunner = cfg.pythonRunner;
@@ -99,7 +100,7 @@ std::unique_ptr<tt::dit::IDiTRunner> makeRunner(
 }  // namespace
 
 struct VideoDeviceRunner::PythonState {
-  // The DiTRunner of cfg.pythonRunner.
+  // A DiTRunner, or its multihost LockstepRunner wrapper.
   std::unique_ptr<tt::dit::IDiTRunner> runner;
 };
 

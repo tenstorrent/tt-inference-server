@@ -27,6 +27,7 @@
 #include "dynamo/worker_server.hpp"
 #include "metrics/metrics.hpp"
 #include "profiling/tracy.hpp"
+#include "runtime/runners/video_multihost.hpp"
 #include "runtime/worker/blaze_worker_metrics_renderer.hpp"
 #include "runtime/worker/single_process_worker_metrics.hpp"
 #include "runtime/worker/tts_worker_metrics_renderer.hpp"
@@ -196,6 +197,24 @@ int main(int argc, char* argv[]) {
 
   // Initialize logger first
   tt::utils::ZeroOverheadLogger::initialize(tt::config::logInstanceTag());
+
+  // tt-run ranks 1..N-1 mirror rank 0's device calls and never bind the port.
+  if (tt::runners::isFollowerRank()) {
+    if (!tt::config::isVideoService()) {
+      TT_LOG_CRITICAL(
+          "[Main] MPI follower ranks are implemented for MODEL_SERVICE=video");
+      return 1;
+    }
+    return tt::runners::runVideoFollowerRank();
+  }
+  if (tt::runners::isMultihostLaunch() && tt::config::isVideoService() &&
+      tt::config::numWorkers() != 1) {
+    TT_LOG_CRITICAL(
+        "[Main] Multihost video uses one mesh and one worker. "
+        "Set DEVICE_IDS to a single group, for example (0).");
+    return 1;
+  }
+  tt::runners::startLauncherWatch();
 
   // Setup signal handlers
   std::signal(SIGINT, signalHandler);

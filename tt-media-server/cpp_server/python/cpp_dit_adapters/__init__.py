@@ -5,7 +5,7 @@
 """The only Python of the C++ video worker: the calls into tt_dit.
 
 The C++ server owns everything else (runner classes, mesh and fabric, request
-validation, the arguments of each call, warmup, mp4 export).
+validation, the arguments of each call, warmup, mp4 export, multihost).
 It reaches the pipelines through this package:
 
     adapter = create("wan_t2v", mesh_device, options)   # builds the pipeline
