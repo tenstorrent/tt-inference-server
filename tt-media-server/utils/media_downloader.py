@@ -166,12 +166,17 @@ def _hostname_is_allowed(hostname: str, exact: frozenset, suffixes: frozenset) -
     return any(hostname.endswith("." + suffix) for suffix in suffixes)
 
 
-def check_media_url_policy(url: str) -> httpx.URL:
+def check_media_url_policy(url: str, *, https_only: bool = False) -> httpx.URL:
     """Validate one URL against the download policy; return it parsed.
 
     Parses with ``httpx.URL`` — the exact representation the HTTP client
-    connects with — and is re-run on every redirect destination.
+    connects with — and is re-run on every redirect destination. With
+    ``https_only``, an http URL is refused too.
     """
+    if https_only and not url[:8].lower().startswith("https://"):
+        raise MediaDownloadPolicyError(
+            f"Media URL must be https, got: {redact_url(url)!r}"
+        )
     if not settings.media_url_download_enabled:
         raise MediaDownloadPolicyError(
             "Media URL download is disabled on this server "
@@ -262,7 +267,9 @@ def _get_shared_client() -> httpx.AsyncClient:
         or _shared_client_loop is not loop
     ):
         _shared_client = httpx.AsyncClient(
-            trust_env=not settings.media_url_allow_public_hosts
+            trust_env=not settings.media_url_allow_public_hosts,
+            # Some hosts, e.g. Wikimedia's, refuse httpx's default agent.
+            headers={"User-Agent": "tt-media-server"},
         )
         _shared_client_loop = loop
     _shared_client.cookies.clear()
@@ -274,6 +281,8 @@ async def download_media_url(
     *,
     client: Optional[httpx.AsyncClient] = None,
     deadline: Optional[float] = None,
+    max_bytes: Optional[int] = None,
+    https_only: bool = False,
 ) -> bytes:
     """Download one media asset under the configured URL policy.
 
@@ -288,15 +297,19 @@ async def download_media_url(
         deadline: Optional ``time.monotonic()`` deadline shared across several
             downloads (one budget per request). Defaults to now +
             ``media_url_timeout_seconds``.
+        max_bytes: Optional byte cap below ``media_url_max_bytes``, e.g. an
+            API's own per-image limit.
+        https_only: Refuse an http URL, including after a redirect.
     """
-    max_bytes = settings.media_url_max_bytes
+    if max_bytes is None or max_bytes > settings.media_url_max_bytes:
+        max_bytes = settings.media_url_max_bytes
     max_redirects = max(0, settings.media_url_max_redirects)
     timeout_seconds = settings.media_url_timeout_seconds
     if timeout_seconds <= 0:
         # Operator error → base class → 500 at the endpoint.
         raise MediaDownloadError("media_url_timeout_seconds must be positive")
 
-    current = check_media_url_policy(url)
+    current = check_media_url_policy(url, https_only=https_only)
     http_client = client if client is not None else _get_shared_client()
     if deadline is None:
         deadline = time.monotonic() + timeout_seconds
@@ -344,7 +357,7 @@ async def download_media_url(
                         raise MediaDownloadPolicyError(
                             f"Invalid redirect location {redact_url(location)!r}"
                         ) from exc
-                    current = check_media_url_policy(target)
+                    current = check_media_url_policy(target, https_only=https_only)
                     continue
 
                 if response.status_code >= 400:

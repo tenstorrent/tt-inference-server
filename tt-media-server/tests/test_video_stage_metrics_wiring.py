@@ -68,7 +68,7 @@ def _settings_stub():
     a real value for the load keeps this file independent of collection order.
     """
     settings = SimpleNamespace(
-        model_runner="sp_runner",
+        model_runner="tt-wan2.2",
         model_service="video",
         device_mesh_shape=(1, 1),
         enable_telemetry=False,

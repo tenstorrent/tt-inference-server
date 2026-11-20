@@ -10,16 +10,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from config.constants import (
     DEFAULT_VIDEO_INFERENCE_STEPS,
-    LTX_NUM_INFERENCE_STEPS,
     LTX_TEMPORAL_COMPRESSION,
     MAX_VIDEO_INFERENCE_STEPS,
     MIN_VIDEO_INFERENCE_STEPS,
     JobTypes,
-    ModelRunners,
-    ltx_served_shape,
     snap_num_frames,
 )
-from domain.video_generate_request import _H3_UNREAD_FIELDS, VideoGenerateRequest
+from domain.video_generate_request import VideoGenerateRequest
 from domain.video_i2v_generate_request import (
     ImagePromptEntry,
     VideoI2VGenerateRequest,
@@ -28,13 +25,11 @@ from fastapi import HTTPException
 from pydantic import ValidationError
 from open_ai_api.video import (
     _is_i2v_only_deployment,
-    _sp_peer_is_known_non_ref2va,
     cancel_video_job,
     delete_video_job,
     download_video_content,
     get_jobs_metadata,
     get_video_metadata,
-    reject_ref2va_on_wrong_deployment,
     reject_text_to_video_on_i2v_deployment,
     submit_generate_video_i2v_request,
     submit_generate_video_request,
@@ -92,7 +87,7 @@ class TestIsI2VOnlyDeployment:
     the code under test keeps its reference to the real settings object.
     """
 
-    @patch("open_ai_api.video.settings.model_runner", "tt-wan2.2-i2v")
+    @patch("open_ai_api.video.settings.model_runner", "tt-wan2.2-i2v-lightning")
     def test_i2v_runner_is_detected(self):
         assert _is_i2v_only_deployment() is True
 
@@ -104,39 +99,12 @@ class TestIsI2VOnlyDeployment:
     @patch("open_ai_api.video.settings.model_runner", "tt-wan2.2")
     def test_t2v_runner_ignores_a_contradictory_model_env(self):
         """The runner is 1:1 with its model, so a stale MODEL must not win."""
-        with patch.dict(os.environ, {"MODEL": "Wan2.2-I2V-A14B-Diffusers"}):
+        with patch.dict(os.environ, {"MODEL": "Wan2.2-I2V-A14B-Prodia"}):
             assert _is_i2v_only_deployment() is False
 
     @patch("open_ai_api.video.settings.model_runner", "not-a-runner")
     def test_unknown_runner_is_not_i2v(self):
-        with patch.dict(os.environ, {"MODEL": "Wan2.2-I2V-A14B-Diffusers"}):
-            assert _is_i2v_only_deployment() is False
-
-    @patch("open_ai_api.video.settings.model_runner", "sp_runner")
-    def test_proxy_runner_falls_back_to_model_env(self):
-        """SP_RUNNER serves either T2V or I2V, so MODEL disambiguates it."""
-        with patch.dict(os.environ, {"MODEL": "Wan2.2-I2V-A14B-Diffusers"}):
-            assert _is_i2v_only_deployment() is True
-
-    @patch("open_ai_api.video.settings.model_runner", "sp_runner")
-    def test_proxy_runner_with_t2v_model_is_not_i2v(self):
-        with patch.dict(os.environ, {"MODEL": "Wan2.2-T2V-A14B-Diffusers"}):
-            assert _is_i2v_only_deployment() is False
-
-    @patch("open_ai_api.video.settings.model_runner", "sp_runner")
-    def test_unknown_model_env_is_not_i2v(self):
-        with patch.dict(os.environ, {"MODEL": "not-a-model"}):
-            assert _is_i2v_only_deployment() is False
-
-    @patch("open_ai_api.video.settings.model_runner", "tt-minimax-h3-fl2va")
-    def test_fl2va_runner_is_not_i2v_only(self):
-        """FL2VA shares the t2va transformer and accepts text-only /generations."""
-        with patch.dict(os.environ, {}, clear=True):
-            assert _is_i2v_only_deployment() is False
-
-    @patch("open_ai_api.video.settings.model_runner", "sp_runner")
-    def test_proxy_runner_with_fl2va_model_is_not_i2v_only(self):
-        with patch.dict(os.environ, {"MODEL": "MiniMax-H3-FL2VA"}):
+        with patch.dict(os.environ, {"MODEL": "Wan2.2-I2V-A14B-Prodia"}):
             assert _is_i2v_only_deployment() is False
 
 
@@ -529,129 +497,6 @@ class TestCancelVideoJob:
         assert exc_info.value.detail == "Video job not found"
 
 
-class TestRejectRef2vaOnWrongDeployment:
-    """/generations/ref2va must refuse only a deployment PROVEN not to serve it.
-
-    An SP frontend loads no weights, so MODEL is its only evidence about the
-    peer's task -- and MODEL is advisory there. Recognising any known model name
-    would 422 a working ref2va deployment whose MODEL happens to name something
-    else, so only the H3 T2VA/FL2VA names may trigger the refusal.
-    """
-
-    @staticmethod
-    def _refuses():
-        try:
-            reject_ref2va_on_wrong_deployment()
-        except HTTPException as e:
-            return e.status_code
-        return None
-
-    @patch("open_ai_api.video.settings.model_runner", "tt-minimax-h3-ref2va")
-    def test_in_process_ref2va_runner_is_allowed(self):
-        assert self._refuses() is None
-
-    @patch("open_ai_api.video.settings.model_runner", "tt-minimax-h3-ref2va-lightx2v")
-    def test_in_process_ref2va_lightx2v_runner_is_allowed(self):
-        assert self._refuses() is None
-
-    @patch("open_ai_api.video.settings.model_runner", "tt-minimax-h3-fl2va-lightx2v")
-    def test_in_process_fl2va_lightx2v_runner_is_refused(self):
-        assert self._refuses() == 422
-
-    @patch("open_ai_api.video.settings.model_runner", "tt-minimax-h3-t2va")
-    def test_in_process_t2va_runner_is_refused(self):
-        assert self._refuses() == 422
-
-    @patch("open_ai_api.video.settings.model_runner", "tt-minimax-h3-fasth3")
-    def test_in_process_fasth3_runner_is_refused(self):
-        assert self._refuses() == 422
-
-    @patch.dict(os.environ, {"MODEL": "MiniMax-H3-Ref2VA"})
-    @patch("open_ai_api.video.settings.model_runner", "sp_runner")
-    def test_sp_frontend_for_a_ref2va_peer_is_allowed(self):
-        assert self._refuses() is None
-
-    @patch.dict(os.environ, {"MODEL": "MiniMax-H3-Ref2VA-LightX2V"})
-    @patch("open_ai_api.video.settings.model_runner", "sp_runner")
-    def test_sp_frontend_for_a_ref2va_lightx2v_peer_is_allowed(self):
-        assert self._refuses() is None
-
-    @patch.dict(os.environ, {"MODEL": "MiniMax-H3-FL2VA-LightX2V"})
-    @patch("open_ai_api.video.settings.model_runner", "sp_runner")
-    def test_sp_frontend_naming_fl2va_lightx2v_is_refused(self):
-        assert self._refuses() == 422
-
-    @patch.dict(os.environ, {"MODEL": "MiniMax-H3"})
-    @patch("open_ai_api.video.settings.model_runner", "sp_runner")
-    def test_sp_frontend_naming_t2va_is_refused(self):
-        assert self._refuses() == 422
-
-    @patch.dict(os.environ, {"MODEL": "MiniMax-H3-FL2VA"})
-    @patch("open_ai_api.video.settings.model_runner", "sp_runner")
-    def test_sp_frontend_naming_fl2va_is_refused(self):
-        assert self._refuses() == 422
-
-    @patch.dict(os.environ, {"MODEL": "MiniMax-H3-FastH3"})
-    @patch("open_ai_api.video.settings.model_runner", "sp_runner")
-    def test_sp_frontend_naming_fasth3_is_refused(self):
-        assert self._refuses() == 422
-
-    @patch("open_ai_api.video.settings.model_runner", "sp_runner")
-    def test_sp_frontend_without_model_stays_permissive(self):
-        with patch.dict(os.environ, {}, clear=False):
-            os.environ.pop("MODEL", None)
-            assert self._refuses() is None
-
-    @patch.dict(os.environ, {"MODEL": "Wan2.2-T2V-A14B-Diffusers"})
-    @patch("open_ai_api.video.settings.model_runner", "sp_runner")
-    def test_sp_frontend_naming_an_unrelated_model_stays_permissive(self):
-        """The regression guard: a known name that says nothing about the H3
-        task must not refuse a peer that may well be serving Ref2VA."""
-        assert self._refuses() is None
-
-    @patch.dict(os.environ, {"MODEL": "not-a-model-name"})
-    @patch("open_ai_api.video.settings.model_runner", "sp_runner")
-    def test_sp_frontend_with_an_unknown_model_stays_permissive(self):
-        assert self._refuses() is None
-
-
-class TestSpPeerIsKnownNonRef2va:
-    """The helper must recognise the H3 non-Ref2VA task names."""
-
-    @patch.dict(os.environ, {"MODEL": "MiniMax-H3"})
-    def test_t2va_name(self):
-        assert _sp_peer_is_known_non_ref2va() is True
-
-    @patch.dict(os.environ, {"MODEL": "MiniMax-H3-FL2VA"})
-    def test_fl2va_name(self):
-        assert _sp_peer_is_known_non_ref2va() is True
-
-    @patch.dict(os.environ, {"MODEL": "MiniMax-H3-FastH3"})
-    def test_fasth3_name(self):
-        assert _sp_peer_is_known_non_ref2va() is True
-
-    @patch.dict(os.environ, {"MODEL": "MiniMax-H3-Ref2VA"})
-    def test_ref2va_name_is_not_a_non_ref2va_model(self):
-        assert _sp_peer_is_known_non_ref2va() is False
-
-    @patch.dict(os.environ, {"MODEL": "MiniMax-H3-Ref2VA-LightX2V"})
-    def test_ref2va_lightx2v_name_is_not_a_non_ref2va_model(self):
-        assert _sp_peer_is_known_non_ref2va() is False
-
-    @patch.dict(os.environ, {"MODEL": "Wan2.2-T2V-A14B-Diffusers"})
-    def test_a_known_but_unrelated_model_is_inconclusive(self):
-        assert _sp_peer_is_known_non_ref2va() is False
-
-    @patch.dict(os.environ, {"MODEL": "garbage"})
-    def test_unknown_string_is_inconclusive(self):
-        assert _sp_peer_is_known_non_ref2va() is False
-
-    def test_unset_model_is_inconclusive(self):
-        with patch.dict(os.environ, {}, clear=False):
-            os.environ.pop("MODEL", None)
-            assert _sp_peer_is_known_non_ref2va() is False
-
-
 class TestDownloadTempFileCleanup:
     """The faststart copy is a per-response artefact and must not accumulate."""
 
@@ -913,191 +758,32 @@ class TestVideoGenerateRequestValidation:
             VideoGenerateRequest(prompt=prompt)
 
 
-class TestLTXShapeValidation:
-    """VideoGenerateRequest shape validation against the served LTX config."""
-
-    @staticmethod
-    def _ltx():
-        """Patch settings so the validator takes its LTX branch."""
-        return patch(
-            "domain.video_generate_request.get_settings",
-            return_value=MagicMock(
-                model_runner=ModelRunners.TT_LTX_2_3_DISTILLED.value
-            ),
-        )
-
-    @staticmethod
-    def _wan():
-        return patch(
-            "domain.video_generate_request.get_settings",
-            return_value=MagicMock(model_runner=ModelRunners.TT_WAN_2_2.value),
-        )
-
-    def test_prompt_only_resolves_to_served_shape(self):
-        """The pre-existing client contract: no shape fields at all."""
-        served = ltx_served_shape()
-        with self._ltx():
-            r = VideoGenerateRequest(prompt="A cat walking in the park")
-        assert r.num_frames == served.num_frames
-        assert (r.height, r.width) == (served.height, served.width)
-        assert r.fps == served.fps
-        assert r.duration == pytest.approx(served.num_frames / served.fps)
-        assert r.num_inference_steps == LTX_NUM_INFERENCE_STEPS
-
-    @pytest.mark.parametrize("duration", [6, 6.0, 6.12])
-    def test_duration_snaps_to_served_frame_count(self, duration):
-        """6s at 25fps is 150 frames, which is not 8k+1; it snaps to 153."""
-        with self._ltx():
-            r = VideoGenerateRequest(prompt="p", duration=duration)
-        assert r.num_frames == ltx_served_shape().num_frames
-
-    def test_explicit_served_shape_accepted(self):
-        served = ltx_served_shape()
-        with self._ltx():
-            r = VideoGenerateRequest(
-                prompt="p",
-                duration=6,
-                fps=served.fps,
-                height=served.height,
-                width=served.width,
-            )
-        assert r.num_frames == served.num_frames
-
-    def test_explicit_num_frames_accepted(self):
-        with self._ltx():
-            r = VideoGenerateRequest(
-                prompt="p", num_frames=ltx_served_shape().num_frames
-            )
-        assert r.num_frames == ltx_served_shape().num_frames
-
-    def test_short_duration_rejected(self):
-        """5.8s snaps to 145 frames, which under-delivers and is not served."""
-        with self._ltx(), pytest.raises(ValidationError, match="not served"):
-            VideoGenerateRequest(prompt="p", duration=5.8)
-
-    def test_illegal_frame_count_rejected(self):
-        """150 is not 8k+1 and is not the served count."""
-        with self._ltx(), pytest.raises(ValidationError, match="not served"):
-            VideoGenerateRequest(prompt="p", num_frames=150)
-
-    def test_mismatched_fps_rejected(self):
-        with self._ltx(), pytest.raises(ValidationError, match="fps=24 is not served"):
-            VideoGenerateRequest(prompt="p", fps=24)
-
-    def test_mismatched_height_rejected(self):
-        with self._ltx(), pytest.raises(ValidationError, match="height=720"):
-            VideoGenerateRequest(prompt="p", height=720)
-
-    def test_mismatched_width_rejected(self):
-        with self._ltx(), pytest.raises(ValidationError, match="width=1280"):
-            VideoGenerateRequest(prompt="p", width=1280)
-
-    def test_duration_contradicting_num_frames_rejected(self):
-        with self._ltx(), pytest.raises(ValidationError, match="contradicts"):
-            VideoGenerateRequest(prompt="p", duration=6, num_frames=145)
-
-    def test_error_message_names_the_served_shape(self):
-        """A 422 the caller can act on without reading the source."""
-        served = ltx_served_shape()
-        with self._ltx(), pytest.raises(ValidationError) as exc:
-            VideoGenerateRequest(prompt="p", fps=24)
-        msg = str(exc.value)
-        assert str(served.num_frames) in msg
-        assert f"{served.height}x{served.width}" in msg
-
-    def test_fixed_step_count_reported_not_echoed(self):
-        """The job record reports the fixed schedule, not a client step count."""
-        with self._ltx():
-            r = VideoGenerateRequest(prompt="p")
-        assert r.num_inference_steps == LTX_NUM_INFERENCE_STEPS
-        with self._ltx():
-            r = VideoGenerateRequest(
-                prompt="p", num_inference_steps=LTX_NUM_INFERENCE_STEPS
-            )
-        assert r.num_inference_steps == LTX_NUM_INFERENCE_STEPS
-
-    def test_client_supplied_step_count_rejected(self):
-        with self._ltx(), pytest.raises(ValidationError, match="fixed distilled"):
-            VideoGenerateRequest(prompt="p", num_inference_steps=20)
-
-    # --- the other video models must be unaffected -------------------------
-
-    def test_non_ltx_keeps_default_step_count(self):
-        with self._wan():
-            r = VideoGenerateRequest(prompt="p")
+class TestVideoRequestShape:
+    def test_keeps_default_step_count(self):
+        r = VideoGenerateRequest(prompt="p")
         assert r.num_inference_steps == DEFAULT_VIDEO_INFERENCE_STEPS
 
     @pytest.mark.parametrize(
         "steps", [MIN_VIDEO_INFERENCE_STEPS, 20, MAX_VIDEO_INFERENCE_STEPS]
     )
-    def test_non_ltx_accepts_conventional_step_range(self, steps):
-        with self._wan():
-            r = VideoGenerateRequest(prompt="p", num_inference_steps=steps)
+    def test_accepts_conventional_step_range(self, steps):
+        r = VideoGenerateRequest(prompt="p", num_inference_steps=steps)
         assert r.num_inference_steps == steps
 
     @pytest.mark.parametrize(
         "steps", [MIN_VIDEO_INFERENCE_STEPS - 1, MAX_VIDEO_INFERENCE_STEPS + 1]
     )
-    def test_non_ltx_still_enforces_step_bounds(self, steps):
+    def test_still_enforces_step_bounds(self, steps):
         """Defaulting the field to None must not relax the shared step bounds."""
-        with self._wan(), pytest.raises(ValidationError):
+        with pytest.raises(ValidationError):
             VideoGenerateRequest(prompt="p", num_inference_steps=steps)
 
-    def test_non_ltx_leaves_shape_fields_unresolved(self):
+    def test_leaves_shape_fields_unresolved(self):
         """Wan resolves its shape from settings/mesh, so the request must not
-        pin one. sp_runner's `or DEFAULT` turns these Nones into its defaults."""
-        with self._wan():
-            r = VideoGenerateRequest(prompt="p")
+        pin one."""
+        r = VideoGenerateRequest(prompt="p")
         assert r.height is None and r.width is None
         assert r.num_frames is None and r.fps is None
-
-    # --- LTX and MiniMax-H3 refuse each other's shape fields ----------------
-
-    def test_ltx_rejects_h3_aspect_ratio(self):
-        with self._ltx(), pytest.raises(ValidationError, match="not supported"):
-            VideoGenerateRequest(prompt="p", aspect_ratio="16:9")
-
-    @pytest.mark.parametrize(
-        "field,value",
-        [("fps", 24), ("num_frames", 124), ("negative_prompt", "blurry")],
-    )
-    def test_h3_rejects_unread_fields(self, field, value):
-        h3 = patch(
-            "domain.video_generate_request.get_settings",
-            return_value=MagicMock(model_runner=ModelRunners.TT_MINIMAX_H3_T2VA.value),
-        )
-        with h3, pytest.raises(ValidationError, match="unknown field"):
-            VideoGenerateRequest(prompt="p", **{field: value})
-
-    @pytest.mark.parametrize(
-        "runner",
-        [
-            ModelRunners.TT_MINIMAX_H3_T2VA,
-            ModelRunners.TT_MINIMAX_H3_FL2VA_LIGHTX2V,
-        ],
-    )
-    @pytest.mark.parametrize(
-        "field", ["fps", "num_frames", "num_inference_steps", "negative_prompt"]
-    )
-    def test_h3_accepts_null_unread_fields(self, runner, field):
-        h3 = patch(
-            "domain.video_generate_request.get_settings",
-            return_value=MagicMock(model_runner=runner.value),
-        )
-        with h3:
-            explicit_null = VideoGenerateRequest.model_validate(
-                {"prompt": "p", field: None}
-            )
-            omitted = VideoGenerateRequest(prompt="p")
-        assert getattr(explicit_null, field) == getattr(omitted, field)
-
-    def test_h3_still_rejects_null_unknown_fields(self):
-        h3 = patch(
-            "domain.video_generate_request.get_settings",
-            return_value=MagicMock(model_runner=ModelRunners.TT_MINIMAX_H3_T2VA.value),
-        )
-        with h3, pytest.raises(ValidationError, match="unknown field"):
-            VideoGenerateRequest.model_validate({"prompt": "p", "resolution": None})
 
 
 class TestSnapNumFrames:
@@ -1121,325 +807,6 @@ class TestSnapNumFrames:
     @pytest.mark.parametrize("raw", range(1, 200))
     def test_result_is_always_legal(self, raw):
         assert (snap_num_frames(raw) - 1) % LTX_TEMPORAL_COMPRESSION == 0
-
-
-class TestMiniMaxH3NumInferenceSteps:
-    """MiniMax-H3 does not take num_inference_steps as a client field."""
-
-    @pytest.mark.parametrize(
-        "runner",
-        [
-            "tt-minimax-h3-t2va",
-            "tt-minimax-h3-fl2va",
-            "tt-minimax-h3-ref2va",
-            "tt-minimax-h3-fasth3",
-            "tt-minimax-h3-fl2va-lightx2v",
-            "tt-minimax-h3-ref2va-lightx2v",
-        ],
-    )
-    @patch("open_ai_api.video.settings.use_async_video", True)
-    async def test_job_echo_omits_unread_fields(self, runner, h3_admission):
-        from open_ai_api.video import _submit_video_request
-
-        mock_service = MagicMock()
-        mock_service.create_job = AsyncMock(return_value={"id": "job_1"})
-        with patch(
-            "domain.video_generate_request.get_settings",
-            return_value=MagicMock(model_runner=runner),
-        ):
-            request = VideoGenerateRequest(prompt="a fox")
-            await _submit_video_request(request, mock_service)
-
-        echoed = mock_service.create_job.await_args.kwargs["request_parameters"]
-        assert not set(echoed) & _H3_UNREAD_FIELDS
-        assert echoed["prompt"] == "a fox"
-
-    @pytest.mark.parametrize(
-        "runner",
-        [
-            "tt-minimax-h3-t2va",
-            "tt-minimax-h3-fl2va",
-            "tt-minimax-h3-ref2va",
-            "tt-minimax-h3-fasth3",
-            "tt-minimax-h3-fl2va-lightx2v",
-            "tt-minimax-h3-ref2va-lightx2v",
-        ],
-    )
-    @pytest.mark.parametrize("steps", [20, 50])
-    @patch("domain.video_generate_request.get_settings")
-    def test_client_value_rejected(self, mock_settings, runner, steps):
-        from pydantic import ValidationError
-
-        mock_settings.return_value.model_runner = runner
-        with pytest.raises(ValidationError, match="num_inference_steps"):
-            VideoGenerateRequest(prompt="a fox", num_inference_steps=steps)
-
-    @patch("domain.video_generate_request.get_settings")
-    def test_fl2va_inherits_the_refusal(self, mock_settings):
-        from pydantic import ValidationError
-
-        mock_settings.return_value.model_runner = "tt-minimax-h3-fl2va"
-        with pytest.raises(ValidationError, match="num_inference_steps"):
-            VideoI2VGenerateRequest(
-                prompt="a fox",
-                num_inference_steps=20,
-                image_prompts=[ImagePromptEntry(image=_tiny_png_base64(), frame_pos=0)],
-            )
-
-
-@pytest.fixture
-def h3_admission():
-    """Stub the tt-metal admission re-exports; the unit tests run without tt-metal."""
-    import tt_model_runners.minimax_h3_policy as policy
-
-    stubs = {
-        "admit_request": MagicMock(),
-        "check_reference_kinds": MagicMock(),
-        "MiniMaxH3ReferenceInfo": lambda **fields: fields,
-        "MINIMAX_H3_KEYFRAME_MIN_SIDE": 256,
-        "MINIMAX_H3_KEYFRAME_MAX_SIDE": 5760,
-    }
-    for name, value in stubs.items():
-        setattr(policy, name, value)
-    yield stubs["admit_request"]
-    for name in stubs:
-        delattr(policy, name)
-
-
-def _decoded_size(size):
-    image_manager = MagicMock()
-    image_manager.return_value.base64_to_pil_image.return_value.size = size
-    return patch("open_ai_api.video.ImageManager", image_manager)
-
-
-class TestMiniMaxH3Admission:
-    """MiniMax-H3 requests are admitted at submit against the model's served
-    envelope, so an unserved one is a 422 rather than a 202 and a failed job.
-    Other models are not admitted."""
-
-    @pytest.mark.parametrize(
-        "runner",
-        [
-            "tt-minimax-h3-t2va",
-            "tt-minimax-h3-fl2va",
-            "tt-minimax-h3-ref2va",
-            "tt-minimax-h3-fasth3",
-            "tt-minimax-h3-fl2va-lightx2v",
-            "tt-minimax-h3-ref2va-lightx2v",
-        ],
-    )
-    @patch("domain.video_generate_request.get_settings")
-    def test_in_process_runner_is_admitted(self, mock_settings, runner, h3_admission):
-        from open_ai_api.video import _check_request_media
-
-        mock_settings.return_value.model_runner = runner
-        request = VideoGenerateRequest(
-            prompt="a fox", aspect_ratio="2:1", duration=30, height=768, width=1344
-        )
-        _check_request_media(request)
-        h3_admission.assert_called_once_with(
-            aspect_ratio="2:1",
-            duration_s=30,
-            height=768,
-            width=1344,
-            keyframe_sizes={},
-            references=None,
-        )
-
-    @patch("domain.video_generate_request.get_settings")
-    def test_refusal_is_a_422(self, mock_settings, h3_admission):
-        from open_ai_api.video import _check_request_media
-
-        mock_settings.return_value.model_runner = "tt-minimax-h3-t2va"
-        h3_admission.side_effect = ValueError("duration must be a whole number")
-        with pytest.raises(HTTPException) as exc_info:
-            _check_request_media(VideoGenerateRequest(prompt="a fox", duration=30))
-        assert exc_info.value.status_code == 422
-        assert "whole number" in exc_info.value.detail
-
-    @pytest.mark.parametrize(
-        "model",
-        [
-            "MiniMax-H3",
-            "MiniMax-H3-FL2VA",
-            "MiniMax-H3-Ref2VA",
-            "MiniMax-H3-FastH3",
-            "MiniMax-H3-FL2VA-LightX2V",
-            "MiniMax-H3-Ref2VA-LightX2V",
-        ],
-    )
-    @patch("domain.video_generate_request.get_settings")
-    def test_sp_runner_with_h3_model_is_admitted(
-        self, mock_settings, model, h3_admission
-    ):
-        from open_ai_api.video import _check_request_media
-
-        mock_settings.return_value.model_runner = "sp_runner"
-        with patch.dict(os.environ, {"MODEL": model}):
-            _check_request_media(VideoGenerateRequest(prompt="a fox", duration=30))
-        h3_admission.assert_called_once()
-
-    @patch("domain.video_generate_request.get_settings")
-    def test_sp_runner_without_model_is_not_admitted(self, mock_settings, h3_admission):
-        from open_ai_api.video import _check_request_media
-
-        mock_settings.return_value.model_runner = "sp_runner"
-        with patch.dict(os.environ, {}, clear=True):
-            _check_request_media(VideoGenerateRequest(prompt="a fox", duration=30))
-        h3_admission.assert_not_called()
-
-    @patch("domain.video_generate_request.get_settings")
-    def test_wan_runner_ignores_stale_h3_model_env(self, mock_settings, h3_admission):
-        from open_ai_api.video import _check_request_media
-
-        mock_settings.return_value.model_runner = "tt-wan2.2"
-        with patch.dict(os.environ, {"MODEL": "MiniMax-H3-FL2VA"}):
-            _check_request_media(VideoGenerateRequest(prompt="a fox", duration=30))
-        h3_admission.assert_not_called()
-
-    @patch("domain.video_generate_request.get_settings")
-    def test_keyframe_sizes_are_admitted(self, mock_settings, h3_admission):
-        from open_ai_api.video import _check_request_media
-
-        mock_settings.return_value.model_runner = "tt-minimax-h3-fl2va"
-        request = VideoI2VGenerateRequest(
-            prompt="a fox",
-            image_prompts=[ImagePromptEntry(image=_tiny_png_base64(), frame_pos=0)],
-        )
-        with _decoded_size((1344, 768)):
-            _check_request_media(request)
-        assert h3_admission.call_args.kwargs["keyframe_sizes"] == {
-            "image_prompts[0]": (1344, 768)
-        }
-
-    @pytest.mark.parametrize("size", [(255, 300), (5761, 3000)])
-    @patch("domain.video_generate_request.get_settings")
-    def test_keyframe_outside_side_limits_is_a_422(
-        self, mock_settings, size, h3_admission
-    ):
-        from open_ai_api.video import _check_request_media
-
-        mock_settings.return_value.model_runner = "tt-minimax-h3-fl2va"
-        request = VideoI2VGenerateRequest(
-            prompt="a fox",
-            image_prompts=[ImagePromptEntry(image=_tiny_png_base64(), frame_pos=0)],
-        )
-        with _decoded_size(size), pytest.raises(HTTPException) as exc_info:
-            _check_request_media(request)
-        assert exc_info.value.status_code == 422
-        assert "each side must be from 256 to 5760" in exc_info.value.detail
-        h3_admission.assert_not_called()
-
-    @patch("domain.video_generate_request.get_settings")
-    def test_wan_keyframe_has_no_side_limits(self, mock_settings, h3_admission):
-        from open_ai_api.video import _check_request_media
-
-        mock_settings.return_value.model_runner = "tt-wan2.2"
-        request = VideoI2VGenerateRequest(
-            prompt="a fox",
-            image_prompts=[ImagePromptEntry(image=_tiny_png_base64(), frame_pos=0)],
-        )
-        with _decoded_size((1, 1)):
-            _check_request_media(request)
-
-    @patch("domain.video_generate_request.get_settings")
-    def test_references_are_probed_and_admitted(self, mock_settings, h3_admission):
-        from domain.video_ref2va_generate_request import (
-            MediaSource,
-            MultimodalReferences,
-            VideoRef2VAGenerateRequest,
-        )
-        from open_ai_api.video import _check_request_media
-        from tt_model_runners.minimax_h3_policy import ReferenceMediaProbe
-
-        mock_settings.return_value.model_runner = "tt-minimax-h3-ref2va"
-        request = VideoRef2VAGenerateRequest(
-            prompt="a fox",
-            references=MultimodalReferences(
-                images=[MediaSource(b64=_tiny_png_base64())],
-                videos=[MediaSource(b64="AAAA")],
-                audios=[MediaSource(b64="AAAA")],
-            ),
-        )
-        probes = [
-            ReferenceMediaProbe(5.0, (1280, 720), 30.0, 2),
-            ReferenceMediaProbe(4.0, None, None, 1),
-        ]
-        with _decoded_size((1024, 1024)), patch(
-            "tt_model_runners.minimax_h3_policy.probe_reference_media",
-            side_effect=probes,
-        ):
-            _check_request_media(request)
-        assert h3_admission.call_args.kwargs["references"] == [
-            {"name": "references.images[0]", "kind": "image", "size": (1024, 1024)},
-            {
-                "name": "references.videos[0]",
-                "kind": "video",
-                "size": (1280, 720),
-                "fps": 30.0,
-                "audio_channels": 2,
-            },
-            {"name": "references.audios[0]", "kind": "audio", "audio_channels": 1},
-        ]
-
-    @patch("domain.video_generate_request.get_settings")
-    def test_unreadable_reference_clip_is_a_422(self, mock_settings, h3_admission):
-        from domain.video_ref2va_generate_request import (
-            MediaSource,
-            MultimodalReferences,
-            VideoRef2VAGenerateRequest,
-        )
-        from open_ai_api.video import _check_request_media
-
-        mock_settings.return_value.model_runner = "tt-minimax-h3-ref2va"
-        request = VideoRef2VAGenerateRequest(
-            prompt="a fox",
-            references=MultimodalReferences(
-                images=[MediaSource(b64=_tiny_png_base64())],
-                videos=[MediaSource(b64="AAAA")],
-            ),
-        )
-        with _decoded_size((1024, 1024)), patch(
-            "tt_model_runners.minimax_h3_policy.probe_reference_media",
-            side_effect=ValueError("media could not be probed"),
-        ), pytest.raises(HTTPException) as exc_info:
-            _check_request_media(request)
-        assert exc_info.value.status_code == 422
-        assert "references.videos[0] could not be read" in exc_info.value.detail
-
-    @pytest.mark.asyncio
-    @patch("domain.video_generate_request.get_settings")
-    async def test_reference_counts_are_checked_before_downloads(
-        self, mock_settings, h3_admission
-    ):
-        from domain.video_ref2va_generate_request import (
-            MediaSource,
-            MultimodalReferences,
-            VideoRef2VAGenerateRequest,
-        )
-        from open_ai_api.video import _submit_video_request
-        from tt_model_runners import minimax_h3_policy
-
-        mock_settings.return_value.model_runner = "tt-minimax-h3-ref2va"
-        request = VideoRef2VAGenerateRequest(
-            prompt="a fox",
-            references=MultimodalReferences(
-                images=[MediaSource(url="https://example.com/a.png")],
-                videos=[MediaSource(url="https://example.com/v.mp4")] * 4,
-            ),
-        )
-        check_kinds = minimax_h3_policy.check_reference_kinds
-        check_kinds.side_effect = ValueError(
-            "H3 accepts at most 3 video references, got 4"
-        )
-        with patch(
-            "open_ai_api.video._download_to_b64", new_callable=AsyncMock
-        ) as download, pytest.raises(HTTPException) as exc_info:
-            await _submit_video_request(request, MagicMock())
-        assert exc_info.value.status_code == 422
-        assert "at most 3 video" in exc_info.value.detail
-        check_kinds.assert_called_once_with(["image"] + ["video"] * 4)
-        download.assert_not_awaited()
 
 
 class TestResponseContent:

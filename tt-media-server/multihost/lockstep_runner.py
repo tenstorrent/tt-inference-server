@@ -53,7 +53,7 @@ class MultiHostLockstepRunner:
     Each ``run`` first sends the requests to the other ranks, then runs them
     locally; all ranks then meet in the runner's own collectives on the mesh.
     Rank 0 keeps the output. Anything not overridden here (``settings``,
-    ``requires_image_conditioning``, ``export_in_runner``, ...) reads and
+    ``export_in_runner``, ...) reads and
     writes through to the real runner, so the device worker can't tell the
     difference.
 

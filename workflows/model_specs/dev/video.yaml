@@ -270,7 +270,6 @@ templates:
   hf_weights_repo: MiniMaxAI/MiniMax-H3
   env_vars:
     MODEL_RUNNER: tt-minimax-h3-fl2va-lightx2v
-    USE_ASYNC_VIDEO: "true"
     MAX_QUEUE_SIZE: "2"
     TT_DIT_CACHE_DIR: /home/container_app_user/cache_root/tt_dit_cache
     # Under --host-volume nothing sets MODEL_WEIGHTS_DIR, so the pipeline reads this path.
@@ -282,7 +281,6 @@ templates:
     # Open FABRIC_1D and run Linear CCLs (needs tt-metal with the MINIMAX_H3_TOPOLOGY preset override).
     MINIMAX_H3_TOPOLOGY: linear
     TT_METAL_FABRIC_ROUTER_SYNC_TIMEOUT_MS: "120000"
-    VIDEO_REQUEST_TIMEOUT_SECONDS: "3000"
   metadata:
     MiniMaxAI/MiniMax-H3-FL2VA-LightX2V:
       hf_download_excludes:
@@ -316,7 +314,7 @@ templates:
 
 # MiniMax-H3 omni-reference-to-video-and-audio with the lightx2v Ref2VA Turbo 4-step adapter, on
 # one Blackhole Galaxy. Same layout as the FL2VA entry above, except that ref2va loads
-# transformer_ref/ instead of transformer/ and only POST /generations/ref2va is served.
+# transformer_ref/ instead of transformer/ and is served as tenstorrent/minimax-h3-ref2va-lightx2v.
 - weights:
     - MiniMaxAI/MiniMax-H3-Ref2VA-LightX2V
   impl: tt_transformers
@@ -327,7 +325,6 @@ templates:
   hf_weights_repo: MiniMaxAI/MiniMax-H3
   env_vars:
     MODEL_RUNNER: tt-minimax-h3-ref2va-lightx2v
-    USE_ASYNC_VIDEO: "true"
     MAX_QUEUE_SIZE: "2"
     TT_DIT_CACHE_DIR: /home/container_app_user/cache_root/tt_dit_cache
     MINIMAX_H3_MODEL_PATH: /home/container_app_user/cache_root/weights/MiniMax-H3-Ref2VA-LightX2V
@@ -336,7 +333,6 @@ templates:
     # Open FABRIC_1D and run Linear CCLs (needs tt-metal with the MINIMAX_H3_TOPOLOGY preset override).
     MINIMAX_H3_TOPOLOGY: linear
     TT_METAL_FABRIC_ROUTER_SYNC_TIMEOUT_MS: "120000"
-    VIDEO_REQUEST_TIMEOUT_SECONDS: "3000"
   metadata:
     MiniMaxAI/MiniMax-H3-Ref2VA-LightX2V:
       hf_download_excludes:

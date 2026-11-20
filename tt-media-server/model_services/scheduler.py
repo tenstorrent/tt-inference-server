@@ -567,13 +567,6 @@ class Scheduler:
                 if device_id is None:  # Shutdown signal
                     break
 
-                # "Worker reported ready" rather than "Device is warmed up":
-                # for SHM-proxy runners (SPRunner) this only confirms the
-                # Python worker side is up — the actual model-bearing peer
-                # may still be loading. The runner is responsible for
-                # delaying this signal until it has positively verified
-                # downstream readiness (see ``SPRunner.warmup`` and
-                # ``SP_REQUIRE_WARMUP_PING``).
                 self.logger.info(f"Worker {device_id} reported ready")
 
                 # Thread-safe device tracking

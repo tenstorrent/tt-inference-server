@@ -35,6 +35,9 @@ _SUPPORTED_MODEL_SERVICES = {
     ModelServices.EMBEDDING: lambda: __import__(
         "model_services.embedding_service", fromlist=["EmbeddingService"]
     ).EmbeddingService(),
+    ModelServices.GENERATION: lambda: __import__(
+        "model_services.generation_service", fromlist=["GenerationService"]
+    ).GenerationService(),
 }
 
 # Singleton holders per service type
