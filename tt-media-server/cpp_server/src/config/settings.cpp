@@ -189,6 +189,8 @@ bool isImageService() { return modelService() == ModelService::IMAGE; }
 
 bool isTtsService() { return modelService() == ModelService::TTS; }
 
+bool isVideoService() { return modelService() == ModelService::VIDEO; }
+
 std::string runnerType() { return toString(modelService()); }
 
 size_t numWorkers() { return deviceIdsParsed().size(); }
@@ -756,6 +758,32 @@ ImageConfig imageEngineConfig() {
   return cached;
 }
 
+VideoConfig videoEngineConfig() {
+  static const VideoConfig cached = [] {
+    VideoConfig cfg;
+    const std::string runner =
+        envStringLower("MODEL_RUNNER_TYPE", "video_device");
+    if (runner == "video_mock") {
+      cfg.runner_type = ModelRunnerType::VIDEO_MOCK;
+    } else if (runner == "video_device") {
+      cfg.runner_type = ModelRunnerType::VIDEO_DEVICE;
+      cfg.pythonRunner = envString("MODEL_RUNNER", "");
+      if (cfg.pythonRunner.empty()) {
+        throw std::runtime_error(
+            "[Config] MODEL_RUNNER is required when MODEL_RUNNER_TYPE="
+            "video_device. Example: MODEL_RUNNER=tt-wan2.2");
+      }
+    } else {
+      throw std::runtime_error("[Config] Unknown video MODEL_RUNNER_TYPE='" +
+                               runner +
+                               "'; expected one of: video_device, video_mock");
+    }
+    readMediaRunnerConfig(cfg);
+    return cfg;
+  }();
+  return cached;
+}
+
 TtsConfig ttsEngineConfig() {
   static const TtsConfig cached = [] {
     TtsConfig cfg;
@@ -883,6 +911,12 @@ RunnerConfig workerRunnerConfig(size_t workerIndex) {
       cfg.visible_devices = visibleDevicesForWorker(workerIndex);
       return cfg;
     }
+    case ModelService::VIDEO: {
+      auto cfg = videoEngineConfig();
+      cfg.worker_id = workerIndex;
+      cfg.visible_devices = visibleDevicesForWorker(workerIndex);
+      return cfg;
+    }
     case ModelService::TTS: {
       auto cfg = ttsEngineConfig();
       cfg.workerId = workerIndex;
@@ -995,8 +1029,10 @@ uint32_t prefillMaxInFlight() {
 }
 
 size_t maxQueueSize() {
-  static const size_t cached =
-      static_cast<size_t>(envUlong("MAX_QUEUE_SIZE", defaults::MAX_QUEUE_SIZE));
+  // Other services keep 1000; the video service uses Python's 5000.
+  static const size_t cached = static_cast<size_t>(envUlong(
+      "MAX_QUEUE_SIZE", isVideoService() ? defaults::VIDEO_MAX_QUEUE_SIZE
+                                         : defaults::MAX_QUEUE_SIZE));
   return cached;
 }
 

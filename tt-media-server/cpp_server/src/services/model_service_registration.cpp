@@ -19,17 +19,21 @@
 #include "runtime/runners/embedding_runner.hpp"
 #include "runtime/runners/image_ipc_runner.hpp"
 #include "runtime/runners/mock_embedding_runner.hpp"
+#include "runtime/runners/mock_video_runner.hpp"
 #include "runtime/runners/qwen3_tts/qwen3_tts_runner.hpp"
 #include "runtime/runners/runner_registry.hpp"
 #include "runtime/runners/sdxl/sdxl_edit_runner.hpp"
 #include "runtime/runners/sdxl/sdxl_generate_runner.hpp"
 #include "runtime/runners/sdxl/sdxl_image_to_image_runner.hpp"
+#include "runtime/runners/video_device_runner.hpp"
+#include "runtime/runners/video_ipc_runner.hpp"
 #include "runtime/worker/worker_manager.hpp"
 #include "services/embedding_service.hpp"
 #include "services/image_service.hpp"
 #include "services/llm_service.hpp"
 #include "services/service_registry.hpp"
 #include "services/tts_service.hpp"
+#include "services/video_service.hpp"
 #include "utils/logger.hpp"
 
 #ifdef ENABLE_BLAZE
@@ -256,6 +260,86 @@ void registerImage() {
   }
 }
 
+void registerVideo() {
+  if (!config::isVideoService()) return;
+
+  auto& runners = utils::RunnerRegistry::instance();
+  runners.registerMediaRunner(
+      config::ModelService::VIDEO, config::ModelRunnerType::VIDEO_MOCK,
+      [](const config::RunnerConfig& cfg)
+          -> std::unique_ptr<runners::IRunnerBase> {
+        return std::make_unique<runners::MockVideoRunner>(
+            std::get<config::VideoConfig>(cfg));
+      });
+
+  auto videoIpcFactory =
+      [](const config::RunnerConfig& cfg, ipc::IResultQueue* /*resultQueue*/,
+         ipc::ITaskQueue* /*taskQueue*/, ipc::ICancelQueue* /*cancelQueue*/)
+      -> std::unique_ptr<runners::IRunner> {
+    const char* workerIdEnv = std::getenv("TT_WORKER_ID");
+    const int workerId = workerIdEnv ? std::atoi(workerIdEnv) : 0;
+    auto videoCfg = std::get<config::VideoConfig>(cfg);
+    TT_LOG_INFO(
+        "[RunnerRegistry] Creating video IPC runner worker={} "
+        "TT_VISIBLE_DEVICES='{}'",
+        workerId, videoCfg.visible_devices);
+    return std::make_unique<runners::VideoIpcRunner>(videoCfg, workerId);
+  };
+  runners.registerMediaRunner(
+      config::ModelService::VIDEO, config::ModelRunnerType::VIDEO_DEVICE,
+      [](const config::RunnerConfig& cfg)
+          -> std::unique_ptr<runners::IRunnerBase> {
+        return std::make_unique<runners::VideoDeviceRunner>(
+            std::get<config::VideoConfig>(cfg));
+      });
+  runners.registerIpcRunner(config::ModelService::VIDEO,
+                            config::ModelRunnerType::VIDEO_MOCK,
+                            videoIpcFactory);
+  runners.registerIpcRunner(config::ModelService::VIDEO,
+                            config::ModelRunnerType::VIDEO_DEVICE,
+                            videoIpcFactory);
+
+  const auto cfg = config::videoEngineConfig();
+
+  ServiceRegistry::instance().registerService(
+      config::ModelService::VIDEO, [cfg]() -> std::shared_ptr<IService> {
+        const size_t configuredWorkers = config::numWorkers();
+        TT_LOG_INFO(
+            "[RegisterVideo] Creating worker-backed video service with {} "
+            "worker process(es)",
+            configuredWorkers);
+        auto queueManager =
+            std::make_unique<tt::ipc::media_payload::MediaPayloadQueueSet>(
+                static_cast<int>(configuredWorkers));
+        return std::make_shared<VideoService>(
+            cfg, std::make_unique<tt::worker::WorkerManager>(configuredWorkers),
+            std::move(queueManager));
+      });
+
+  // Every route of VideoController (include/api/video_controller.hpp) must also
+  // be listed here, or SyncAdvice answers 404 `route_not_found` even though the
+  // controller handles it. SyncAdvice runs before routing and only lets through
+  // what is registered for the active MODEL_SERVICE.
+  // Routes with a path parameter are registered with the parameter name, as
+  // `/v1/videos/generations/{job_id}`, not with a concrete id. A concrete id
+  // would match only that one URL, and every other job id would get 404.
+  // Adding a route to the controller without adding it here is easy to miss
+  // and looks like "the route does not exist".
+  auto& routes = api::RouteRegistry::instance();
+  const auto video = config::ModelService::VIDEO;
+  routes.registerRoute(video, "POST", "/v1/videos/generations",
+                       "Create a text-to-video job (returns job id)");
+  routes.registerRoute(video, "GET", "/v1/videos/generations/{job_id}",
+                       "Poll video job status");
+  routes.registerRoute(video, "GET", "/v1/videos/jobs", "List video jobs");
+  routes.registerRoute(video, "GET", "/v1/videos/generations/{job_id}/download",
+                       "Download the finished mp4");
+  routes.registerRoute(video, "POST", "/v1/videos/generations/{job_id}/cancel",
+                       "Cancel a video job");
+  routes.registerRoute(video, "DELETE", "/v1/videos/generations/{job_id}",
+                       "Delete a finished video job and its mp4");
+}
+
 void registerTts() {
   if (!config::isTtsService()) return;
 
@@ -342,6 +426,7 @@ void registerBuiltinModelServices() {
     registerLLM();
     registerEmbedding();
     registerImage();
+    registerVideo();
     registerTts();
     registerAlwaysExemptRoutes();
   });
