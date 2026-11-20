@@ -157,23 +157,45 @@ void releaseDeviceContextOnThisThread() {
 
 }  // namespace
 
-bool VideoService::useInProcess() {
-  const bool multihost = envInt64("OMPI_COMM_WORLD_SIZE", 1) > 1;
-  const bool single = config::numWorkers() == 1;
-  const char* value = std::getenv("TT_VIDEO_IN_PROCESS");
-  if (value == nullptr || *value == '\0') return single && !multihost;
-  const std::string mode = value;
-  if (mode == "0" || mode == "false") return false;
-  if (mode == "1" || mode == "true") {
-    if (!single || multihost) {
-      throw std::runtime_error(
-          "[VideoService] TT_VIDEO_IN_PROCESS=1 needs exactly one DEVICE_IDS "
-          "group and no multihost launch");
-    }
-    return true;
+// Output folder of the real device runner: where results may be deleted, and
+// the startup purge. The purge removes only files named like this server's own
+// results (<uuid>.mp4, <uuid>_silent.mp4), and only when no other server holds
+// the folder: each server keeps a lock on `.tt_video_server.lock` in it for its
+// whole life (released by the kernel when the process dies). So a second
+// server sharing the folder, or a folder with the user's own clips, loses
+// nothing. TT_VIDEO_PURGE_ON_START=0 turns the purge off.
+void VideoService::prepareOutputDir() {
+  const auto outDir = utils::resolveVideoOutputDir();
+  jobs.setOutputRoot(outDir);
+  outputDir_ = outDir;
+  if (const std::string err = utils::checkDirWritable(outDir); !err.empty()) {
+    // Not fatal: the problem may be fixed while the server runs, and every
+    // request is checked again (503 until then).
+    TT_LOG_ERROR(
+        "[VideoService] Video output directory is not usable: {}. Requests "
+        "get 503 until it is fixed.",
+        err);
   }
-  throw std::runtime_error("[VideoService] TT_VIDEO_IN_PROCESS must be 0 or 1");
+  bool heldByOther = false;
+  outputDirLockFd_ = utils::lockOutputDir(outDir, heldByOther);
+  const char* purge = std::getenv("TT_VIDEO_PURGE_ON_START");
+  if (purge != nullptr && std::string(purge) == "0") return;
+  if (outputDirLockFd_ < 0) {
+    TT_LOG_WARN("[VideoService] Startup purge of '{}' skipped: {}",
+                outDir.string(),
+                heldByOther ? "another video server uses this directory"
+                            : "the directory lock could not be taken");
+    return;
+  }
+  const size_t removed = utils::purgeOrphanMp4(outDir);
+  TT_LOG_INFO("[VideoService] Startup purge of '{}': removed {} orphan mp4",
+              outDir.string(), removed);
 }
+
+// Only the number of DEVICE_IDS groups decides: one group means one device
+// (or one mesh), so one runner and no second process; several groups need one
+// worker process each.
+bool VideoService::useInProcess() { return config::numWorkers() == 1; }
 
 VideoService::VideoService(
     config::VideoConfig config,
@@ -189,34 +211,16 @@ VideoService::VideoService(
               1, envInt64("MAX_JOBS", static_cast<int64_t>(DEFAULT_MAX_JOBS)))),
           envInt64("JOB_RETENTION_SECONDS", DEFAULT_JOB_RETENTION_SECONDS)) {
   std::filesystem::create_directories(payloadDir);
-  startSweeper();
   if (videoConfig.runner_type == config::ModelRunnerType::VIDEO_DEVICE) {
-    // Delete only inside the output dir, and drop mp4 files left by a previous
-    // run (the job table starts empty, so nothing here has a record).
-    // TT_VIDEO_PURGE_ON_START=0 turns the purge off, e.g. when another server
-    // shares this directory.
-    const auto outDir = utils::resolveVideoOutputDir();
-    jobs.setOutputRoot(outDir);
-    outputDir_ = outDir;
-    if (const std::string err = utils::checkDirWritable(outDir); !err.empty()) {
-      // Not fatal: the problem may be fixed while the server runs, and every
-      // request is checked again (503 until then).
-      TT_LOG_ERROR(
-          "[VideoService] Video output directory is not usable: {}. Requests "
-          "get 503 until it is fixed.",
-          err);
-    }
-    const char* purge = std::getenv("TT_VIDEO_PURGE_ON_START");
-    if (purge == nullptr || std::string(purge) != "0") {
-      const size_t removed = utils::purgeOrphanMp4(outDir);
-      TT_LOG_INFO("[VideoService] Startup purge of '{}': removed {} orphan mp4",
-                  outDir.string(), removed);
-    }
+    prepareOutputDir();
   }
   TT_LOG_INFO(
       "[VideoService] Initialized worker-backed video service "
       "(workers={}, max_queue_size={}, payload_dir='{}')",
       numWorkers(), this->maxQueueSize, payloadDir.string());
+  // Last: a joinable thread must not exist while anything above can still
+  // throw (the destructor would not run and std::terminate would).
+  startSweeper();
 }
 
 // In-process mode. The same limits, sweeper and output directory handling as
@@ -231,34 +235,21 @@ VideoService::VideoService(config::VideoConfig config)
       inProcess_(true) {
   videoConfig.worker_id = 0;
   videoConfig.visible_devices = config::visibleDevicesForWorker(0);
-  startSweeper();
   if (videoConfig.runner_type == config::ModelRunnerType::VIDEO_DEVICE) {
-    const auto outDir = utils::resolveVideoOutputDir();
-    jobs.setOutputRoot(outDir);
-    outputDir_ = outDir;
-    if (const std::string err = utils::checkDirWritable(outDir); !err.empty()) {
-      TT_LOG_ERROR(
-          "[VideoService] Video output directory is not usable: {}. Requests "
-          "get 503 until it is fixed.",
-          err);
-    }
-    const char* purge = std::getenv("TT_VIDEO_PURGE_ON_START");
-    if (purge == nullptr || std::string(purge) != "0") {
-      const size_t removed = utils::purgeOrphanMp4(outDir);
-      TT_LOG_INFO("[VideoService] Startup purge of '{}': removed {} orphan mp4",
-                  outDir.string(), removed);
-    }
+    prepareOutputDir();
   }
   TT_LOG_INFO(
       "[VideoService] Initialized in-process video service (runner on a "
       "thread of this process, in-memory queue, max_queue_size={}, "
       "devices='{}')",
       this->maxQueueSize, videoConfig.visible_devices);
+  startSweeper();  // last, see the other constructor
 }
 
 VideoService::~VideoService() {
   stopSweeper();
   stop();
+  if (outputDirLockFd_ >= 0) ::close(outputDirLockFd_);
 }
 
 void VideoService::startSweeper() {
@@ -356,6 +347,17 @@ std::string VideoService::outputDirError() const {
   return utils::checkDirWritable(outputDir_);
 }
 
+void VideoService::discardSyncResult(const std::string& path) const {
+  if (path.empty() || path.rfind("mock://", 0) == 0) return;
+  if (!outputDir_.empty() && !utils::isInsideDir(path, outputDir_)) {
+    TT_LOG_WARN("[VideoService] Refusing to delete '{}': outside '{}'", path,
+                outputDir_.string());
+    return;
+  }
+  std::error_code ec;
+  std::filesystem::remove(path, ec);
+}
+
 std::optional<uint32_t> VideoService::resolveJobId(
     const std::string& publicId) const {
   return jobs.resolve(publicId);
@@ -393,6 +395,10 @@ std::optional<Json::Value> VideoService::cancelJob(uint32_t jobId) {
         }
       }
     }
+    if (removedFromQueue) {
+      std::lock_guard<std::mutex> lock(submitMutex_);
+      jobTasks_.erase(jobId);  // its task never runs
+    }
     if (cancelled) {
       TT_LOG_INFO(
           "[VideoService] Cancel requested for task {}: job is now {}{}", jobId,
@@ -409,18 +415,22 @@ std::optional<Json::Value> VideoService::cancelJob(uint32_t jobId) {
   }
   auto cancelled = jobs.cancel(jobId);
   if (cancelled) {
-    // Tell the worker to skip the task if it has not started it yet. A task
-    // that is already running is not interrupted (the result is dropped later).
-    std::ofstream marker(tt::ipc::media_payload::cancelMarkerPath(
-        payloadPath(jobId, "request"), jobId));
-    if (!marker) {
-      TT_LOG_WARN("[VideoService] Could not write cancel marker for task {}",
-                  jobId);
-    }
     // "cancelled": the job was still queued, the worker will skip its task.
     // "cancelling": the worker already runs it; the run is not interrupted and
     // its result is dropped when it returns.
     const std::string newStatus = (*cancelled)["status"].asString();
+    // Only a queued task needs the marker (the worker checks it before it
+    // starts). A running one never looks again, and its worker may finish and
+    // remove the task's files before a marker written now, which would then
+    // stay in the payload folder until shutdown.
+    if (newStatus == "cancelled") {
+      std::ofstream marker(tt::ipc::media_payload::cancelMarkerPath(
+          payloadPath(jobId, "request"), jobId));
+      if (!marker) {
+        TT_LOG_WARN("[VideoService] Could not write cancel marker for task {}",
+                    jobId);
+      }
+    }
     TT_LOG_INFO("[VideoService] Cancel requested for task {}: job is now {}{}",
                 jobId, newStatus,
                 newStatus == "cancelling"
@@ -820,6 +830,10 @@ void VideoService::inProcessLoop() {
           "[VideoService] Skipping task {}: its job was cancelled before it "
           "was queued",
           task.request.task_id);
+      {
+        std::lock_guard<std::mutex> lock(submitMutex_);
+        jobTasks_.erase(task.request.task_id);
+      }
       refreshJobGauges();
       continue;
     }
@@ -866,9 +880,23 @@ void VideoService::serveInProcessTask(InProcessTask& task) {
   domain::video::VideoResponse response = runInProcessTask(task);
 
   const auto done = std::chrono::steady_clock::now();
-  metrics.onVideoTaskDone(
-      response.error.empty(), response.generationTimeSeconds,
-      std::chrono::duration<double>(done - task.submitTime).count());
+  response.e2eSeconds =
+      std::chrono::duration<double>(done - task.submitTime).count();
+  // As in the worker mode (buildResponse): a job's outcome is recorded by
+  // createJob()'s callback once jobs.complete() has applied the final status
+  // (a cancelled job's result is discarded, not counted); a request without a
+  // job (sync mode) is counted here.
+  const uint32_t taskId = task.request.task_id;
+  bool belongsToJob = false;
+  {
+    std::lock_guard<std::mutex> lock(submitMutex_);
+    belongsToJob = jobTasks_.erase(taskId) > 0;
+  }
+  if (!belongsToJob) {
+    metrics.onVideoTaskDone(response.error.empty(),
+                            response.generationTimeSeconds,
+                            response.e2eSeconds);
+  }
   // inRunning_ stays set until the callback has recorded the result (the loop
   // clears it), so the queue size does not drop while the job is in progress.
   if (task.onComplete) task.onComplete(std::move(response));

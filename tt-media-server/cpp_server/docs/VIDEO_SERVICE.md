@@ -381,7 +381,6 @@ Errors have the FastAPI-style `detail` and an OpenAI-style `error` object:
 | `JOB_RETENTION_SECONDS` | 86400 | How long a finished job (and its mp4) is kept |
 | `JOB_CLEANUP_INTERVAL_SECONDS` | 300 | Cleanup pass interval; `<= 0` disables the thread |
 | `JOB_MAX_STUCK_TIME_SECONDS` | 10800 | A running job with no progress for this long becomes `failed` (`stale_job`); `<= 0` disables |
-| `TT_VIDEO_IN_PROCESS` | auto | `1` runner on a thread of the server, `0` worker process; auto = in process for one `DEVICE_IDS` group |
 | `TT_VIDEO_OUTPUT_DIR` | `<binary dir>/../videos` | Where mp4 files are written |
 | `TT_VIDEO_PURGE_ON_START` | on | `0` keeps the results of a previous run at start (see below) |
 | `SERVED_MODEL_NAME` | `MODEL_WEIGHTS_PATH`, else the runner name (e.g. `tt-wan2.2`) | Value of `model` in the job |

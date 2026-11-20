@@ -13,7 +13,7 @@ tests that run against the server with the mock runner. The unit tests are C++ t
 | `server_cases.py` | checks against a real `tt_media_server_cpp` with the mock runner, by phase |
 | `run_server_tests.sh` | starts the server with the mock runner once per phase (private shm names) and runs `contract_cases.py` and `server_cases.py` |
 | `worker_crash_cases.py` | starts its own server with the mock runner, kills the worker with `SIGKILL` and checks that the server exits, and that a worker whose warmup fails exits |
-| `inprocess_cases.py` | in process mode (one `DEVICE_IDS` group: the runner on a thread of the server, queue in memory): how the mode is chosen (one group, two groups, `TT_VIDEO_IN_PROCESS=0/1`), no child process / shm queue / ipc folder, cancel takes a queued job out of the queue, sync and the `429` limit, SIGTERM idle and during a generation, a failed warmup stops the server. `--only a,b` runs some cases |
+| `inprocess_cases.py` | in process mode (one `DEVICE_IDS` group: the runner on a thread of the server, queue in memory): how the mode is chosen (one group, one group with four chips, two groups, a refused configuration), no child process / shm queue / ipc folder, cancel takes a queued job out of the queue, sync and the `429` limit, SIGTERM idle and during a generation, a failed warmup stops the server. `--only a,b` runs some cases |
 
 `contract_cases.py` checks the job API (async mode; sync mode is covered by
 `server_cases.py`): `POST /v1/videos/generations` returns 202 and a job id,
@@ -35,13 +35,13 @@ Phases of `server_cases.py`: `main`, `sync-error`, `limits`, `warmup`,
 
 ## Execution mode in the tests
 
-With one `DEVICE_IDS` group (the default in these tests) the server runs the runner in its own
-process. `worker_crash_cases.py` is about the worker process (kill it, shm queues), so its
-`start()` pins `TT_VIDEO_IN_PROCESS=0`.
-`run_server_tests.sh` runs its API phases in the default mode; `TT_VIDEO_IN_PROCESS=0
-./tests/video/mock/run_server_tests.sh` runs the same phases against a worker process (the
-`cancel-race` phase always pins the worker process: it is a race between a worker and the
-service). `inprocess_cases.py` covers what is specific to the in-process mode.
+Only the number of `DEVICE_IDS` groups decides the mode: one group runs the runner on a thread
+of the server, two groups run two worker processes. The API phases of `run_server_tests.sh` use
+one group. The cases that are about a worker process (`worker_crash_cases.py` and the
+`cancel-race` phase) start the server with `DEVICE_IDS="(0),(1)"`; the mock runner opens no
+chip. They kill only **busy** workers: killing an idle one can block the next `POST` (see
+`docs/VIDEO_SERVICE.md`, Known limitations). `inprocess_cases.py` covers what is specific to one
+group.
 
 ```bash
 python3 tests/video/mock/inprocess_cases.py

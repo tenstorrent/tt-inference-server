@@ -94,7 +94,7 @@ int DiTModel::steps(const DiTRequest& request) const {
   return stepsFor(request);
 }
 
-int DiTModel::seed(const DiTRequest& request) {
+int64_t DiTModel::seed(const DiTRequest& request) {
   return request.seed.value_or(0);
 }
 

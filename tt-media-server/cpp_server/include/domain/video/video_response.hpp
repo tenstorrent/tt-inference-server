@@ -13,9 +13,9 @@
 namespace tt::domain::video {
 
 /**
- * Synchronous video result. `videoPath` is a runner-produced reference
- * (`mock://video/<task>` in this slice, a filesystem mp4 path once a device
- * runner and the file response exist).
+ * Video result. `videoPath` is what the runner produced: a filesystem mp4 path
+ * from a device runner, `mock://video/<task>` from the mock runner without
+ * `TT_VIDEO_MOCK_WRITE_FILE`.
  */
 struct VideoResponse : BaseResponse {
   using BaseResponse::BaseResponse;

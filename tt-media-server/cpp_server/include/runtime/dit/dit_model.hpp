@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include <memory>
 #include <set>
 #include <string>
@@ -80,7 +81,7 @@ class DiTModel {
   virtual bool requiresImageConditioning() const { return false; }
 
   int steps(const DiTRequest& request) const;
-  static int seed(const DiTRequest& request);
+  static int64_t seed(const DiTRequest& request);
   double fps(const DiTRequest& request) const;
 
  protected:

@@ -29,6 +29,13 @@ int integer(const Json::Value& json, const char* key) {
   return json[key].asInt();
 }
 
+int64_t integer64(const Json::Value& json, const char* key) {
+  if (!json[key].isIntegral() || !json[key].isInt64()) {
+    throw RequestError(std::string(key) + " must be an integer");
+  }
+  return json[key].asInt64();
+}
+
 double number(const Json::Value& json, const char* key) {
   if (!json[key].isNumeric()) {
     throw RequestError(std::string(key) + " must be a number");
@@ -58,7 +65,7 @@ DiTRequest DiTRequest::fromJson(const Json::Value& json) {
     r.negativePrompt = str(json, "negative_prompt");
   if (present(json, "num_inference_steps"))
     r.numInferenceSteps = integer(json, "num_inference_steps");
-  if (present(json, "seed")) r.seed = integer(json, "seed");
+  if (present(json, "seed")) r.seed = integer64(json, "seed");
   if (present(json, "fps")) r.fps = number(json, "fps");
   if (present(json, "height")) r.height = integer(json, "height");
   if (present(json, "width")) r.width = integer(json, "width");
@@ -97,7 +104,7 @@ Json::Value DiTRequest::toJson() const {
   j["prompt"] = prompt;
   if (negativePrompt) j["negative_prompt"] = *negativePrompt;
   if (numInferenceSteps) j["num_inference_steps"] = *numInferenceSteps;
-  if (seed) j["seed"] = *seed;
+  if (seed) j["seed"] = static_cast<Json::Int64>(*seed);
   if (fps) j["fps"] = *fps;
   if (height) j["height"] = *height;
   if (width) j["width"] = *width;
