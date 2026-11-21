@@ -214,8 +214,10 @@ def test_wan_passes_both_frames_as_they_are(monkeypatch, wan_exports, tmp_path):
 def test_wan_does_not_bring_back_a_deleted_jobs_directory(wan_exports, tmp_path):
     runner = _runner("TTWan22I2VA14BRunner")
     request = _wan_request(_png(1280, 720), _png(1280, 720))
-    with pytest.raises(FileNotFoundError):
+    # A ValueError, which a multi-host deployment survives.
+    with pytest.raises(runners.JobDeletedError) as error:
         runner.run([request])
+    assert isinstance(error.value, ValueError)
     assert not (tmp_path / "generations").exists()
     assert not any((tmp_path / "encoded").iterdir())
 
@@ -688,7 +690,7 @@ def test_h3_passes_the_shape_and_writes_the_video_into_the_job(h3_exports, tmp_p
 def test_h3_does_not_bring_back_a_deleted_jobs_directory(h3_exports, tmp_path):
     runner = _h3_runner("TTMiniMaxH3Runner")
     request = _resolved(MiniMaxH3FL2VARequest(prompt="waves", duration=6), 768, 1344)
-    with pytest.raises(FileNotFoundError):
+    with pytest.raises(runners.JobDeletedError):
         runner.run([request])
     assert not (tmp_path / "generations").exists()
     assert not any((tmp_path / "encoded").iterdir())

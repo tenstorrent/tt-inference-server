@@ -104,6 +104,17 @@ def test_every_spec_is_served():
     assert _dump_script.spec_files() == expected
 
 
+def test_a_models_module_is_imported_only_when_its_entry_is_read():
+    """Every service imports the registry, and the video models' modules need
+    tt-metal's policies, so only reading an entry may import its module."""
+    from domain.generation_models import _GenerationModels
+
+    models = _GenerationModels({"tt-x": ("domain.no_such_module", "X")})
+    assert "tt-x" in models and list(models) == ["tt-x"] and len(models) == 1
+    with pytest.raises(ModuleNotFoundError):
+        models["tt-x"]
+
+
 def test_unknown_field_rejected():
     with pytest.raises(ValidationError, match="extra"):
         Ltx23DistilledRequest(prompt="a cat", steps=4)

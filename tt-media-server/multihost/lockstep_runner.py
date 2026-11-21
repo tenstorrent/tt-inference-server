@@ -53,15 +53,16 @@ class MultiHostLockstepRunner:
     Each ``run`` first sends the requests to the other ranks, then runs them
     locally; all ranks then meet in the runner's own collectives on the mesh.
     Rank 0 keeps the output. Anything not overridden here (``settings``,
-    ``export_in_runner``, ...) reads and
-    writes through to the real runner, so the device worker can't tell the
-    difference.
+    ``export_in_runner``, ...) reads and writes through to the real runner,
+    so the device worker can't tell the difference.
 
     One lock serialises everything that touches the mesh or the comm: the
     ranks must see requests and canary probes in the same order.
 
     A ``ValueError`` from the runner is a request every rank rejects
-    identically before touching the mesh; it propagates as a request error.
+    identically before touching the mesh, or one rank 0 fails after every
+    rank finished the run (a job deleted while it ran); it propagates as a
+    request error.
     A failed broadcast or any other runner error leaves the ranks out of step
     (some may have received the message, or be waiting in a collective), so it
     ends the job.

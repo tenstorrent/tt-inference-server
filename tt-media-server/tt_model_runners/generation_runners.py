@@ -69,6 +69,32 @@ from utils.logger import log_exception_chain
 from utils.media_probe import decode_image
 from utils.video_manager import VideoManager
 
+
+class JobDeletedError(ValueError):
+    """The job was deleted while it ran, so its output has nowhere to go.
+
+    A ValueError, so a multi-host deployment keeps serving. Every rank has
+    finished the run, so the ranks are still in step, and
+    MultiHostLockstepRunner ends the deployment on any other error.
+    """
+
+
+def _move_into_job_dir(encoded: str, request: GenerationRequest, name: str) -> str:
+    """Moves the encoded file into the job's directory, so a file a cancelled
+    or failed job leaves behind is deleted with it. Returns its new path."""
+    path = Path(generation_job_dir(request._task_id)) / name
+    try:
+        shutil.move(encoded, path)
+    except FileNotFoundError:
+        if path.parent.is_dir():
+            raise
+        Path(encoded).unlink(missing_ok=True)
+        raise JobDeletedError(
+            f"job {request._task_id} was deleted while it ran"
+        ) from None
+    return str(path)
+
+
 _WARMUP_PROMPT = "Sunrise on a beach"
 # Warmup only compiles and traces, so it runs fewer steps where it can.
 _WARMUP_STEPS = 2
@@ -248,16 +274,7 @@ class TTWan22I2VA14BRunner(_GenerationRunner, TTWan22I2VRunner):
             return [None]
         # The pipeline returns a batch of one video.
         encoded = VideoManager().export_to_mp4(frames[0], fps=request.fps)
-        # Into the job's directory, so a file a cancelled or failed job leaves
-        # behind is deleted with it.
-        path = Path(generation_job_dir(request._task_id)) / "wan.mp4"
-        try:
-            shutil.move(encoded, path)
-        except FileNotFoundError:
-            # The job was deleted while it ran.
-            Path(encoded).unlink(missing_ok=True)
-            raise
-        return [str(path)]
+        return [_move_into_job_dir(encoded, request, "wan.mp4")]
 
 
 class TTLtx23DistilledRunner(_GenerationRunner):
@@ -677,16 +694,7 @@ class _MiniMaxH3Runner(_GenerationRunner):
             fps=output.fps,
             pixel_format=pixel_format,
         )
-        # Into the job's directory, so a file a cancelled or failed job leaves
-        # behind is deleted with it.
-        path = Path(generation_job_dir(request._task_id)) / "h3.mp4"
-        try:
-            shutil.move(encoded, path)
-        except FileNotFoundError:
-            # The job was deleted while it ran.
-            Path(encoded).unlink(missing_ok=True)
-            raise
-        return [str(path)]
+        return [_move_into_job_dir(encoded, request, "h3.mp4")]
 
     def _pipeline_factory(self):
         return MiniMaxH3Pipeline
