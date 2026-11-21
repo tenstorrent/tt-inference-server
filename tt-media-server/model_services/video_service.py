@@ -3,7 +3,6 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import asyncio
-import os
 import time
 from typing import Optional
 
@@ -197,9 +196,7 @@ class VideoService(BaseJobService):
                 status=status,
                 num_inference_steps=requested_steps,
                 executed_inference_steps=video_executed_inference_steps(
-                    requested_steps,
-                    settings.model_runner,
-                    os.getenv("MODEL"),
+                    requested_steps, settings.model_runner
                 ),
                 conditioning_images=len(getattr(request, "image_prompts", None) or []),
                 width=probe.width if probe else None,

@@ -11,13 +11,6 @@ from utils.runner_utils import setup_runner_environment
 
 
 class BaseDeviceRunner(ABC):
-    # Override to ``False`` in subclasses that don't read weights from disk
-    # (e.g. SHM-proxy runners like ``SPRunner``). When ``False`` the HF cache
-    # check below is skipped — emitting the warning for a runner that never
-    # touches HuggingFace is a false positive and tends to send operators on
-    # wild goose chases.
-    requires_weights: bool = True
-
     def __init__(
         self, device_id: str, cpu_threads: str = None, num_torch_threads: int = None
     ):
@@ -40,11 +33,7 @@ class BaseDeviceRunner(ABC):
         hf_home_populated = (
             bool(hf_home) and os.path.isdir(hf_home) and any(os.scandir(hf_home))
         )
-        if (
-            self.requires_weights
-            and not os.getenv("HF_TOKEN")
-            and not hf_home_populated
-        ):
+        if not os.getenv("HF_TOKEN") and not hf_home_populated:
             self.logger.warning(
                 "HF_TOKEN environment variable is not set and no cached models found in HF_HOME. Some models may not load properly."
             )
