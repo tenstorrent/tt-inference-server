@@ -228,7 +228,8 @@ components:
     MediaTooLarge:
       description: |
         An input, inline or fetched, is over its limit: 30 MB per image, 50 MB
-        per video, 15 MB per audio clip.
+        per video, 15 MB per audio clip; or the request's inline (data URI)
+        media total more than 64,000,000 characters (about 48 MB).
       content:
         application/json:
           schema:
@@ -296,7 +297,9 @@ components:
         (`data:image/png;base64,…`). Inline images must be data URIs: bare
         base64 without the `data:` prefix is rejected with 422.
 
-        PNG, JPEG or WebP, at most 30 MB per image. URLs are fetched when the
+        PNG, JPEG or WebP, at most 30 MB per image. All data URIs in one
+        request together may hold at most 64,000,000 characters (about 48 MB);
+        send larger inputs by URL. URLs are fetched when the
         job is submitted, so a URL only has to stay valid until then (a
         presigned URL is fine). Which hosts may be fetched is set per
         deployment: an allowlist of domains, or any public host; private,

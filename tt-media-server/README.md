@@ -211,11 +211,9 @@ The setup for other supported DiT models is very similar to [Standard SD-3.5 Set
 | qwen-image-2512 | galaxy, t3k |
 | mochi-1-preview | galaxy, t3k |
 | Wan2.2-T2V-A14B-Diffusers | galaxy, t3k, qbge, galaxy_quad |
-| Wan2.2-I2V-A14B-Diffusers | galaxy, t3k, p150x4, p150x8, p300x2, galaxy_quad |
-| MiniMax-H3 | galaxy, galaxy_quad |
+| Wan2.2-I2V-A14B-Diffusers | galaxy, t3k, p150x4, p150x8, p300x2 |
 | MiniMax-H3-FL2VA | galaxy, galaxy_quad |
 | MiniMax-H3-Ref2VA | galaxy, galaxy_quad |
-| MiniMax-H3-FastH3 | galaxy, galaxy_quad |
 | MiniMax-H3-FL2VA-LightX2V | galaxy, galaxy_quad |
 | MiniMax-H3-Ref2VA-LightX2V | galaxy, galaxy_quad |
 
@@ -660,10 +658,6 @@ The video API supports both **async** (job-based) and **sync** modes, controlled
 - `USE_ASYNC_VIDEO=True` (default): the server creates a job and returns metadata with a `job_id`. Use the `GET /v1/videos/generations/{job_id}` and `/download` endpoints to track progress and retrieve the video.
 - `USE_ASYNC_VIDEO=False`: the server processes synchronously and streams the MP4 back directly in the same request.
 
-## Input and Output Requirements
-
-- [MiniMax H3](docs/minimax-h3-specs.md)
-
 ## Submit text-to-video generation job
 
 ```bash
@@ -1070,9 +1064,16 @@ These settings configure VLLM-based model runners and are grouped under `setting
 | Environment Variable | Default Value | Description |
 |---------------------|---------------|-------------|
 | `USE_ASYNC_VIDEO` | `True` | When `True`, video generation creates a job and returns metadata; when `False`, the request blocks and the MP4 is streamed back directly |
-| `VIDEO_ASYNC_ENCODE` | `False` | When `True`, the device worker encodes MP4s on a background thread so the device starts the next request while ffmpeg runs. Runners that export inside `run()` (MiniMax-H3, Wan Prodia) hand back raw frames instead |
+| `VIDEO_ASYNC_ENCODE` | `False` | When `True`, the device worker encodes MP4s on a background thread so the device starts the next request while ffmpeg runs. Runners that export inside `run()` (Wan Prodia) hand back raw frames instead. Applies to video-service runners only: generation deployments (Wan2.2 I2V A14B, LTX-2.3, MiniMax-H3) encode in the runner and ignore it |
 | `TT_VIDEO_EXPORT_CRF` | `"23"` | x264 CRF used when exporting MP4 (lower = higher quality) |
 | `TT_VIDEO_EXPORT_PRESET` | `"ultrafast"` | x264 preset used when exporting MP4 (e.g. `ultrafast`, `fast`, `medium`) |
+
+## Image Generation Settings
+
+| Environment Variable | Default Value | Description |
+|---------------------|---------------|-------------|
+| `FLUX3_PROMPT_UPSAMPLER_FROZEN` | `false` | FLUX.3 Image klein: the prompt upsampler runs ahead of the deployment (evals, a front end with its own upsampler), so every prompt reaches the model as sent and each output reports it as sent. The pipeline is built without the upsampler: no VL model loaded, no second command queue or trace region reserved, and `4K` is served. Resident (the default), `4K` is not served: a `size: 4K` request is refused with 422, because the upsampler's reserved DRAM is held on every chip of the mesh and the DiT's 4096 activations no longer fit (jobs 192950, 194825, 194959). `1`/`true` or `0`/`false` |
+| `FLUX3_WARMUP_REFERENCE_SHAPES` | _unset_ | FLUX.3 Image klein: extra reference shapes to warm up, `WxH` separated by commas (e.g. `4032x3024,3024x4032` for phone photos). The pipeline warms its own shapes (every size, with no reference and with a 1 MP and a 4 MP one); a reference of any other shape compiles the VAE encoder when first seen, 30-50 s and about 150 programs per shape on a Galaxy. Each listed shape moves that into warm-up |
 
 ## Operational TT Settings
 

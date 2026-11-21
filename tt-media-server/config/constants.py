@@ -17,6 +17,7 @@ class SupportedModels(Enum):
     FLUX_1_DEV = "black-forest-labs/FLUX.1-dev"
     FLUX_1_SCHNELL = "black-forest-labs/FLUX.1-schnell"
     FLUX_1_KONTEXT_DEV = "black-forest-labs/FLUX.1-Kontext-dev"
+    FLUX_3_IMAGE_KLEIN = "black-forest-labs/flux-3-image-klein"
     MOTIF_IMAGE_6B_PREVIEW = "Motif-Technologies/Motif-Image-6B-Preview"
     QWEN_IMAGE = "Qwen/Qwen-Image"
     QWEN_IMAGE_2512 = "Qwen/Qwen-Image-2512"
@@ -30,10 +31,8 @@ class SupportedModels(Enum):
     WAN_2_2_I2V_LORA = "Wan-AI/Wan2.2-I2V-A14B-Diffusers"
     WAN_2_2_I2V_LIGHTNING = "Wan-AI/Wan2.2-I2V-A14B-Diffusers"
     LTX_2_3_DISTILLED = "Lightricks/LTX-2.3:ltx-2.3-22b-distilled-1.1.safetensors"
-    MINIMAX_H3 = "MiniMaxAI/MiniMax-H3"
     MINIMAX_H3_FL2VA = "MiniMaxAI/MiniMax-H3"
     MINIMAX_H3_REF2VA = "MiniMaxAI/MiniMax-H3"
-    MINIMAX_H3_FASTH3 = "MiniMaxAI/MiniMax-H3"
     MINIMAX_H3_FL2VA_LIGHTX2V = "MiniMaxAI/MiniMax-H3"
     MINIMAX_H3_REF2VA_LIGHTX2V = "MiniMaxAI/MiniMax-H3"
     DISTIL_WHISPER_LARGE_V3 = "distil-whisper/distil-large-v3"
@@ -74,6 +73,7 @@ class ModelNames(Enum):
     FLUX_1_DEV = "FLUX.1-dev"
     FLUX_1_SCHNELL = "FLUX.1-schnell"
     FLUX_1_KONTEXT_DEV = "FLUX.1-Kontext-dev"
+    FLUX_3_IMAGE_KLEIN = "flux-3-image-klein"
     MOTIF_IMAGE_6B_PREVIEW = "Motif-Image-6B-Preview"
     QWEN_IMAGE = "Qwen-Image"
     QWEN_IMAGE_2512 = "Qwen-Image-2512"
@@ -87,10 +87,8 @@ class ModelNames(Enum):
     WAN_2_2_I2V_LORA = "Wan2.2-I2V-LoRA"
     WAN_2_2_I2V_LIGHTNING = "Wan2.2-I2V-Lightning"
     LTX_2_3_DISTILLED = "LTX-2.3-distilled"
-    MINIMAX_H3 = "MiniMax-H3"
     MINIMAX_H3_FL2VA = "MiniMax-H3-FL2VA"
     MINIMAX_H3_REF2VA = "MiniMax-H3-Ref2VA"
-    MINIMAX_H3_FASTH3 = "MiniMax-H3-FastH3"
     MINIMAX_H3_FL2VA_LIGHTX2V = "MiniMax-H3-FL2VA-LightX2V"
     MINIMAX_H3_REF2VA_LIGHTX2V = "MiniMax-H3-Ref2VA-LightX2V"
     DISTIL_WHISPER_LARGE_V3 = "distil-large-v3"
@@ -133,6 +131,7 @@ class ModelRunners(Enum):
     TT_FLUX_1_DEV = "tt-flux.1-dev"
     TT_FLUX_1_SCHNELL = "tt-flux.1-schnell"
     TT_FLUX_1_KONTEXT_DEV = "tt-flux.1-kontext-dev"
+    TT_FLUX_3_IMAGE_KLEIN = "tt-flux-3-image-klein"
     TT_MOTIF_IMAGE_6B_PREVIEW = "tt-motif-image-6b-preview"
     TT_QWEN_IMAGE = "tt-qwen-image"
     TT_QWEN_IMAGE_2512 = "tt-qwen-image-2512"
@@ -146,10 +145,8 @@ class ModelRunners(Enum):
     TT_WAN_2_2_I2V_LORA = "tt-wan2.2-i2v-lora"
     TT_WAN_2_2_I2V_LIGHTNING = "tt-wan2.2-i2v-lightning"
     TT_LTX_2_3_DISTILLED = "tt-ltx-2.3-distilled"
-    TT_MINIMAX_H3_T2VA = "tt-minimax-h3-t2va"
     TT_MINIMAX_H3_FL2VA = "tt-minimax-h3-fl2va"
     TT_MINIMAX_H3_REF2VA = "tt-minimax-h3-ref2va"
-    TT_MINIMAX_H3_FASTH3 = "tt-minimax-h3-fasth3"
     TT_MINIMAX_H3_FL2VA_LIGHTX2V = "tt-minimax-h3-fl2va-lightx2v"
     TT_MINIMAX_H3_REF2VA_LIGHTX2V = "tt-minimax-h3-ref2va-lightx2v"
     TT_WHISPER = "tt-whisper"
@@ -194,9 +191,19 @@ class ModelServices(Enum):
     TRAINING = "training"
     TEXT_TO_SPEECH = "text_to_speech"
     EMBEDDING = "embedding"
+    GENERATION = "generation"
 
 
 MODEL_SERVICE_RUNNER_MAP = {
+    ModelServices.GENERATION: {
+        ModelRunners.TT_WAN_2_2_I2V,
+        ModelRunners.TT_LTX_2_3_DISTILLED,
+        ModelRunners.TT_MINIMAX_H3_FL2VA,
+        ModelRunners.TT_MINIMAX_H3_REF2VA,
+        ModelRunners.TT_FLUX_3_IMAGE_KLEIN,
+        ModelRunners.TT_MINIMAX_H3_FL2VA_LIGHTX2V,
+        ModelRunners.TT_MINIMAX_H3_REF2VA_LIGHTX2V,
+    },
     ModelServices.IMAGE: {
         ModelRunners.TT_SDXL_EDIT,
         ModelRunners.TT_SDXL_IMAGE_TO_IMAGE,
@@ -247,19 +254,11 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.TT_MOCHI_1,
         ModelRunners.TT_WAN_2_2,
         ModelRunners.TT_WAN_2_2_T2V_PRODIA,
-        ModelRunners.TT_WAN_2_2_I2V,
         ModelRunners.TT_WAN_2_2_I2V_PRODIA,
         ModelRunners.TT_WAN_2_2_I2V_ANISORA,
         ModelRunners.TT_WAN_2_2_I2V_DISTILL,
         ModelRunners.TT_WAN_2_2_I2V_LORA,
         ModelRunners.TT_WAN_2_2_I2V_LIGHTNING,
-        ModelRunners.TT_LTX_2_3_DISTILLED,
-        ModelRunners.TT_MINIMAX_H3_T2VA,
-        ModelRunners.TT_MINIMAX_H3_FL2VA,
-        ModelRunners.TT_MINIMAX_H3_REF2VA,
-        ModelRunners.TT_MINIMAX_H3_FASTH3,
-        ModelRunners.TT_MINIMAX_H3_FL2VA_LIGHTX2V,
-        ModelRunners.TT_MINIMAX_H3_REF2VA_LIGHTX2V,
     },
     ModelServices.TRAINING: {
         ModelRunners.TRAINING_GEMMA_LORA,
@@ -276,7 +275,6 @@ MODEL_SERVICE_RUNNER_MAP = {
 # ``POST /generations`` before the work reaches the device worker.
 I2V_MODEL_RUNNERS = frozenset(
     {
-        ModelRunners.TT_WAN_2_2_I2V,
         ModelRunners.TT_WAN_2_2_I2V_PRODIA,
         ModelRunners.TT_WAN_2_2_I2V_ANISORA,
         ModelRunners.TT_WAN_2_2_I2V_DISTILL,
@@ -285,35 +283,40 @@ I2V_MODEL_RUNNERS = frozenset(
     }
 )
 
-# MiniMax-H3 ref2va-only deployments: text-only and I2V endpoints must not
-# reach a worker that loaded ``transformer_ref/``.
-REF2VA_MODEL_RUNNERS = frozenset(
-    {ModelRunners.TT_MINIMAX_H3_REF2VA, ModelRunners.TT_MINIMAX_H3_REF2VA_LIGHTX2V}
-)
-
 # Client-facing video API bounds
 MIN_VIDEO_INFERENCE_STEPS = 4
 MAX_VIDEO_INFERENCE_STEPS = 50
 DEFAULT_VIDEO_INFERENCE_STEPS = 20
 
 # Pipelines that ignore the client's num_inference_steps. Keep these as the
-# values passed into the runner (dit_runners Distill / Lightning / AniSora /
-# FastH3 / LightX2V).
+# values passed into the runner (dit_runners Distill / Lightning / AniSora).
 WAN22_DISTILL_NUM_STEPS = 4
 WAN22_LIGHTNING_NUM_STEPS = 4
 WAN22_ANISORA_NUM_STEPS = 8
-MINIMAX_H3_FASTH3_NUM_INFERENCE_STEPS = 4
 # The lightx2v H3 Turbo adapters are distilled for 4 forwards. The H3 pipeline
 # counts sigma grid points, which is one more than the forward count.
 MINIMAX_H3_LIGHTX2V_NUM_INFERENCE_STEPS = 5
+# The generations API takes no step count: these models run their reference
+# defaults.
+WAN22_I2V_A14B_NUM_STEPS = 40
+MINIMAX_H3_NUM_INFERENCE_STEPS = 50
+# LTX-2.3 distilled fixes its own schedules: 8 forwards at half resolution,
+# then 3 at full (tt_dit's DISTILLED_SIGMA_VALUES, STAGE_2_DISTILLED_SIGMA_VALUES).
+LTX23_DISTILLED_NUM_FORWARDS = 8 + 3
+# H3's step counts are grid points, one more than the forwards it runs.
+_MINIMAX_H3_FORWARDS = MINIMAX_H3_NUM_INFERENCE_STEPS - 1
+_MINIMAX_H3_LIGHTX2V_FORWARDS = MINIMAX_H3_LIGHTX2V_NUM_INFERENCE_STEPS - 1
 
 VIDEO_FORCED_INFERENCE_STEPS_BY_RUNNER = {
     ModelRunners.TT_WAN_2_2_I2V_DISTILL: WAN22_DISTILL_NUM_STEPS,
     ModelRunners.TT_WAN_2_2_I2V_LIGHTNING: WAN22_LIGHTNING_NUM_STEPS,
     ModelRunners.TT_WAN_2_2_I2V_ANISORA: WAN22_ANISORA_NUM_STEPS,
-    ModelRunners.TT_MINIMAX_H3_FASTH3: MINIMAX_H3_FASTH3_NUM_INFERENCE_STEPS,
-    ModelRunners.TT_MINIMAX_H3_FL2VA_LIGHTX2V: MINIMAX_H3_LIGHTX2V_NUM_INFERENCE_STEPS,
-    ModelRunners.TT_MINIMAX_H3_REF2VA_LIGHTX2V: MINIMAX_H3_LIGHTX2V_NUM_INFERENCE_STEPS,
+    ModelRunners.TT_WAN_2_2_I2V: WAN22_I2V_A14B_NUM_STEPS,
+    ModelRunners.TT_LTX_2_3_DISTILLED: LTX23_DISTILLED_NUM_FORWARDS,
+    ModelRunners.TT_MINIMAX_H3_FL2VA: _MINIMAX_H3_FORWARDS,
+    ModelRunners.TT_MINIMAX_H3_REF2VA: _MINIMAX_H3_FORWARDS,
+    ModelRunners.TT_MINIMAX_H3_FL2VA_LIGHTX2V: _MINIMAX_H3_LIGHTX2V_FORWARDS,
+    ModelRunners.TT_MINIMAX_H3_REF2VA_LIGHTX2V: _MINIMAX_H3_LIGHTX2V_FORWARDS,
 }
 
 
@@ -323,7 +326,7 @@ def video_executed_inference_steps(
 ) -> Optional[int]:
     """Return the denoise steps the pipeline actually runs.
 
-    Distill, Lightning, AniSora, FastH3, and LightX2V ignore ``num_inference_steps``.
+    Distill, Lightning, and AniSora ignore ``num_inference_steps``.
     """
     if model_runner:
         try:
@@ -345,6 +348,7 @@ INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.TT_FLUX_1_DEV: {ModelNames.FLUX_1_DEV},
     ModelRunners.TT_FLUX_1_SCHNELL: {ModelNames.FLUX_1_SCHNELL},
     ModelRunners.TT_FLUX_1_KONTEXT_DEV: {ModelNames.FLUX_1_KONTEXT_DEV},
+    ModelRunners.TT_FLUX_3_IMAGE_KLEIN: {ModelNames.FLUX_3_IMAGE_KLEIN},
     ModelRunners.TT_MOTIF_IMAGE_6B_PREVIEW: {ModelNames.MOTIF_IMAGE_6B_PREVIEW},
     ModelRunners.TT_QWEN_IMAGE: {ModelNames.QWEN_IMAGE},
     ModelRunners.TT_QWEN_IMAGE_2512: {ModelNames.QWEN_IMAGE_2512},
@@ -358,10 +362,8 @@ INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.TT_WAN_2_2_I2V_LORA: {ModelNames.WAN_2_2_I2V_LORA},
     ModelRunners.TT_WAN_2_2_I2V_LIGHTNING: {ModelNames.WAN_2_2_I2V_LIGHTNING},
     ModelRunners.TT_LTX_2_3_DISTILLED: {ModelNames.LTX_2_3_DISTILLED},
-    ModelRunners.TT_MINIMAX_H3_T2VA: {ModelNames.MINIMAX_H3},
     ModelRunners.TT_MINIMAX_H3_FL2VA: {ModelNames.MINIMAX_H3_FL2VA},
     ModelRunners.TT_MINIMAX_H3_REF2VA: {ModelNames.MINIMAX_H3_REF2VA},
-    ModelRunners.TT_MINIMAX_H3_FASTH3: {ModelNames.MINIMAX_H3_FASTH3},
     ModelRunners.TT_MINIMAX_H3_FL2VA_LIGHTX2V: {ModelNames.MINIMAX_H3_FL2VA_LIGHTX2V},
     ModelRunners.TT_MINIMAX_H3_REF2VA_LIGHTX2V: {ModelNames.MINIMAX_H3_REF2VA_LIGHTX2V},
     ModelRunners.TT_WHISPER: {
@@ -526,46 +528,17 @@ def wan22_target_resolution(mesh_shape: Tuple[int, int]) -> Resolution:
 # create_pipeline, not only generate(), or lip sync drifts.
 # 153f relies on the latent T=20 conv3d blocking entries in
 # models/tt_dit/utils/conv3d.py; without them decode is ~2x slower.
-# The shape is baked into the captured traces, so a request may only ask for the
-# shape this process serves; see ltx_served_shape().
-
-
-class VideoShapeConfig(NamedTuple):
-    """One servable video generation shape. Fixed at pipeline construction."""
-
-    num_frames: int
-    height: int
-    width: int
-    fps: float
-
+# The shape is baked into the captured traces, so a request may only ask for
+# this one.
 
 # Mirrors TEMPORAL_COMPRESSION in models/tt_dit/utils/ltx.py. tt-metal does not
 # assert 8k+1 frame counts (others silently truncate), hence snap_num_frames.
 LTX_TEMPORAL_COMPRESSION = 8
-# LTXDistilledPipeline.generate() asserts height % 64 == 0 and width % 64 == 0.
-LTX_SPATIAL_MULTIPLE = 64
 
-LTX_SHAPE_1080P_6S_25FPS = VideoShapeConfig(
-    num_frames=153, height=1088, width=1920, fps=25.0
-)
-
-# Shapes the pipeline may be built with; ltx_served_shape() is the one this process
-# has traces for, and is what requests are validated against.
-LTX_ACCEPTED_SHAPES = frozenset({LTX_SHAPE_1080P_6S_25FPS})
-
-LTX_NUM_FRAMES = LTX_SHAPE_1080P_6S_25FPS.num_frames
-LTX_HEIGHT = LTX_SHAPE_1080P_6S_25FPS.height
-LTX_WIDTH = LTX_SHAPE_1080P_6S_25FPS.width
-LTX_FPS = LTX_SHAPE_1080P_6S_25FPS.fps
-
-# Fixed by the distilled sigma schedules (8 stage-1 + 3 stage-2 steps); the
-# pipeline takes no step count.
-LTX_NUM_INFERENCE_STEPS = 11
-
-
-def ltx_served_shape() -> VideoShapeConfig:
-    """The shape this process's pipeline was built with (and captured traces for)."""
-    return LTX_SHAPE_1080P_6S_25FPS
+LTX_NUM_FRAMES = 153
+LTX_HEIGHT = 1088
+LTX_WIDTH = 1920
+LTX_FPS = 25.0
 
 
 def snap_num_frames(n: int) -> int:
@@ -591,6 +564,7 @@ TTS_RESPONSE_FORMATS = AUDIO_RESPONSE_FORMATS | frozenset(
 
 class JobTypes(Enum):
     VIDEO = "video"
+    GENERATION = "generation"
     TRAINING = "training"
     ADAPTER_MERGE = "adapter_merge"
 
@@ -645,6 +619,17 @@ def merged_models_root() -> str:
 
 def job_database_path() -> str:
     return os.path.join(_training_store_root(), TRAINING_STORE_JOB_DATABASE_FILENAME)
+
+
+# One directory per generation job, holding its output files and their manifest.
+def generations_root() -> str:
+    return os.getenv("TT_GENERATIONS_DIR", "/tmp/generations")
+
+
+# A generation job's directory: its result path from submit on, so whatever a
+# runner leaves in it goes with the job.
+def generation_job_dir(job_id: str) -> str:
+    return os.path.normpath(os.path.join(generations_root(), job_id))
 
 
 # Helper function to create vLLM configuration with late import to avoid circular imports
@@ -979,6 +964,14 @@ ModelConfigs = {
         "request_processing_timeout_seconds": 2000,
         "trace_region_size": 51000000,
     },
+    # The whole Galaxy: the DiT sequence- and tensor-parallel over the 4x8
+    # ring, its prompt upsampler on the first chip. No smaller mesh has run.
+    (ModelRunners.TT_FLUX_3_IMAGE_KLEIN, DeviceTypes.BLACKHOLE_GALAXY): {
+        "device_mesh_shape": (4, 8),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+    },
     (ModelRunners.TT_MOTIF_IMAGE_6B_PREVIEW, DeviceTypes.T3K): {
         "device_mesh_shape": (2, 4),
         "is_galaxy": False,
@@ -1091,14 +1084,6 @@ ModelConfigs = {
         "request_processing_timeout_seconds": 5000,
     },
     # One device-id group -> one worker -> requests serialise on the mesh.
-    (ModelRunners.TT_MINIMAX_H3_T2VA, DeviceTypes.GALAXY): {
-        "device_mesh_shape": (4, 8),
-        "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
-        "max_batch_size": 1,
-        "download_weights_from_service": False,
-        "request_processing_timeout_seconds": 5000,
-    },
     (ModelRunners.TT_MINIMAX_H3_FL2VA, DeviceTypes.GALAXY): {
         "device_mesh_shape": (4, 8),
         "is_galaxy": False,
@@ -1108,14 +1093,6 @@ ModelConfigs = {
         "request_processing_timeout_seconds": 5000,
     },
     (ModelRunners.TT_MINIMAX_H3_REF2VA, DeviceTypes.GALAXY): {
-        "device_mesh_shape": (4, 8),
-        "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
-        "max_batch_size": 1,
-        "download_weights_from_service": False,
-        "request_processing_timeout_seconds": 5000,
-    },
-    (ModelRunners.TT_MINIMAX_H3_FASTH3, DeviceTypes.GALAXY): {
         "device_mesh_shape": (4, 8),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
@@ -1275,14 +1252,6 @@ ModelConfigs = {
     },
     # Galaxy quad: the 4x8 Galaxy configs above with the full (4, 32) mesh. One
     # device-id group -> one worker on rank 0; tt-run assigns each rank's chips.
-    (ModelRunners.TT_MINIMAX_H3_T2VA, DeviceTypes.GALAXY_QUAD): {
-        "device_mesh_shape": (4, 32),
-        "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
-        "max_batch_size": 1,
-        "download_weights_from_service": False,
-        "request_processing_timeout_seconds": 5000,
-    },
     (ModelRunners.TT_MINIMAX_H3_FL2VA, DeviceTypes.GALAXY_QUAD): {
         "device_mesh_shape": (4, 32),
         "is_galaxy": False,
@@ -1292,14 +1261,6 @@ ModelConfigs = {
         "request_processing_timeout_seconds": 5000,
     },
     (ModelRunners.TT_MINIMAX_H3_REF2VA, DeviceTypes.GALAXY_QUAD): {
-        "device_mesh_shape": (4, 32),
-        "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
-        "max_batch_size": 1,
-        "download_weights_from_service": False,
-        "request_processing_timeout_seconds": 5000,
-    },
-    (ModelRunners.TT_MINIMAX_H3_FASTH3, DeviceTypes.GALAXY_QUAD): {
         "device_mesh_shape": (4, 32),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,

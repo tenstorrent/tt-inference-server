@@ -465,8 +465,7 @@ Grafana's panels are all empty after enabling remote_write, check
 Alongside the stage timings (which measure what the engine *did*), these
 record what each request *asked for*, so a change in the timings can be
 attributed to a shift in incoming workload rather than to the engine. All are
-labelled `{model_type, conditioning}` for image and `{model_type,
-request_type}` for video.
+labelled `{model_type, conditioning}`.
 
 | Metric | Meaning |
 | --- | --- |
@@ -475,17 +474,6 @@ request_type}` for video.
 | `tt_media_server_image_requested_guidance_scale` | guidance scale requested |
 | `tt_media_server_image_requested_images` | batch size requested, before segmentation |
 | `tt_media_server_image_requested_megapixels` | requested output resolution, width x height |
-| `tt_media_server_video_requested_aspect_ratio_total` | requests by bucketed aspect ratio |
-| `tt_media_server_video_requested_duration_seconds` | clip duration requested |
-
-Two label values on `aspect_ratio` need explaining, because they are not
-guessable: **`unset`** means the caller omitted the field and the model's own
-default output shape applies, while **`other`** means the caller asked for a
-ratio this deployment does not name. Only `other` is a product signal —
-sustained traffic there means someone wants a shape we do not serve. Values
-are normalised (`strip()`, `x` and `/` mapped to `:`) the same way the runners
-normalise them, so `16x9` and `16/9` are counted as `16:9` rather than
-misfiled under `other`.
 
 `image_requested_images` and `image_requested_megapixels` have no equivalent
 elsewhere. The `batch` label on the stage metrics is the *device-side* batch,

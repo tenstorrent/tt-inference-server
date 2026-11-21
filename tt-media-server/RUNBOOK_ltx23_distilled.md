@@ -25,14 +25,17 @@ Blackhole Galaxy (32 chips). Verified end-to-end: 1080p h264+aac, **153 frames @
    - `Lightricks/LTX-2.3` → `ltx-2.3-22b-distilled-1.1.safetensors`
    - `google/gemma-3-12b-it-qat-q4_0-unquantized`
 4. Own every path (owner-writable dirs): `TT_METAL_HOME`, `TT_DIT_CACHE_DIR`,
-   `TT_VIDEO_OUTPUT_DIR`. Pointing any at another user's dir → permission errors.
+   `TT_VIDEO_OUTPUT_DIR`, `TT_GENERATIONS_DIR` (each job's output files; the default,
+   `/tmp/generations`, may belong to another user and does not survive a reboot).
+   Pointing any at another user's dir → permission errors.
 
 ## Served shape (fixed)
 
 1080p / 153 frames / 25 fps is baked into the runner
-(`LTX_NUM_FRAMES`/`LTX_HEIGHT`/`LTX_WIDTH`/`LTX_FPS` in `tt_model_runners/dit_runners.py`) and
-into the captured traces, so a request cannot change it — `/generations` takes a prompt and a
-seed, nothing else.
+(`LTX_NUM_FRAMES`/`LTX_HEIGHT`/`LTX_WIDTH`/`LTX_FPS` in `config/constants.py`) and
+into the captured traces, so a request cannot change it: the shape fields of
+`POST /v1/generations/lightricks/ltx-2.3-22b-distilled` each allow only the served value
+(`docs/api/openapi/lightricks/ltx-2.3-22b-distilled.yaml`).
 
 | | value | why |
 |---|---|---|
@@ -44,7 +47,7 @@ seed, nothing else.
 
 ### Full-time hosting (systemd) — how this box actually runs
 `start_ltx_fast.sh` bakes in every env var the server needs, so a restart is
-reproducible and `SERVED_MODEL_NAME` survives it. `deploy/` holds the units:
+reproducible. `deploy/` holds the units:
 
 ```bash
 sudo cp deploy/ltx-media-server*.service deploy/ltx-media-server-health.timer /etc/systemd/system/
@@ -78,6 +81,7 @@ cd <repo>/tt-inference-server/tt-media-server
 TT_METAL_HOME=<tt-metal> \
 TT_DIT_CACHE_DIR=<owned>/tt_dit_cache \
 TT_VIDEO_OUTPUT_DIR=<owned>/tt-media-videos \
+TT_GENERATIONS_DIR=<owned>/tt-media-generations \
 LTX_YUV_EXPORT=1 \
 DEVICE=galaxy MODEL=LTX-2.3-distilled \
 ./python_env/bin/uvicorn --host 0.0.0.0 main:app --lifespan on --port 8082
@@ -85,18 +89,18 @@ DEVICE=galaxy MODEL=LTX-2.3-distilled \
 
 Either way, startup does a traced warmup (one full 1080p gen) before `/health` → 200;
 ~10 min cold, faster once the DIT cache + kernels are on disk. That warmup gen's MP4 is
-discarded rather than left in `TT_VIDEO_OUTPUT_DIR` (see `_discard_warmup_output`).
+discarded rather than left in `TT_GENERATIONS_DIR`.
 
 ## Generate (async; needs API key)
 ```bash
 AUTH='Authorization: Bearer your-secret-key'   # default; override with API_KEY, or NO_AUTH=1
 PORT=8000                                      # 8082 if started via the manual command above
-JOB=$(curl -s -X POST localhost:$PORT/v1/videos/generations -H "$AUTH" \
+JOB=$(curl -s -X POST localhost:$PORT/v1/generations/lightricks/ltx-2.3-22b-distilled -H "$AUTH" \
   -H 'Content-Type: application/json' -d '{"prompt":"...","seed":10}' | jq -r .id)
-curl -s -H "$AUTH" localhost:$PORT/v1/videos/generations/$JOB          # poll until "completed"
-curl -s -H "$AUTH" -o out.mp4 localhost:$PORT/v1/videos/generations/$JOB/download
+curl -s -H "$AUTH" localhost:$PORT/v1/jobs/$JOB          # poll until "completed"
+curl -s -H "$AUTH" -o out.mp4 localhost:$PORT/v1/jobs/$JOB/content/0
 ```
-`/health` and `/v1/models` need no key; `/generations` does. The browser UI at
+`/health` and `/v1/models` need no key; `/v1/generations` and `/v1/jobs` do. The browser UI at
 `/docs` (plus `/redoc`, `/openapi.json`) is **off** under the default
 `ENVIRONMENT=production`; start with `ENVIRONMENT=development` to enable it.
 
@@ -145,10 +149,11 @@ the tt-metal branch above. `LTX_YUV_EXPORT=1` is ~13% faster than the default ex
 decode dominates the untraced path. Warmup is ~176s on a cold DIT cache.
 
 ## Implementation (this branch)
-`config/constants.py` (LTX `ModelNames`/`SupportedModels`/`ModelRunners` + video-service &
-`ModelConfigs` `(TT_LTX_2_3_DISTILLED, GALAXY)` entries), `tt_model_runners/dit_runners.py`
-(`TTLTX23DistilledRunner`), `tt_model_runners/runner_fabric.py` (dispatch),
-`utils/video_manager.py` (`TT_VIDEO_OUTPUT_DIR` override), `start_ltx_fast.sh` +
-`ltx_healthcheck.sh` + `deploy/` (systemd hosting), and `SERVED_MODEL_NAME` support in
-`open_ai_api/models.py` / `model_services/base_job_service.py`. Serving is text→AV: `run()` writes
-the MP4 and returns its path; `VideoService.post_process` passes the path straight to `FileResponse`.
+`config/constants.py` (LTX `ModelNames`/`SupportedModels`/`ModelRunners` + generation-service &
+`ModelConfigs` `(TT_LTX_2_3_DISTILLED, GALAXY)` entries), `domain/ltx23_distilled_request.py`
+(the request), `tt_model_runners/generation_runners.py` (`TTLtx23DistilledRunner`),
+`tt_model_runners/runner_fabric.py` (dispatch), `start_ltx_fast.sh` + `ltx_healthcheck.sh` +
+`deploy/` (systemd hosting). Serving is text→AV: `run()` writes the MP4 into the job's directory
+under `TT_GENERATIONS_DIR` and returns its path; `GenerationService` remuxes it there for
+faststart, and `GET /v1/jobs/{id}/content/0` serves it. A file a cancelled or failed job leaves
+behind goes when the job is deleted or expires.

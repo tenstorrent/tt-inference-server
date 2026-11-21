@@ -16,7 +16,7 @@ paths:
       summary: Submit a FLUX.3 Image klein job
       description: |
         Text to image, or editing a reference when `images` is given. Every prompt is rewritten by the model's prompt
-        upsampler first.
+        upsampler, which runs in the deployment or ahead of it; with it ahead, prompts reach the model as sent.
       requestBody:
         required: true
         content:
@@ -72,9 +72,14 @@ components:
           minLength: 1
           description: |
             What to generate or how to edit, in plain words. The model's prompt
-            upsampler always rewrites it into the detailed caption the model
-            was trained on, and each output reports that caption as its
-            `prompt`.
+            upsampler rewrites it into the detailed caption the model was
+            trained on; it runs in the deployment or ahead of it
+            (`FLUX3_PROMPT_UPSAMPLER_FROZEN`), and with it ahead the prompt
+            reaches the model as sent. Each output reports the caption it was
+            rendered from as its `prompt`. At most 20,000 characters; the
+            upsampler's input (prompt, reference and template) is at most 8,191
+            tokens, a longer one fails the job, and the caption is encoded,
+            truncated past 4096 tokens.
 
             Refer to `images` by tag: `<ref_image_0>` is the first.
 
@@ -97,9 +102,13 @@ components:
           items:
             $ref: "../../common.yaml#/components/schemas/Media"
           description: |
-            Reference to edit: 0 or 1 for now; a list so more can be allowed
-            later without a schema change. Omitted = text to image. Resized and
-            center-cropped to the output size.
+            Image to edit: 0 or 1 for now; a list so more can be allowed later
+            without a schema change. Omitted = text to image. Turned upright (EXIF
+            orientation) and kept at its aspect ratio: scaled down, never up, to a
+            canvas of at most 4 MP with sides of 64–4096 px (rounded up to 16 px,
+            the border padded with the image's mirrored edge), never cropped. Any
+            size up to 89,478,485 pixels (PIL's decompression-bomb limit) and 30 MB
+            is accepted.
         count:
           type: integer
           minimum: 1
@@ -126,6 +135,10 @@ components:
             | `aspect_ratio` | `1K`      | `2K`      | `4K`      |
             | -------------- | --------- | --------- | --------- |
             | `1:1`          | 1024×1024 | 2048×2048 | 4096×4096 |
+
+            `4K` is served with the prompt upsampler ahead of the deployment
+            (`FLUX3_PROMPT_UPSAMPLER_FROZEN=1`); with it in the deployment, a `4K`
+            request is refused with 422.
         format:
           $ref: "../../common.yaml#/components/schemas/ImageFormat"
         seed:
