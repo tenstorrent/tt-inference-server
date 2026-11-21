@@ -518,7 +518,6 @@ class TestGalaxyQuadDevice:
         for var in (
             "MODEL_RUNNER",
             "DEVICE_MESH_SHAPE",
-            "SP_MESH_4X32",
             "SD_3_5_FAST",
             "SD_3_5_BASE",
             "TP2",
