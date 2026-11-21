@@ -101,7 +101,9 @@ TERMINAL = ("completed", "failed", "cancelled")
 def download(base, job_id, auth=None):
     """Raw GET of the mp4: (status, bytes)."""
     headers = {"authorization": f"Bearer {auth}"} if auth else {}
-    status, _, content = http_call(base, "GET", f"{GEN}/{job_id}/download", None, headers)
+    status, _, content = http_call(
+        base, "GET", f"{GEN}/{job_id}/download", None, headers
+    )
     return status, content
 
 
