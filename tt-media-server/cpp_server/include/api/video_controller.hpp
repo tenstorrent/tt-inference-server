@@ -4,10 +4,12 @@
 #pragma once
 
 #include <drogon/HttpController.h>
+#include <json/json.h>
 
 #include <atomic>
 #include <memory>
 
+#include "domain/video/video_deployment.hpp"
 #include "services/video_service.hpp"
 
 namespace tt::api {
@@ -18,8 +20,9 @@ namespace tt::api {
  * and a job id. The client polls GET /generations/{id}, then downloads the mp4.
  * Sync (`USE_ASYNC_VIDEO=false` or `?async=false`): POST stays open and the
  * body is the mp4 file, same as Python `FileResponse`. The file also stays on
- * disk. i2v and ref2va are
- * later steps. SyncAdvice 404s these routes unless MODEL_SERVICE is video. */
+ * disk. Image-to-video comes in on its own routes (`/generations/i2v`,
+ * `/generations/i2v/upload`), as in Python: `/generations` is text-only.
+ * SyncAdvice 404s these routes unless MODEL_SERVICE is video. */
 class VideoController : public drogon::HttpController<VideoController> {
  public:
   // A route added here must also be registered in registerVideo()
@@ -29,6 +32,10 @@ class VideoController : public drogon::HttpController<VideoController> {
   METHOD_LIST_BEGIN
   ADD_METHOD_TO(VideoController::generate, "/v1/videos/generations",
                 drogon::Post);
+  ADD_METHOD_TO(VideoController::generateI2V, "/v1/videos/generations/i2v",
+                drogon::Post);
+  ADD_METHOD_TO(VideoController::generateI2VUpload,
+                "/v1/videos/generations/i2v/upload", drogon::Post);
   ADD_METHOD_TO(VideoController::getJob, "/v1/videos/generations/{job_id}",
                 drogon::Get);
   ADD_METHOD_TO(VideoController::listJobs, "/v1/videos/jobs", drogon::Get);
@@ -45,6 +52,12 @@ class VideoController : public drogon::HttpController<VideoController> {
 
   void generate(const drogon::HttpRequestPtr& req,
                 std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+  void generateI2V(
+      const drogon::HttpRequestPtr& req,
+      std::function<void(const drogon::HttpResponsePtr&)>&& callback);
+  void generateI2VUpload(
+      const drogon::HttpRequestPtr& req,
+      std::function<void(const drogon::HttpResponsePtr&)>&& callback);
   void getJob(const drogon::HttpRequestPtr& req,
               std::function<void(const drogon::HttpResponsePtr&)>&& callback,
               std::string jobId);
@@ -61,7 +74,15 @@ class VideoController : public drogon::HttpController<VideoController> {
                  std::string jobId);
 
  private:
+  /** The shared submit path of the four generation routes. `prepared` is a
+   *  body built by the caller (the upload route); null = the JSON body. */
+  void handle(const drogon::HttpRequestPtr& req,
+              std::function<void(const drogon::HttpResponsePtr&)>&& callback,
+              domain::video::VideoRoute route, const Json::Value* prepared);
+
   std::shared_ptr<services::VideoService> service;
+  domain::video::VideoDeployment deployment_ =
+      domain::video::servedVideoDeployment();
   std::atomic<uint64_t> requestCounter{0};
 };
 

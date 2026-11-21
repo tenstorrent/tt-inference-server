@@ -67,6 +67,17 @@ run_phase() {  # run_phase <phase> <extra server_cases args> -- <server env...>
       rc=1
     fi
   fi
+  if [[ "$phase" == "i2v" ]]; then
+    # the media must reach the runner (the mock logs what it received)
+    want="image_prompts 1"
+    if grep -q "MockVideoRunner\] task .* ${want}" "$OUT/$phase.log"; then
+      echo "PASS  $phase: the mock runner received the media (log: ${want})"
+    else
+      echo "FAIL  $phase: the mock runner log does not show '${want}'"
+      grep -h "MockVideoRunner" "$OUT/$phase.log" | head -3
+      rc=1
+    fi
+  fi
   stop_server
 }
 
@@ -91,4 +102,7 @@ run_phase warmup "" -- TT_VIDEO_MOCK_WARMUP_MS=6000
 # cancel marker); with one group there is no such window, so this phase starts two
 # groups, which means two worker processes.
 run_phase cancel-race "" -- "DEVICE_IDS=(0),(1)" TT_MEDIA_TEST_PRECLAIM_DELAY_MS=1500 TT_VIDEO_MOCK_DELAY_MS=3000
+# The routes a deployment serves depend on MODEL_RUNNER (the mock runner ignores
+# it, so these phases only exercise the API: routes, submit checks, the echo).
+run_phase i2v "" -- MODEL_RUNNER=tt-wan2.2-i2v TT_VIDEO_MOCK_WRITE_FILE=$WRITE
 exit $rc

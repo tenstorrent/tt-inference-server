@@ -125,15 +125,27 @@ tt-metal.
 
 Any other `MODEL_RUNNER` is refused at start with the list of the supported ones.
 
-Request fields beyond the text-to-video ones, on the same `POST /v1/videos/generations`:
+Image-to-video has its own routes, as in the Python server (`POST /v1/videos/generations`
+is text-only and ignores `image_prompts`):
+
+| Route | Body | Served by |
+|---|---|---|
+| `POST /v1/videos/generations/i2v` | JSON with `image_prompts` | `tt-wan2.2-i2v`; also accepted on the T2V runner, which ignores the image |
+| `POST /v1/videos/generations/i2v/upload` | multipart: `prompt`, `image` (PNG, JPEG or WebP, at most 30,000,000 bytes), `frame_pos` (0), `num_inference_steps` (12), `seed`, `negative_prompt` | the same |
 
 - `image_prompts`: `[{"image": "<base64>", "frame_pos": 0}, ...]`, 1 to 81 entries,
-  `frame_pos` in [-1, 81), each frame once. Required by the I2V models.
-- `references`: `{"images": [{"b64": ...}], "videos": [...], "audios": [...]}`. Parsed
-  and checked, but no model served here uses them yet (Ref2VA).
-- Media must be inline base64; `url` sources are refused (the Python server downloads
-  them). The job record (`GET`) shows only `frame_pos` and the reference counts, not
-  the base64.
+  `frame_pos` in [-1, 81), each frame once. Required on `/i2v`.
+- The deployment (`MODEL_RUNNER`) decides which routes it serves; the others answer `422`
+  with Python's message (for example `/generations` on `tt-wan2.2-i2v`: "This
+  deployment requires image conditioning. Use POST /generations/i2v ...").
+- Checked at submit, so a bad asset is a 4xx and not a failed job: every image is read
+  from its header (`422` "is not a decodable image"), one asset over its base64 cap is
+  `422`, all inline media over 64,000,000 characters is `413`, the upload route answers
+  `415` for a file that is not PNG, JPEG or WebP and `413` over 30,000,000 bytes.
+- Media must be inline base64. A media URL (`image_prompts[].image` starting with
+  `http(s)://`) is refused with `400`, which is what the Python server does until its
+  operator allows URL downloads; this server has no downloader.
+- The job record (`GET`) shows only `frame_pos`, not the base64.
 
 Model-specific limits are checked by the runner; a request it refuses fails as a job
 with the runner's message.
@@ -517,8 +529,8 @@ codes, error cases and the `Range` behaviour are the same):
 - Only `tt-wan2.2` (text-to-video) has run on a device through this server;
   `tt-wan2.2-i2v` is covered by device-free tests of its pipeline arguments (C++)
   and adapter (a fake pipeline).
-- No `/v1/videos/generations/i2v/upload` (multipart) and no media URL download: images
-  and references are sent as base64 in the JSON body.
+- No media URL download (a URL is refused with `400`): images are sent as base64 in the
+  JSON body or as a multipart upload on `/i2v/upload`.
 
 ## Tests
 

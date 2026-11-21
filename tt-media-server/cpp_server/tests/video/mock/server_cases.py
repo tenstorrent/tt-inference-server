@@ -467,6 +467,294 @@ def check_queue_full(base, token, max_queue):
         raw(base, "DELETE", f"{GEN}/{jid}", token=token)
 
 
+# ---- image-to-video routes (phase i2v) ---------------------------------------------
+
+I2V = GEN + "/i2v"
+# a lossy JPEG (10x6) and WebP (12x8) written by PIL
+JPEG_B64 = (
+    "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwg"
+    "JC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIy"
+    "MjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAAGAAoDASIAAhEBAxEB/8QA"
+    "HwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIh"
+    "MUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVW"
+    "V1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXG"
+    "x8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQF"
+    "BgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAV"
+    "YnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOE"
+    "hYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq"
+    "8vP09fb3+Pn6/9oADAMBAAIRAxEAPwDkKKKK8U/TD//Z"
+)
+WEBP_B64 = (
+    "UklGRjoAAABXRUJQVlA4IC4AAACwAQCdASoMAAgAAUAmJaACdLoABDAAAP7x3I/4DdfFtMv/vYL/3YL/"
+    "3YL/WwAA"
+)
+
+
+def png_b64(width, height):
+    """A valid solid-colour PNG, built with zlib only."""
+    import base64
+    import struct
+    import zlib
+
+    def chunk(kind, data):
+        body = kind + data
+        return (
+            struct.pack(">I", len(data))
+            + body
+            + struct.pack(">I", zlib.crc32(body) & 0xFFFFFFFF)
+        )
+
+    row = b"\x00" + b"\xc8\x1e\x1e" * width
+    raw = zlib.compress(row * height, 1)
+    data = (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
+        + chunk(b"IDAT", raw)
+        + chunk(b"IEND", b"")
+    )
+    return base64.b64encode(data).decode()
+
+
+def multipart(fields, files):
+    boundary = "----ttvideotest"
+    parts = []
+    for name, value in fields.items():
+        parts.append(
+            f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"\r\n\r\n{value}\r\n'.encode()
+        )
+    for name, (filename, content_type, data) in files.items():
+        parts.append(
+            (
+                f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"; '
+                f'filename="{filename}"\r\nContent-Type: {content_type}\r\n\r\n'
+            ).encode()
+            + data
+            + b"\r\n"
+        )
+    parts.append(f"--{boundary}--\r\n".encode())
+    return b"".join(parts), f"multipart/form-data; boundary={boundary}"
+
+
+def post_form(base, path, fields, files, token):
+    body, ctype = multipart(fields, files)
+    headers = {"content-type": ctype, "authorization": f"Bearer {token}"}
+    status, _, content = cc.http_call(base, "POST", path, body, headers)
+    try:
+        payload = json.loads(content.decode()) if content.strip() else {}
+    except json.JSONDecodeError:
+        payload = {"raw": content.decode(errors="replace")}
+    return status, payload
+
+
+def detail(payload):
+    return payload.get("detail") or payload.get("error", {}).get("message", "")
+
+
+def expect(base, token, name, path, body, status, text=None):
+    got, _, payload = raw(base, "POST", path, body, token)
+    message = detail(payload)
+    ok = got == status and (text is None or text in message)
+    note(ok, name, f"status={got} (want {status}) message={message[:110]!r}")
+    return got, payload
+
+
+def finish(base, token, jid, timeout=30):
+    wait_for(base, token, jid, ("completed", "failed", "cancelled"), timeout=timeout)
+    status = job_status(base, token, jid)
+    raw(base, "DELETE", f"{GEN}/{jid}", token=token)
+    return status
+
+
+def check_i2v(base, token):
+    """Wan2.2 I2V deployment (MODEL_RUNNER=tt-wan2.2-i2v)."""
+    png = png_b64(64, 48)
+    prompts = [{"image": png, "frame_pos": 0}]
+    expect(
+        base,
+        token,
+        "i2v: /generations (text) is refused, the message names /i2v",
+        GEN,
+        {"prompt": "a stream"},
+        422,
+        "/generations/i2v",
+    )
+    status, job = expect(
+        base,
+        token,
+        "i2v: /generations/i2v with a PNG is accepted",
+        I2V,
+        {"prompt": "a stream", "image_prompts": prompts},
+        202,
+    )
+    if status == 202:
+        echo = job.get("request_parameters", {}).get("image_prompts")
+        note(
+            echo == [{"frame_pos": 0}],
+            "i2v: the job echoes frame_pos only, not the image",
+            f"image_prompts={echo}",
+        )
+        final = finish(base, token, job["id"])
+        note(final == "completed", "i2v: the job completes", f"status={final}")
+    for label, image in (("JPEG", JPEG_B64), ("WebP", WEBP_B64)):
+        status, job = expect(
+            base,
+            token,
+            f"i2v: a {label} image is accepted",
+            I2V,
+            {"prompt": "p", "image_prompts": [{"image": image, "frame_pos": -1}]},
+            202,
+        )
+        if status == 202:
+            finish(base, token, job["id"])
+    expect(
+        base,
+        token,
+        "i2v: image_prompts is required",
+        I2V,
+        {"prompt": "a stream"},
+        422,
+        "image_prompts",
+    )
+    expect(
+        base,
+        token,
+        "i2v: an image that cannot be decoded",
+        I2V,
+        {
+            "prompt": "p",
+            "image_prompts": [{"image": "bm90IGFuIGltYWdl", "frame_pos": 0}],
+        },
+        422,
+        "image_prompts[0] is not a decodable image",
+    )
+    expect(
+        base,
+        token,
+        "i2v: frame_pos out of range",
+        I2V,
+        {"prompt": "p", "image_prompts": [{"image": png, "frame_pos": 81}]},
+        422,
+        "frame_pos",
+    )
+    expect(
+        base,
+        token,
+        "i2v: duplicate frame_pos",
+        I2V,
+        {
+            "prompt": "p",
+            "image_prompts": [
+                {"image": png, "frame_pos": 3},
+                {"image": png, "frame_pos": 3},
+            ],
+        },
+        422,
+        "duplicate frame_pos",
+    )
+    expect(
+        base,
+        token,
+        "i2v: a URL is refused with 400 (downloads are off)",
+        I2V,
+        {
+            "prompt": "p",
+            "image_prompts": [
+                {
+                    "image": "https://example.com/a.png?X-Amz-Signature=secret",
+                    "frame_pos": 0,
+                }
+            ],
+        },
+        400,
+        "URL downloads are not enabled",
+    )
+    status, job = expect(
+        base,
+        token,
+        "i2v: references are ignored on /i2v",
+        I2V,
+        {
+            "prompt": "p",
+            "image_prompts": prompts,
+            "references": {"images": [{"b64": "x"}]},
+        },
+        202,
+    )
+    if status == 202:
+        note(
+            "references" not in job.get("request_parameters", {}),
+            "i2v: references are not in the job",
+            f"keys={sorted(job.get('request_parameters', {}))}",
+        )
+        finish(base, token, job["id"])
+    # sync mode on the i2v route returns the mp4 like /generations
+    status, _, data = fetch_raw(
+        base,
+        I2V + "?async=false",
+        token,
+        "POST",
+        {"prompt": "sync i2v", "image_prompts": prompts},
+    )
+    note(
+        status == 200 and len(data) > 0,
+        "i2v: ?async=false returns the mp4",
+        f"status={status} bytes={len(data)}",
+    )
+    # the upload route
+    status, job = post_form(
+        base,
+        I2V + "/upload",
+        {"prompt": "from a file", "frame_pos": "0", "seed": "7"},
+        {"image": ("a.png", "image/png", __import__("base64").b64decode(png))},
+        token,
+    )
+    note(
+        status == 202,
+        "i2v/upload: a PNG file is accepted",
+        f"status={status} {detail(job)[:80]!r}",
+    )
+    if status == 202:
+        params = job.get("request_parameters", {})
+        note(
+            params.get("num_inference_steps") == 12 and params.get("seed") == 7,
+            "i2v/upload: steps default to 12, seed is read",
+            f"steps={params.get('num_inference_steps')} seed={params.get('seed')}",
+        )
+        finish(base, token, job["id"])
+    status, payload = post_form(
+        base,
+        I2V + "/upload",
+        {"prompt": "p"},
+        {"image": ("a.txt", "text/plain", b"not an image at all")},
+        token,
+    )
+    note(
+        status == 415,
+        "i2v/upload: a text file is 415",
+        f"status={status} {detail(payload)[:80]!r}",
+    )
+    status, payload = post_form(
+        base,
+        I2V + "/upload",
+        {"prompt": "p"},
+        {
+            "image": (
+                "big.png",
+                "image/png",
+                __import__("base64").b64decode(png) + b"\0" * 30_000_001,
+            )
+        },
+        token,
+    )
+    note(
+        status == 413,
+        "i2v/upload: a file over 30,000,000 bytes is 413",
+        f"status={status} {detail(payload)[:80]!r}",
+    )
+    status, payload = post_form(base, I2V + "/upload", {"prompt": "p"}, {}, token)
+    note(status == 422, "i2v/upload: no image is 422", f"status={status}")
+
+
 def main():
     parser = argparse.ArgumentParser()
     # These phases only run against the server that run_server_tests.sh starts on
@@ -475,7 +763,7 @@ def main():
     parser.add_argument(
         "--phase",
         default="main",
-        choices=["main", "sync-error", "limits", "warmup", "cancel-race"],
+        choices=["main", "sync-error", "limits", "warmup", "cancel-race", "i2v"],
     )
     parser.add_argument(
         "--max-queue",
@@ -507,6 +795,8 @@ def main():
             check_job_limit(base, token)
         elif args.phase == "cancel-race":
             check_cancel_race(base, token)
+        elif args.phase == "i2v":
+            check_i2v(base, token)
     print(f"\n{cc.PASS} passed, {cc.FAIL} failed")
     return 0 if cc.FAIL == 0 else 1
 

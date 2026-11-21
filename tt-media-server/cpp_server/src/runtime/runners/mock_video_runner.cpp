@@ -29,9 +29,11 @@ bool MockVideoRunner::warmup() {
 
 std::string MockVideoRunner::run(
     const tt::domain::VideoGenerateRequest& request) {
-  TT_LOG_INFO("[MockVideoRunner] task {} runner {} prompt_chars {}",
-              request.task_id, config::toString(videoConfig.runner_type),
-              request.prompt.size());
+  TT_LOG_INFO(
+      "[MockVideoRunner] task {} runner {} prompt_chars {} image_prompts {}",
+      request.task_id, config::toString(videoConfig.runner_type),
+      request.prompt.size(),
+      request.imagePrompts ? request.imagePrompts->size() : 0);
   // Test hook: TT_VIDEO_MOCK_DELAY_MS makes the mock behave like a slow device
   // so queued / running / cancelled states can be exercised without a chip.
   if (const char* delay = std::getenv("TT_VIDEO_MOCK_DELAY_MS");

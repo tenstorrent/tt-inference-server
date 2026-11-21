@@ -216,10 +216,23 @@ def server_side(before, after):
 
 
 # ---------------------------------------------------------------- video flow
+# --image PATH: image-to-video. Every job is sent to /generations/i2v with this
+# image pinned at frame 0 (same route and body on the C++ and the Python server).
+I2V_PROMPTS = None
+SAVE_DIR = None
+FIXED_PROMPT = None
+
+
+def job_path():
+    return GEN + "/i2v" if I2V_PROMPTS else GEN
+
+
 def job_body(prompt, steps, extra=None):
     body = {"prompt": prompt}
     if steps is not None:
         body["num_inference_steps"] = steps
+    if I2V_PROMPTS:
+        body["image_prompts"] = I2V_PROMPTS
     body.update(extra or {})
     return body
 
@@ -227,7 +240,7 @@ def job_body(prompt, steps, extra=None):
 def run_job(client, prompt, steps, poll, timeout, download=True, extra=None):
     """One full job. Returns a dict of client-side timings (seconds)."""
     t_start = time.perf_counter()
-    st, j, t_submit = client.json("POST", GEN, job_body(prompt, steps, extra))
+    st, j, t_submit = client.json("POST", job_path(), job_body(prompt, steps, extra))
     rec = {"submit_http": st, "submit_s": t_submit, "ok": False}
     if st != 202 or "id" not in j:
         rec["elapsed_s"] = time.perf_counter() - t_start
@@ -264,6 +277,15 @@ def run_job(client, prompt, steps, poll, timeout, download=True, extra=None):
         rec["download_mb_s"] = (len(raw) / 1e6) / dt if dt > 0 else 0
         rec["x_generation_time"] = h.get("X-Generation-Time") if h else None
         rec["ok"] = st == 200 and len(raw) > 0
+        if SAVE_DIR and rec["ok"]:
+            import os
+
+            os.makedirs(SAVE_DIR, exist_ok=True)
+            rec["file"] = os.path.join(
+                SAVE_DIR, f"{prompt.replace(' ', '_')}-{steps}steps-{jid[:8]}.mp4"
+            )
+            with open(rec["file"], "wb") as handle:
+                handle.write(raw)
     else:
         rec["ok"] = True
     rec["total_s"] = time.perf_counter() - t_start
@@ -275,7 +297,13 @@ def phase_sequential(c, a):
     before = scrape(c)
     recs = []
     for i in range(a.calls):
-        r = run_job(c, f"Test video generation {i + 1}", a.steps, a.poll, a.timeout)
+        r = run_job(
+            c,
+            FIXED_PROMPT or f"Test video generation {i + 1}",
+            a.steps,
+            a.poll,
+            a.timeout,
+        )
         r["index"] = i + 1
         # same formula as the Python benchmark: steps / elapsed (elapsed = until completed)
         r["steps_per_second"] = (a.steps / r["elapsed_s"]) if r.get("ok") else 0
@@ -494,7 +522,26 @@ def main():
     ap.add_argument("--poll", type=float, default=1.0, help="poll interval in seconds")
     ap.add_argument("--timeout", type=float, default=1200)
     ap.add_argument("--out", default="")
+    ap.add_argument(
+        "--prompt",
+        default="",
+        help="prompt of every video (default: 'Test video generation N')",
+    )
+    ap.add_argument(
+        "--image", default="", help="image-to-video: PNG/JPEG file pinned at frame 0"
+    )
+    ap.add_argument("--save-dir", default="", help="keep the downloaded mp4 files here")
     a = ap.parse_args()
+    global I2V_PROMPTS, SAVE_DIR, FIXED_PROMPT
+    FIXED_PROMPT = a.prompt or None
+    if a.image:
+        import base64
+
+        with open(a.image, "rb") as handle:
+            I2V_PROMPTS = [
+                {"image": base64.b64encode(handle.read()).decode(), "frame_pos": 0}
+            ]
+    SAVE_DIR = a.save_dir or None
 
     c = Client(a.base_url, a.api_key)
     st, lv, _ = c.json("GET", "/tt-liveness", auth=False)
