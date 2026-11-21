@@ -29,7 +29,9 @@ import common as c  # noqa: E402
 
 def drop_sync_request(after_s):
     host, port = c.BASE.replace("http://", "").split(":")
-    body = json.dumps({"prompt": "dropped sync request", "num_inference_steps": c.STEPS}).encode()
+    body = json.dumps(
+        {"prompt": "dropped sync request", "num_inference_steps": c.STEPS}
+    ).encode()
     s = socket.create_connection((host, int(port)), timeout=30)
     s.sendall(
         (
@@ -54,7 +56,9 @@ def main():
     pos = c.log_pos()
     drop_sync_request(20)
     st, jobs = c.jreq("GET", "/v1/videos/jobs")
-    c.p(f"  jobs right after the drop: http{st} {len(jobs) if isinstance(jobs, list) else jobs}")
+    c.p(
+        f"  jobs right after the drop: http{st} {len(jobs) if isinstance(jobs, list) else jobs}"
+    )
     # the sync task still runs: a normal job queued behind it must wait, then complete
     st, j = c.submit("behind the dropped one", seed=2)
     t0 = time.time()
@@ -94,7 +98,9 @@ def main():
     t0 = time.time()
     for i in range(30):
         st, j = c.jreq(
-            "POST", c.GEN, {"prompt": f"queued {i}", "num_inference_steps": c.STEPS, "seed": i}
+            "POST",
+            c.GEN,
+            {"prompt": f"queued {i}", "num_inference_steps": c.STEPS, "seed": i},
         )
         if st != 202:
             c.note(False, f"job {i} accepted", f"http{st}")
@@ -123,11 +129,18 @@ def main():
         all(c.status(i) == "cancelled" for i in ids[1:]),
         "all 29 queued jobs are cancelled at once",
         str(
-            {s: [c.status(i) for i in ids[1:]].count(s) for s in set(c.status(i) for i in ids[1:])}
+            {
+                s: [c.status(i) for i in ids[1:]].count(s)
+                for s in set(c.status(i) for i in ids[1:])
+            }
         ),
     )
     c.wait(ids[0], ("completed", "failed"), 600)
-    c.note(c.status(ids[0]) == "completed", "the running job finishes normally", c.status(ids[0]))
+    c.note(
+        c.status(ids[0]) == "completed",
+        "the running job finishes normally",
+        c.status(ids[0]),
+    )
     drained = False
     for _ in range(30):
         _, lv = c.jreq("GET", "/tt-liveness", token=None)

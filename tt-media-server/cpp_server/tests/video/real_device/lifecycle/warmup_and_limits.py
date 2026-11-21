@@ -58,7 +58,10 @@ def main():
 
     rc.p("=== 1. warmup answers")
     srv = rc.Server(
-        args, out, os.path.join(work, "warmup.log"), {"MAX_QUEUE_SIZE": "3", "MAX_JOBS": "5"}
+        args,
+        out,
+        os.path.join(work, "warmup.log"),
+        {"MAX_QUEUE_SIZE": "3", "MAX_JOBS": "5"},
     ).start()
     seen = {}
     t0 = time.time()
@@ -71,9 +74,20 @@ def main():
         pst, hdr, body = post_raw(srv)
         if pst is not None:
             seen.setdefault(
-                ("authorized POST", pst, hdr.get("Retry-After") or hdr.get("retry-after")), 0
+                (
+                    "authorized POST",
+                    pst,
+                    hdr.get("Retry-After") or hdr.get("retry-after"),
+                ),
+                0,
             )
-            seen[("authorized POST", pst, hdr.get("Retry-After") or hdr.get("retry-after"))] += 1
+            seen[
+                (
+                    "authorized POST",
+                    pst,
+                    hdr.get("Retry-After") or hdr.get("retry-after"),
+                )
+            ] += 1
             ust, _, _ = post_raw(srv, token=None)
             seen.setdefault(("POST without token", ust, None), 0)
             seen[("POST without token", ust, None)] += 1
@@ -85,7 +99,11 @@ def main():
         rc.p("   ", k, v)
     post_503 = [k for k in seen if k[0] == "authorized POST" and k[1] == 503]
     rc.note(bool(post_503), "POST during the warmup answers 503", str(post_503))
-    rc.note(any(k[2] == "30" for k in post_503), "503 carries Retry-After: 30", str(post_503))
+    rc.note(
+        any(k[2] == "30" for k in post_503),
+        "503 carries Retry-After: 30",
+        str(post_503),
+    )
     rc.note(
         any(k[0] == "POST without token" and k[1] == 401 for k in seen),
         "the auth check comes first (401 without a token during the warmup)",

@@ -17,7 +17,6 @@ Needs a ready server with a device (it runs two 4-step jobs and one synchronous 
 import argparse
 import os
 import sys
-import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import common as c  # noqa: E402
@@ -80,7 +79,12 @@ def main():
     probe("POST broken json", st)
 
     print("---- unknown or malformed ids")
-    for m, suffix in (("GET", ""), ("GET", "/download"), ("POST", "/cancel"), ("DELETE", "")):
+    for m, suffix in (
+        ("GET", ""),
+        ("GET", "/download"),
+        ("POST", "/cancel"),
+        ("DELETE", ""),
+    ):
         for label, jid in (
             ("unknown uuid", c.UUID0),
             ("not a uuid", "not-a-uuid"),
@@ -90,14 +94,19 @@ def main():
             probe(f"{m} {label} {suffix or '/<id>'}", f"{st} keys={err_shape(j)}")
 
     print("---- a job through its life")
-    st, j = c.jreq("POST", c.GEN, {"prompt": "parity probe", "num_inference_steps": 4, "seed": 1})
+    st, j = c.jreq(
+        "POST", c.GEN, {"prompt": "parity probe", "num_inference_steps": 4, "seed": 1}
+    )
     jid = j.get("id")
     probe("POST create status", st)
     probe("create body keys", sorted(j.keys()))
     probe("create body status", j.get("status"))
     probe("create body job_type", j.get("job_type"))
     probe("create body model", j.get("model"))
-    probe("create body request_parameters keys", sorted((j.get("request_parameters") or {}).keys()))
+    probe(
+        "create body request_parameters keys",
+        sorted((j.get("request_parameters") or {}).keys()),
+    )
     st2, j2 = c.jreq(
         "POST", c.GEN, {"prompt": "queued behind", "num_inference_steps": 4, "seed": 2}
     )
@@ -116,7 +125,10 @@ def main():
     st, cj = c.jreq("POST", f"{c.GEN}/{id2}/cancel")
     probe("second cancel of the same job", f"{st} status={cj.get('status')}")
     st, g = c.jreq("GET", f"{c.GEN}/{id2}")
-    probe("GET of the cancelled job", f"{st} status={g.get('status')} keys={sorted(g.keys())}")
+    probe(
+        "GET of the cancelled job",
+        f"{st} status={g.get('status')} keys={sorted(g.keys())}",
+    )
     st, d = c.jreq("DELETE", f"{c.GEN}/{id2}")
     probe("DELETE of the cancelled job", f"{st} body={d}")
     c.wait(jid, ("completed", "failed"), 600)
@@ -143,7 +155,9 @@ def main():
         if h == "content-length":
             v = "matches body" if v == str(len(body)) else v
         probe(f"download header {h}", v)
-    st, hdr, part = c.req("GET", f"{c.GEN}/{jid}/download", headers={"Range": "bytes=0-99"})
+    st, hdr, part = c.req(
+        "GET", f"{c.GEN}/{jid}/download", headers={"Range": "bytes=0-99"}
+    )
     probe(
         "download Range bytes=0-99",
         f"{st} len={len(part)} content-range={hdr.get('content-range')}",
@@ -158,7 +172,10 @@ def main():
     probe("list is a", type(lst).__name__)
     probe(
         "list contains the job",
-        any(x.get("id") == jid for x in (lst if isinstance(lst, list) else lst.get("jobs", []))),
+        any(
+            x.get("id") == jid
+            for x in (lst if isinstance(lst, list) else lst.get("jobs", []))
+        ),
     )
     st, d = c.jreq("DELETE", f"{c.GEN}/{jid}")
     probe("DELETE of the completed job", f"{st} body={d}")
@@ -166,7 +183,6 @@ def main():
     probe("GET after DELETE", st)
 
     print("---- synchronous mode")
-    t0 = time.time()
     st, hdr, body = c.req(
         "POST",
         f"{c.GEN}?async=false",
@@ -177,7 +193,9 @@ def main():
     probe("sync content-type", hdr.get("content-type"))
     probe("sync x-generation-time present", hdr.get("x-generation-time") is not None)
     probe("sync body starts with mp4 ftyp", body[4:8] == b"ftyp")
-    st, _ = c.jreq("POST", f"{c.GEN}?async=banana", {"prompt": "x", "num_inference_steps": 4})
+    st, _ = c.jreq(
+        "POST", f"{c.GEN}?async=banana", {"prompt": "x", "num_inference_steps": 4}
+    )
     probe("POST ?async=banana", st)
     st, jl = c.jreq("GET", "/v1/videos/jobs")
     probe(

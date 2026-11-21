@@ -51,7 +51,10 @@ def server(port, tag, workdir, **env):
     base = {"TT_VIDEO_MOCK_DELAY_MS": "0", "TT_VIDEO_OUTPUT_DIR": str(out)}
     base.update(env)
     proc, log = w.start(
-        port, tag, workdir, {k: (None if v is None else str(v)) for k, v in base.items()}
+        port,
+        tag,
+        workdir,
+        {k: (None if v is None else str(v)) for k, v in base.items()},
     )
     return proc, log, out
 
@@ -106,8 +109,12 @@ def case_cleaner(wd):
         note(s == "completed", "job completes", f"status={s}")
         st0 = w.call(port, "GET", f"{GEN}/{j['id']}")[0]
         note(st0 == 200, "the job is visible right after it finished", f"http{st0}")
-        gone = w.wait_until(lambda: w.call(port, "GET", f"{GEN}/{j['id']}")[0] == 404, 15)
-        note(bool(gone), "after the retention time the job is evicted by the sweep (404)")
+        gone = w.wait_until(
+            lambda: w.call(port, "GET", f"{GEN}/{j['id']}")[0] == 404, 15
+        )
+        note(
+            bool(gone), "after the retention time the job is evicted by the sweep (404)"
+        )
         listing = w.call(port, "GET", "/v1/videos/jobs")[1]
         note(
             listing == [] or listing == {"jobs": []} or not listing,
@@ -150,7 +157,11 @@ def case_stale(wd):
         s2, _ = w.job(port, j["id"])
         note(s2 == "failed", "the late result does not revive the job", f"status={s2}")
         files = sorted(p.name for p in out.glob("*.mp4")) if out.exists() else []
-        note(files == [], "the late mp4 is removed from the output folder", f"files={files}")
+        note(
+            files == [],
+            "the late mp4 is removed from the output folder",
+            f"files={files}",
+        )
         id2 = create(port)[1]["id"]
         s3, _ = w.wait_job(port, id2, ("failed", "completed"), 20)
         note(
@@ -169,17 +180,22 @@ def case_sigterm(wd):
     proc, log, out = server(port, "sg", wd, TT_VIDEO_MOCK_DELAY_MS=15000)
     try:
         note(ready(port), "server ready")
-        pid = proc.pid
         wpid, _ = w.worker(port)
         create(port)
         create(port)
         w.wait_until(
-            lambda: w.job(port, w.call(port, "GET", "/v1/videos/jobs")[1][0]["id"])[0]
-            == "in_progress",
+            lambda: (
+                w.job(port, w.call(port, "GET", "/v1/videos/jobs")[1][0]["id"])[0]
+                == "in_progress"
+            ),
             10,
         )
         mine = ipc_dirs() - before
-        note(len(mine) == 1, "the server has an ipc folder while it runs", str(sorted(mine)))
+        note(
+            len(mine) == 1,
+            "the server has an ipc folder while it runs",
+            str(sorted(mine)),
+        )
         shm = shm_with("wcsg_")
         note(len(shm) >= 3, "the shm queues exist while it runs", str(shm))
         t0 = time.time()
@@ -189,14 +205,22 @@ def case_sigterm(wd):
         except subprocess.TimeoutExpired:
             code = None
         took = time.time() - t0
-        note(code is not None, "the server exits after SIGTERM", f"code={code} after {took:.1f}s")
+        note(
+            code is not None,
+            "the server exits after SIGTERM",
+            f"code={code} after {took:.1f}s",
+        )
         alive = (
             os.path.exists(f"/proc/{wpid}")
             and Path(f"/proc/{wpid}/stat").read_text().split()[2] != "Z"
         )
         note(not alive, "the worker process is gone", f"worker pid={wpid}")
         note(not (ipc_dirs() & mine), "the ipc folder is removed")
-        note(shm_with("wcsg_") == [], "the shm queues are removed", str(shm_with("wcsg_")))
+        note(
+            shm_with("wcsg_") == [],
+            "the shm queues are removed",
+            str(shm_with("wcsg_")),
+        )
     finally:
         w.stop(proc)
 
@@ -230,7 +254,9 @@ def raw_sync_request(port, drop_after=None, prompt="sync"):
 def case_disconnect(wd):
     print("=== disconnect: the client drops a synchronous request ===")
     port = 18163
-    proc, log, out = server(port, "dc", wd, TT_VIDEO_MOCK_DELAY_MS=4000, TT_VIDEO_MOCK_WRITE_FILE=1)
+    proc, log, out = server(
+        port, "dc", wd, TT_VIDEO_MOCK_DELAY_MS=4000, TT_VIDEO_MOCK_WRITE_FILE=1
+    )
     try:
         note(ready(port), "server ready")
         raw_sync_request(port, drop_after=1.0)
@@ -264,7 +290,9 @@ def case_disconnect(wd):
 def case_sync2(wd):
     print("=== sync2: two synchronous requests at once ===")
     port = 18164
-    proc, log, out = server(port, "s2", wd, TT_VIDEO_MOCK_DELAY_MS=3000, TT_VIDEO_MOCK_WRITE_FILE=1)
+    proc, log, out = server(
+        port, "s2", wd, TT_VIDEO_MOCK_DELAY_MS=3000, TT_VIDEO_MOCK_WRITE_FILE=1
+    )
     try:
         note(ready(port), "server ready")
         t0 = time.time()
@@ -322,13 +350,21 @@ def case_stress(wd):
         )
         all_codes = [c for r in res if r[0] == "ok" for c in r[2][1]]
         bad = sorted({c for c in all_codes if c not in (200, 404, 409)})
-        note(not bad, "GET/cancel/DELETE answered only 200, 404 or 409", f"unexpected={bad}")
+        note(
+            not bad,
+            "GET/cancel/DELETE answered only 200, 404 or 409",
+            f"unexpected={bad}",
+        )
 
         # everything settles: no job stays queued or in progress
         def unsettled():
             jobs = w.call(port, "GET", "/v1/videos/jobs")[1]
             jobs = jobs if isinstance(jobs, list) else jobs.get("jobs", [])
-            return [j for j in jobs if j["status"] in ("queued", "in_progress", "cancelling")]
+            return [
+                j
+                for j in jobs
+                if j["status"] in ("queued", "in_progress", "cancelling")
+            ]
 
         ok = w.wait_until(lambda: not unsettled(), 60)
         note(bool(ok), "all jobs reach a terminal status", f"left={len(unsettled())}")
@@ -424,7 +460,9 @@ def case_downloads(wd):
         url = f"{GEN}/{j['id']}/download"
 
         def fetch(rng=None):
-            req = __import__("urllib.request").request.Request(f"http://127.0.0.1:{port}{url}")
+            req = __import__("urllib.request").request.Request(
+                f"http://127.0.0.1:{port}{url}"
+            )
             req.add_header("authorization", f"Bearer {KEY}")
             if rng:
                 req.add_header("Range", rng)

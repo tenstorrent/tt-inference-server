@@ -49,7 +49,9 @@ def rss_mb(pid):
 
 
 def children(pid):
-    out = subprocess.run(["pgrep", "-P", str(pid)], capture_output=True, text=True).stdout
+    out = subprocess.run(
+        ["pgrep", "-P", str(pid)], capture_output=True, text=True
+    ).stdout
     return [int(x) for x in out.split()]
 
 
@@ -76,14 +78,18 @@ def moov_before_mdat(path):
             break
         pos += size
     return (
-        order.index("moov") < order.index("mdat") if "moov" in order and "mdat" in order else None
+        order.index("moov") < order.index("mdat")
+        if "moov" in order and "mdat" in order
+        else None
     ), order
 
 
 def main():
     ap = argparse.ArgumentParser()
     c.add_common_args(ap)
-    ap.add_argument("--long-steps", type=int, default=50, help="steps of the long job (0 = skip)")
+    ap.add_argument(
+        "--long-steps", type=int, default=50, help="steps of the long job (0 = skip)"
+    )
     args = ap.parse_args()
     if not c.setup(args):
         return 2
@@ -116,7 +122,9 @@ def main():
     }
     st, j = c.jreq("POST", c.GEN, full)
     rp = j.get("request_parameters", {})
-    mismatch = {k: (v, rp.get(k)) for k, v in full.items() if k != "prompt" and rp.get(k) != v}
+    mismatch = {
+        k: (v, rp.get(k)) for k, v in full.items() if k != "prompt" and rp.get(k) != v
+    }
     c.note(
         st == 202 and not mismatch,
         "all optional fields are accepted and echoed",
@@ -125,7 +133,9 @@ def main():
     if j.get("id"):
         echo_ids.append(j["id"])
     for steps, ok in ((3, False), (51, False), (4, True), (50, True)):
-        st, j = c.jreq("POST", c.GEN, {"prompt": "limits", "num_inference_steps": steps})
+        st, j = c.jreq(
+            "POST", c.GEN, {"prompt": "limits", "num_inference_steps": steps}
+        )
         c.note(
             (st == 202) == ok,
             f"num_inference_steps={steps}: {'accepted' if ok else '422'}",
@@ -161,9 +171,15 @@ def main():
     pos = c.log_pos()
     st, j = c.submit(prompt, seed=3)
     uid = j["id"]
-    c.note(st == 202, "a Unicode prompt of about 20000 characters is accepted", f"http{st}")
+    c.note(
+        st == 202, "a Unicode prompt of about 20000 characters is accepted", f"http{st}"
+    )
     ok = c.wait(uid, ("completed", "failed"), 600)
-    c.note(ok and c.status(uid) == "completed", "it generates a video", f"status={c.status(uid)}")
+    c.note(
+        ok and c.status(uid) == "completed",
+        "it generates a video",
+        f"status={c.status(uid)}",
+    )
     st, jj = c.jreq("GET", f"{c.GEN}/{uid}")
     c.note(
         jj.get("request_parameters", {}).get("prompt") == prompt,
@@ -207,18 +223,28 @@ def main():
     # ------------------------------------------------------------------ 4. Range
     c.p("--- 4. Range")
     size = len(body)
-    st, hdr, part = c.req("GET", f"{c.GEN}/{uid}/download", headers={"Range": "bytes=0-99"})
+    st, hdr, part = c.req(
+        "GET", f"{c.GEN}/{uid}/download", headers={"Range": "bytes=0-99"}
+    )
     c.note(
-        st == 206 and len(part) == 100 and hdr.get("content-range") == f"bytes 0-99/{size}",
+        st == 206
+        and len(part) == 100
+        and hdr.get("content-range") == f"bytes 0-99/{size}",
         "bytes=0-99: 206, 100 bytes, Content-Range",
         f"{st} {hdr.get('content-range')}",
     )
     c.note(
-        hdr.get("accept-ranges") == "bytes", "Accept-Ranges: bytes", str(hdr.get("accept-ranges"))
+        hdr.get("accept-ranges") == "bytes",
+        "Accept-Ranges: bytes",
+        str(hdr.get("accept-ranges")),
     )
     cut = int(size * 0.4)
-    _, _, first = c.req("GET", f"{c.GEN}/{uid}/download", headers={"Range": f"bytes=0-{cut - 1}"})
-    st, hdr, rest = c.req("GET", f"{c.GEN}/{uid}/download", headers={"Range": f"bytes={cut}-"})
+    _, _, first = c.req(
+        "GET", f"{c.GEN}/{uid}/download", headers={"Range": f"bytes=0-{cut - 1}"}
+    )
+    st, hdr, rest = c.req(
+        "GET", f"{c.GEN}/{uid}/download", headers={"Range": f"bytes={cut}-"}
+    )
     c.note(
         st == 206 and first + rest == body,
         "an interrupted download resumed with bytes=N- gives the same file",
@@ -286,9 +312,12 @@ def main():
         "GET of a job stays fast while the device generates",
         f"max {lat_get[-1] * 1000:.0f} ms",
     )
-    t_start = time.time()
     c.wait(lid, ("completed", "failed"), 600)
-    c.note(c.status(lid) == "completed", "the job under load completes", f"status={c.status(lid)}")
+    c.note(
+        c.status(lid) == "completed",
+        "the job under load completes",
+        f"status={c.status(lid)}",
+    )
 
     # ------------------------------------------------------------------ 6. long job
     if args.long_steps:

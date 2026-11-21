@@ -141,7 +141,9 @@ class Server:
         return False
 
     def submit(self, prompt="a red fox", **kw):
-        st, j = self.call("POST", GEN, {"prompt": prompt, "num_inference_steps": 4, **kw})
+        st, j = self.call(
+            "POST", GEN, {"prompt": prompt, "num_inference_steps": 4, **kw}
+        )
         return st, j
 
     def log_text(self):
@@ -169,7 +171,9 @@ def sha(b):
 
 
 def children(pid):
-    out = subprocess.run(["pgrep", "-P", str(pid)], capture_output=True, text=True).stdout
+    out = subprocess.run(
+        ["pgrep", "-P", str(pid)], capture_output=True, text=True
+    ).stdout
     return [int(x) for x in out.split()]
 
 
@@ -212,7 +216,9 @@ def main():
     ap.add_argument("--dit-cache", required=True)
     ap.add_argument("--api-key", default="your-secret-key")
     ap.add_argument("--port", type=int, default=8000)
-    ap.add_argument("--workdir", default="", help="logs and downloads (default: temp dir)")
+    ap.add_argument(
+        "--workdir", default="", help="logs and downloads (default: temp dir)"
+    )
     args = ap.parse_args()
 
     work = args.workdir or tempfile.mkdtemp(prefix="tt-video-lifecycle-real.")
@@ -222,11 +228,14 @@ def main():
     p("workdir:", work)
     if (
         subprocess.run(
-            ["curl", "-sf", f"http://127.0.0.1:{args.port}/tt-liveness"], capture_output=True
+            ["curl", "-sf", f"http://127.0.0.1:{args.port}/tt-liveness"],
+            capture_output=True,
         ).returncode
         == 0
     ):
-        print("a server already answers on this port; stop it first (this test owns the chips)")
+        print(
+            "a server already answers on this port; stop it first (this test owns the chips)"
+        )
         return 2
 
     # ---------------------------------------------------------------- phase 1: purge, delete, seed
@@ -248,7 +257,11 @@ def main():
         note(False, "phase 1: server ready", srv.log_text()[-400:])
         srv.kill_all()
         return 1
-    note(True, "phase 1: server ready", f"after {srv.ready_after:.0f}s (weights from the cache)")
+    note(
+        True,
+        "phase 1: server ready",
+        f"after {srv.ready_after:.0f}s (weights from the cache)",
+    )
     left = sorted(os.listdir(out))
     p("  output folder after the start:", left)
     note(
@@ -261,7 +274,10 @@ def main():
         "the log reports the purge",
         "removed 3 orphan mp4",
     )
-    note("tt_dit weight cache" in srv.log_text(), "the log names the tt_dit weight cache folder")
+    note(
+        "tt_dit weight cache" in srv.log_text(),
+        "the log names the tt_dit weight cache folder",
+    )
     st, j = srv.submit(seed=7)
     note(st == 202, "job with seed 7 accepted")
     note(
@@ -272,20 +288,33 @@ def main():
     st, v1 = srv.call("GET", f"{GEN}/{j['id']}/download", raw=True)
     open(os.path.join(work, "seed7_run1.mp4"), "wb").write(v1)
     files = [f for f in os.listdir(out) if f.endswith(".mp4") and f != "link.mp4"]
-    note(len(files) == 1, "the finished video is one mp4 in the output folder", str(files))
+    note(
+        len(files) == 1,
+        "the finished video is one mp4 in the output folder",
+        str(files),
+    )
     st, _ = srv.call("DELETE", f"{GEN}/{j['id']}")
     after = [f for f in os.listdir(out) if f.endswith(".mp4") and f != "link.mp4"]
-    note(st == 200 and after == [], "DELETE removes the job and its mp4", f"http{st} left={after}")
+    note(
+        st == 200 and after == [],
+        "DELETE removes the job and its mp4",
+        f"http{st} left={after}",
+    )
     st, j2 = srv.call("GET", f"{GEN}/{j['id']}")
     note(st == 404, "the deleted job is gone (404)", f"http{st}")
 
     # ---------------------------------------------------------------- phase 2: idle SIGTERM, then PURGE=0
-    p("=== phase 2: SIGTERM while idle, then start without tt-smi -r and TT_VIDEO_PURGE_ON_START=0")
+    p(
+        "=== phase 2: SIGTERM while idle, then start without tt-smi -r and TT_VIDEO_PURGE_ON_START=0"
+    )
     pid = server_pid(srv)
     desc = descendants(pid)
     ipc_mine = f"tt-video-ipc-{pid}"
-    note(ipc_mine in os.listdir("/tmp"), "the ipc folder exists while the server runs", ipc_mine)
-    shm_run = shm_names()
+    note(
+        ipc_mine in os.listdir("/tmp"),
+        "the ipc folder exists while the server runs",
+        ipc_mine,
+    )
     t0 = time.time()
     code = srv.terminate(signal.SIGTERM, 120)
     note(
@@ -297,7 +326,8 @@ def main():
     alive = [
         d
         for d in desc
-        if os.path.exists(f"/proc/{d}") and open(f"/proc/{d}/stat").read().split()[2] != "Z"
+        if os.path.exists(f"/proc/{d}")
+        and open(f"/proc/{d}/stat").read().split()[2] != "Z"
     ]
     note(not alive, "no server or worker process is left", f"alive={alive}")
     note(ipc_mine not in os.listdir("/tmp"), "the ipc folder is removed")
@@ -343,7 +373,10 @@ def main():
             capture_output=True,
             text=True,
         )
-        p("  psnr:", [ln for ln in (r.stderr + r.stdout).splitlines() if "PSNR" in ln][-1:])
+        p(
+            "  psnr:",
+            [ln for ln in (r.stderr + r.stdout).splitlines() if "PSNR" in ln][-1:],
+        )
     note(srv.job(j["id"]).get("status") == "completed", "seed 7 completes again")
 
     # ---------------------------------------------------------------- phase 3: SIGTERM mid job
@@ -372,12 +405,16 @@ def main():
     alive = [
         d
         for d in desc
-        if os.path.exists(f"/proc/{d}") and open(f"/proc/{d}/stat").read().split()[2] != "Z"
+        if os.path.exists(f"/proc/{d}")
+        and open(f"/proc/{d}/stat").read().split()[2] != "Z"
     ]
     note(not alive, "no server or worker process is left", f"alive={alive}")
     note(ipc_mine not in os.listdir("/tmp"), "the ipc folder is removed")
     note(not media_shm(), "the shm queues of the service are removed", str(media_shm()))
-    p("  mp4 files in the output folder:", [f for f in os.listdir(out) if f.endswith(".mp4")])
+    p(
+        "  mp4 files in the output folder:",
+        [f for f in os.listdir(out) if f.endswith(".mp4")],
+    )
     srv = Server(
         args,
         out,
@@ -418,7 +455,11 @@ def main():
         # The mp4 is written only after the whole generation, so a request
         # must be refused up front (503) instead of failing after the run.
         st, body = srv.submit()
-        note(st == 503, "a request is refused with 503, no generation is started", f"http{st}")
+        note(
+            st == 503,
+            "a request is refused with 503, no generation is started",
+            f"http{st}",
+        )
         note(
             "not writable" in json.dumps(body),
             "the answer names the output directory problem",
@@ -439,7 +480,11 @@ def main():
         # Fixing the folder is enough: no restart.
         os.chmod(ro, 0o755)
         st, j = srv.submit("after the fix")
-        note(st == 202, "after the folder is fixed a request is accepted again", f"http{st}")
+        note(
+            st == 202,
+            "after the folder is fixed a request is accepted again",
+            f"http{st}",
+        )
         if st == 202:
             srv.wait_job(j["id"], ("completed", "failed"), 600)
             body = srv.job(j["id"])

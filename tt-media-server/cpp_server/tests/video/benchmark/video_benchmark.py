@@ -90,7 +90,9 @@ def summarize(values):
 
 
 # ---------------------------------------------------------------- /metrics
-_LINE = re.compile(r"^([a-zA-Z_:][a-zA-Z0-9_:]*)(\{[^}]*\})?\s+([-+0-9.eE]+|NaN|\+Inf)$")
+_LINE = re.compile(
+    r"^([a-zA-Z_:][a-zA-Z0-9_:]*)(\{[^}]*\})?\s+([-+0-9.eE]+|NaN|\+Inf)$"
+)
 
 
 def scrape(client):
@@ -127,6 +129,7 @@ def hist_delta(before, after, name, label_filter=""):
     tot = sum(pick(after, "_sum").values()) - sum(pick(before, "_sum").values())
     if cnt <= 0:
         return {"n": 0}
+
     # cumulative buckets summed over matching label sets
     def buckets(snap):
         acc = {}
@@ -164,17 +167,18 @@ def generic_deltas(before, after):
     gauges: the change, and the value at the end. Buckets are left out.
     """
     out = {}
-    names = {(n, l) for (n, l) in list(before) + list(after)}
-    for (n, l) in sorted(names):
+    names = {(n, lbl) for (n, lbl) in list(before) + list(after)}
+    for n, lbl in sorted(names):
         if n.endswith("_bucket") or n.endswith("_created") or n.endswith("_timestamp"):
             continue
-        b, a = before.get((n, l), 0.0), after.get((n, l), 0.0)
-        key = n + l
+        b, a = before.get((n, lbl), 0.0), after.get((n, lbl), 0.0)
+        key = n + lbl
         if n.endswith("_sum"):
-            base = n[:-4] + "_count" + l
-            cnt = after.get((n[:-4] + "_count", l), 0.0) - before.get((n[:-4] + "_count", l), 0.0)
+            cnt = after.get((n[:-4] + "_count", lbl), 0.0) - before.get(
+                (n[:-4] + "_count", lbl), 0.0
+            )
             if cnt > 0:
-                out[n[:-4] + l] = {"count": cnt, "sum": a - b, "mean": (a - b) / cnt}
+                out[n[:-4] + lbl] = {"count": cnt, "sum": a - b, "mean": (a - b) / cnt}
         elif n.endswith("_count"):
             continue
         elif a != b:
@@ -188,9 +192,7 @@ def server_side(before, after):
     res = {
         "queue_wait_s": hist_delta(before, after, "tt_video_queue_wait_seconds"),
         "generation_s": hist_delta(before, after, "tt_video_generation_seconds"),
-        "e2e_ok_s": hist_delta(
-            before, after, "tt_video_e2e_seconds", 'outcome="ok"'
-        ),
+        "e2e_ok_s": hist_delta(before, after, "tt_video_e2e_seconds", 'outcome="ok"'),
     }
     for phase in ("request_write", "shm_enqueue", "response_handling"):
         res[f"overhead_{phase}_s"] = hist_delta(
@@ -279,7 +281,9 @@ def phase_sequential(c, a):
         "submit_ms": summarize([r["submit_s"] * 1000 for r in ok]),
         "download_s": summarize([r["download_s"] for r in ok]),
         "steps_per_second": summarize([r["steps_per_second"] for r in ok]),
-        "ttft_python_def_s": statistics.fmean([r["elapsed_s"] for r in ok]) if ok else 0,
+        "ttft_python_def_s": statistics.fmean([r["elapsed_s"] for r in ok])
+        if ok
+        else 0,
         "size_mb": summarize([r["size_bytes"] / 1e6 for r in ok]),
         "server": server_side(before, after),
         "metrics_delta": generic_deltas(before, after),
@@ -348,7 +352,11 @@ def phase_control(c, a):
         while pending and time.time() < deadline:
             for jid in list(pending):
                 st, g, _ = c.json("GET", f"{GEN}/{jid}")
-                if st == 200 and g.get("status") in ("completed", "failed", "cancelled"):
+                if st == 200 and g.get("status") in (
+                    "completed",
+                    "failed",
+                    "cancelled",
+                ):
                     pending.discard(jid)
             time.sleep(0.2)
         return wall, len(pending)
@@ -358,9 +366,7 @@ def phase_control(c, a):
         st, _, raw, _ = c.call("GET", "/v1/videos/jobs")
         lst = timed_loop(lambda: c.call("GET", "/v1/videos/jobs")[3], 10)
         stat = timed_loop(lambda: c.call("GET", f"{GEN}/{ids[0]}")[3], 50)
-        total = sum(
-            v for (nm, _), v in scrape(c).items() if nm == "tt_video_jobs"
-        )
+        total = sum(v for (nm, _), v in scrape(c).items() if nm == "tt_video_jobs")
         row = {
             "jobs_in_store": int(total) or len(ids),
             "unfinished": unfinished,
@@ -370,8 +376,11 @@ def phase_control(c, a):
             "get_status_ms_p50": stat["p50"],
         }
         curve.append(row)
-        print(f"  store {row['jobs_in_store']} jobs: GET /jobs {row['list_ms_p50']:.1f} ms, "
-              f"{row['list_bytes'] / 1e3:.0f} KB", flush=True)
+        print(
+            f"  store {row['jobs_in_store']} jobs: GET /jobs {row['list_ms_p50']:.1f} ms, "
+            f"{row['list_bytes'] / 1e3:.0f} KB",
+            flush=True,
+        )
     jid = ids[0]
     out = {
         "list_scaling": curve,
@@ -412,7 +421,9 @@ def phase_throughput(c, a):
                 if i >= a.jobs:
                     return
                 counter["next"] += 1
-            r = run_job(c, f"throughput {i}", a.steps, a.poll, a.timeout, download=a.download)
+            r = run_job(
+                c, f"throughput {i}", a.steps, a.poll, a.timeout, download=a.download
+            )
             with lock:
                 recs.append(r)
 
@@ -455,10 +466,16 @@ def main():
     ap.add_argument("--steps", type=int, default=40)
     ap.add_argument("--calls", type=int, default=3, help="sequential: videos")
     ap.add_argument("--burst", type=int, default=3, help="burst: videos at once")
-    ap.add_argument("--fill", default="100,500,1000,2000", help="control: store sizes to measure at")
-    ap.add_argument("--samples", type=int, default=200, help="control: calls per endpoint")
+    ap.add_argument(
+        "--fill", default="100,500,1000,2000", help="control: store sizes to measure at"
+    )
+    ap.add_argument(
+        "--samples", type=int, default=200, help="control: calls per endpoint"
+    )
     ap.add_argument("--jobs", type=int, default=300, help="throughput: jobs")
-    ap.add_argument("--clients", type=int, default=16, help="throughput: client threads")
+    ap.add_argument(
+        "--clients", type=int, default=16, help="throughput: client threads"
+    )
     ap.add_argument("--no-download", dest="download", action="store_false")
     ap.add_argument("--poll", type=float, default=1.0, help="poll interval in seconds")
     ap.add_argument("--timeout", type=float, default=1200)
@@ -470,7 +487,10 @@ def main():
     if not (st == 200 and lv.get("model_ready") is True):
         print(f"server not ready at {a.base_url}: http{st} {lv}", file=sys.stderr)
         return 2
-    print(f"phase {a.phase} against {a.base_url} (runner: {lv.get('runner_in_use')})", flush=True)
+    print(
+        f"phase {a.phase} against {a.base_url} (runner: {lv.get('runner_in_use')})",
+        flush=True,
+    )
     result = PHASES[a.phase](c, a)
     result["phase"] = a.phase
     result["base_url"] = a.base_url
