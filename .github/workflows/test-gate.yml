@@ -525,6 +525,8 @@ jobs:
         uses: actions/checkout@v5
         with:
           token: ${{ secrets.TT_LLM_ENGINE }}
+          # Don't leave the token saved in .git/config after checkout.
+          persist-credentials: false
 
       - name: Set up C++ CI dependencies
         uses: ./.github/actions/setup-cpp-ci
@@ -637,6 +639,8 @@ jobs:
         uses: actions/checkout@v5
         with:
           token: ${{ secrets.TT_LLM_ENGINE }}
+          # Don't leave the token saved in .git/config after checkout.
+          persist-credentials: false
 
       - name: Set up C++ CI dependencies
         uses: ./.github/actions/setup-cpp-ci
@@ -698,6 +702,8 @@ jobs:
         uses: actions/checkout@v5
         with:
           token: ${{ secrets.TT_LLM_ENGINE }}
+          # Don't leave the token saved in .git/config after checkout.
+          persist-credentials: false
 
       - name: Set up C++ CI dependencies
         uses: ./.github/actions/setup-cpp-ci
