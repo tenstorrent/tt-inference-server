@@ -11158,6 +11158,34 @@ _eval_config_list = [
         ],
     ),
     EvalConfig(
+        hf_model_repo="propritery/tts-2",
+        tasks=[
+            EvalTask(
+                # Same prompt sent many times, every response transcribed by Whisper
+                # (test_module/eval_tests/tts_correctness_test.py). Score is the % of
+                # responses that pass; any failure is a FAIL.
+                task_name="tts_correctness",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+                # tts_api also routes the benchmark to the chunk-aware load sweep.
+                model_kwargs={
+                    "tts_api": "tt_tts",
+                    "refs": 5,
+                    "requests": 100,
+                    "concurrency": 100,
+                    "max_wer": 0.05,
+                },
+                score=EvalTaskScore(
+                    published_score=100.0,
+                    published_score_ref="",
+                    score_func=lambda results: 0.0,
+                ),
+            ),
+        ],
+    ),
+    EvalConfig(
         hf_model_repo="microsoft/speecht5_tts",
         tasks=[
             EvalTask(

@@ -17,10 +17,9 @@ validators below) is the single source of truth in
 """
 
 import math
-import os
 from typing import List
 
-from config.constants import WAN22_NUM_FRAMES, ModelNames, ModelRunners
+from config.constants import WAN22_NUM_FRAMES, ModelRunners
 from config.settings import get_settings
 from domain.video_generate_request import VideoGenerateRequest
 from pydantic import BaseModel, Field, field_validator
@@ -88,20 +87,7 @@ def _is_minimax_h3_fl2va() -> bool:
         runner = get_settings().model_runner
     except Exception:  # noqa: BLE001
         return False
-    if runner in {
+    return runner in {
         ModelRunners.TT_MINIMAX_H3_FL2VA.value,
         ModelRunners.TT_MINIMAX_H3_FL2VA_LIGHTX2V.value,
-    }:
-        return True
-    if runner != ModelRunners.SP_RUNNER.value:
-        return False
-    model_env = os.getenv("MODEL")
-    if not model_env:
-        return False
-    try:
-        return ModelNames(model_env) in {
-            ModelNames.MINIMAX_H3_FL2VA,
-            ModelNames.MINIMAX_H3_FL2VA_LIGHTX2V,
-        }
-    except ValueError:
-        return False
+    }
