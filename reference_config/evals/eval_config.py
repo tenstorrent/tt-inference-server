@@ -343,6 +343,11 @@ class HarborEvalConfig:
     # agent egress (``[agent] network_mode = "no-network"``, e.g. DeepSWE):
     # the endpoint's host joins Harbor's run-specific agent allowlist.
     allow_agent_endpoint: bool = False
+    # For agents that only speak the Anthropic Messages API (``claude-code``):
+    # run a LiteLLM proxy serving it in front of the inference server for the
+    # length of the run, with image content replaced by a text note, and point
+    # the agent at it. Docker environment only.
+    anthropic_proxy: bool = False
     # Images ``docker pull``-ed (with retries) before ``harbor run`` when the
     # environment is docker and the image is not already local, e.g. the base
     # image every trial's environment build starts FROM: concurrent trials

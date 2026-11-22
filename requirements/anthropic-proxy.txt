@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+#
+# Dependencies for the ANTHROPIC_PROXY workflow venv (Python 3.12).
+# Used by: llm_module/agentic/anthropic_proxy.py, which runs a LiteLLM proxy
+# serving the Anthropic Messages API (/v1/messages) in front of an
+# OpenAI-compatible inference server, for agentic tasks whose agent only speaks
+# that API (Claude Code). Kept out of EVALS_AGENTIC: Harbor pins its own litellm.
+#
+# 1.110.2: routes /v1/messages for hosted_vllm models through chat completions
+# (tested against vLLM), streams reasoning as thinking blocks.
+#
+# No `-c constraints.txt`: litellm[proxy] needs a newer pyjwt than the shared
+# pin, and this venv only runs the litellm CLI (no repo code mints JWTs here).
+
+litellm[proxy]==1.110.2

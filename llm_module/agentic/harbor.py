@@ -21,11 +21,12 @@ import os
 import subprocess
 import sys
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import urlsplit, urlunsplit
 
+from llm_module.agentic import anthropic_proxy
 from llm_module.agentic.local_datasets import local_task_pattern
 from llm_module.agentic.progress import (
     TIMEOUT_EXIT_CODE,
@@ -134,6 +135,9 @@ class HarborRunConfig:
     # allowlist, for tasks that block agent egress
     # (``[agent] network_mode = "no-network"``, e.g. DeepSWE).
     allow_agent_endpoint: bool = False
+    # Serve the Anthropic Messages API for the run (see ``anthropic_proxy``)
+    # and point the agent at it.
+    anthropic_proxy: bool = False
     # Pulled before ``harbor run`` on the docker environment (see
     # ``prepull_images``).
     prepull_images: list[str] = field(default_factory=list)
@@ -496,7 +500,45 @@ def prepull_images(
     return failed
 
 
+def _served_model(config: HarborRunConfig) -> str:
+    provider, _, model = config.model_name.partition("/")
+    return model if provider == "openai" and model else config.model_name
+
+
+def _with_anthropic_proxy(
+    config: HarborRunConfig, proxy: anthropic_proxy.AnthropicProxy
+) -> HarborRunConfig:
+    # base_url as a kwarg: Harbor's claude-code agent otherwise derives
+    # ANTHROPIC_BASE_URL from the model's provider (OPENAI_BASE_URL here).
+    return replace(
+        config,
+        agent_kwargs={**config.agent_kwargs, "base_url": proxy.base_url},
+        agent_env={
+            **config.agent_env,
+            "ANTHROPIC_BASE_URL": proxy.base_url,
+            "ANTHROPIC_API_KEY": proxy.api_key,
+        },
+    )
+
+
 def run(config: HarborRunConfig) -> int:
+    if not config.anthropic_proxy:
+        return _run_harbor(config)
+    if config.environment_type != "docker":
+        raise ValueError(
+            "anthropic_proxy needs the docker environment: task containers "
+            "reach the proxy on the docker host address"
+        )
+    with anthropic_proxy.serve(
+        upstream_api_base=config.api_base,
+        served_model=_served_model(config),
+        host_address=_docker_host_address(),
+        run_dir=config.jobs_dir / f"{config.task_name}_anthropic_proxy",
+    ) as proxy:
+        return _run_harbor(_with_anthropic_proxy(config, proxy))
+
+
+def _run_harbor(config: HarborRunConfig) -> int:
     harbor_exec = harbor_python(config).parent / "harbor"
 
     if config.prepull_images and config.environment_type == "docker":
