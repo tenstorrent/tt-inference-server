@@ -526,9 +526,16 @@ codes, error cases and the `Range` behaviour are the same):
 - On a T3K, Wan2.2 (T2V and I2V) runs untraced by default: with tracing the output
   is noise. Other devices keep the Python server's default (traced);
   `TT_VIDEO_TRACED=1` turns tracing on explicitly, `0` turns it off.
-- Only `tt-wan2.2` (text-to-video) has run on a device through this server;
-  `tt-wan2.2-i2v` is covered by device-free tests of its pipeline arguments (C++)
-  and adapter (a fake pipeline).
+- `tt-wan2.2` (T2V) and `tt-wan2.2-i2v` have run on a device through this server.
+- **Wan2.2 I2V on a T3K needs two settings, or the warmup fails with a DRAM
+  out-of-memory error** (the Python server fails the same way):
+  `WAN22_I2V_DBCACHE=0` (builds the pipeline without its default DBCache, whose
+  buffers do not fit; unset keeps the pipeline default, which is for Blackhole
+  galaxies) and `I2V_ENCODE_FRAMES=5` (the pipeline's own variable: the VAE encoder
+  of a (2, 4) mesh runs out of DRAM when it encodes all 81 frames, so only the frames
+  up to the last conditioned one, at least 5, are encoded). A keyframe at a late
+  `frame_pos` (for example -1) makes the encoder cover that many frames and fails the
+  same way: on a T3K only the first frames can be conditioned.
 - No media URL download (a URL is refused with `400`): images are sent as base64 in the
   JSON body or as a multipart upload on `/i2v/upload`.
 

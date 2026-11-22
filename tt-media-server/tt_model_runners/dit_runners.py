@@ -943,11 +943,20 @@ class TTWan22I2VRunner(TTDiTRunner):
 
     def create_pipeline(self):
         try:
+            # WAN22_I2V_DBCACHE=0: build without the pipeline's default DBCache,
+            # whose residual buffers do not fit the DRAM of a T3K (the C++ server's
+            # adapter reads the same variable). Unset keeps the pipeline default.
+            cache_kwargs = (
+                {"config_overrides": {"cache_config": None}}
+                if os.environ.get("WAN22_I2V_DBCACHE") == "0"
+                else {}
+            )
             return WanPipelineI2V.create_pipeline(
                 mesh_device=self.ttnn_device,
                 height=self.resolution.height,
                 width=self.resolution.width,
                 num_frames=WAN22_NUM_FRAMES,
+                **cache_kwargs,
             )
         except Exception as e:
             log_exception_chain(
