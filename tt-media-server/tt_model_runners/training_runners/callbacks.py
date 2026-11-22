@@ -150,6 +150,8 @@ class JobMetricsCallback(JobCallback):
         self._log_training_end(trainer, cancelled=False)
 
     def on_train_error(self, trainer, exception, *args, **kwargs):
+        # The loss may be a device tensor, which must not outlive the job's device.
+        self._running_loss = None
         # Cancellation ends the loop with StopTraining, so on_train_end never fires.
         if isinstance(exception, StopTraining):
             self._log_training_end(trainer, cancelled=True)

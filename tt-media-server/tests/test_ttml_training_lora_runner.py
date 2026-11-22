@@ -879,6 +879,18 @@ class TestJobMetricsCallback:
             self._end_training(_request(), "on_train_error", RuntimeError("boom")) == []
         )
 
+    def test_drops_the_running_loss_when_training_ends_early(self):
+        from tt_model_runners.training_runners.callbacks import StopTraining
+
+        for exception in (StopTraining("Job cancelled"), RuntimeError("boom")):
+            callback = self._callback(_request())
+            trainer = _fake_trainer(frequency=10)
+            callback.on_optimizer_step_end(trainer, 3.0)
+
+            callback.on_train_error(trainer, exception)
+
+            assert callback._running_loss is None
+
 
 class TestAdapterCheckpointCallback:
     def _callback(self, request):
