@@ -3541,6 +3541,28 @@ templates:
       # spec-decode, agentic-traces) must trust remote code to load it.
       tokenizer_trust_remote_code: true
 
+# Kimi-K3.1 (checkpoint Kimi-K3.1-Pro), served as moonshotai/Kimi-K3.1 by the
+# tt-d-gen Dynamo frontend. Remote-served like Kimi-K3 above: evaluated via
+# `--server-url`, with the device entry as a placeholder.
+- weights:
+    - moonshotai/Kimi-K3.1
+  impl: blaze
+  inference_engine: MEDIA
+  device_model_specs:
+    - device: SUPER_CLUSTER
+      max_concurrency: 25
+      max_context: 1048576  # 1024 * 1024
+      default_impl: true
+  status: EXPERIMENTAL
+  metadata:
+    moonshotai/Kimi-K3.1:
+      remote_api_model: moonshotai/Kimi-K3.1
+      reasoning_parser_name: kimi_k3
+      tool_call_parser_name: kimi_k3
+      # Kimi ships a custom tokenizer; AIPerf-driven sweeps (prefix-cache,
+      # spec-decode, agentic-traces) must trust remote code to load it.
+      tokenizer_trust_remote_code: true
+
 - weights:
     - MiniMaxAI/MiniMax-M3
   impl: blaze
