@@ -73,6 +73,7 @@ def _fake_trainer(
     train_batches=None,
 ):
     trainer = MagicMock()
+    trainer.callback_handler.state = {}
     trainer.config.gradient_accumulation_steps = grad_accum
     trainer.config.metrics.train.frequency = frequency
     if max_steps is None:
@@ -879,17 +880,20 @@ class TestJobMetricsCallback:
             self._end_training(_request(), "on_train_error", RuntimeError("boom")) == []
         )
 
-    def test_drops_the_running_loss_when_training_ends_early(self):
-        from tt_model_runners.training_runners.callbacks import StopTraining
+    def test_keeps_the_running_loss_where_trainer_cleanup_frees_it(self):
+        callback = self._callback(_request())
+        trainer = _fake_trainer(frequency=10)
 
-        for exception in (StopTraining("Job cancelled"), RuntimeError("boom")):
-            callback = self._callback(_request())
-            trainer = _fake_trainer(frequency=10)
-            callback.on_optimizer_step_end(trainer, 3.0)
+        for step, loss in enumerate((1.0, 3.0), start=1):
+            callback.on_optimizer_step_end(trainer, loss)
+            _end_step(callback, trainer, step)
 
-            callback.on_train_error(trainer, exception)
-
-            assert callback._running_loss is None
+        # Not on the callback, whose on_train_error a failing earlier one skips.
+        assert vars(callback).keys().isdisjoint({"_running_loss", "_running_steps"})
+        assert trainer.callback_handler.state == {
+            "job_metrics/running_loss": 4.0,
+            "job_metrics/running_steps": 2,
+        }
 
 
 class TestAdapterCheckpointCallback:

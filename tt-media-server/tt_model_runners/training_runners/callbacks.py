@@ -11,6 +11,12 @@ from datetime import timedelta
 
 from ttml.experimental.trainer import Callback
 
+# Keys in `trainer.callback_handler.state`, which the trainer's cleanup frees
+# before it closes the device: the logging window's summed loss, a device
+# tensor, and its number of optimizer steps.
+_RUNNING_LOSS = "job_metrics/running_loss"
+_RUNNING_STEPS = "job_metrics/running_steps"
+
 
 class StopTraining(Exception):
     """Raised from a callback to end the training loop early.
@@ -55,8 +61,6 @@ class JobMetricsCallback(JobCallback):
     """
 
     def _reset(self) -> None:
-        self._running_loss = None
-        self._running_steps = 0
         self._total_steps = None
         self._val_batch = 0
         self._compile_announced = set()
@@ -67,11 +71,10 @@ class JobMetricsCallback(JobCallback):
     def on_optimizer_step_end(self, trainer, window_loss, *args, **kwargs):
         # window_loss is the mean loss of the step's micro-batches. The logging
         # window's sum is read with `loss_to_float` once, when it is logged.
-        if self._running_loss is None:
-            self._running_loss = window_loss
-        else:
-            self._running_loss = self._running_loss + window_loss
-        self._running_steps += 1
+        state = trainer.callback_handler.state
+        running = state.get(_RUNNING_LOSS)
+        state[_RUNNING_LOSS] = window_loss if running is None else running + window_loss
+        state[_RUNNING_STEPS] = state.get(_RUNNING_STEPS, 0) + 1
 
     def on_train_start(self, trainer, *args, **kwargs):
         self._train_started_at = time.monotonic()
@@ -135,11 +138,10 @@ class JobMetricsCallback(JobCallback):
             return
 
         # The last step's window may be shorter than frequency.
-        self.last_train_loss = (
-            trainer.loss_to_float(self._running_loss) / self._running_steps
-        )
-        self._running_loss = None
-        self._running_steps = 0
+        state = trainer.callback_handler.state
+        self.last_train_loss = trainer.loss_to_float(
+            state.pop(_RUNNING_LOSS)
+        ) / state.pop(_RUNNING_STEPS)
         self._record(trainer, "train_loss", self.last_train_loss, log_type="info")
 
     def on_validation_end(self, trainer, val_loss, *args, **kwargs):
@@ -150,8 +152,6 @@ class JobMetricsCallback(JobCallback):
         self._log_training_end(trainer, cancelled=False)
 
     def on_train_error(self, trainer, exception, *args, **kwargs):
-        # The loss may be a device tensor, which must not outlive the job's device.
-        self._running_loss = None
         # Cancellation ends the loop with StopTraining, so on_train_end never fires.
         if isinstance(exception, StopTraining):
             self._log_training_end(trainer, cancelled=True)

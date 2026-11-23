@@ -2545,6 +2545,34 @@ models:
               - name: trace_region_size
                 value: '50000000'
     defaultEngine: vllm
+    forge:
+      p150:
+        defaultImpl: trainer_training_lora
+        impls:
+          trainer_training_lora:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: ghcr.io/tenstorrent/tt-media-inference-server-forge
+              tag: 0.26.0-09acccb
+            probes:
+              liveness:
+                path: /tt-liveness
+            resources:
+              requests:
+                memory: 20Gi
+            env:
+              - name: ARCH_NAME
+                value: blackhole
+              - name: ENABLE_JOB_PERSISTENCE
+                value: 'True'
+              - name: MESH_DEVICE
+                value: P150
+              - name: MODEL_RUNNER
+                value: trainer-training-lora
+              - name: TRAINING_MODEL
+                value: Llama-3.1-8B-Instruct
+              - name: TT_METAL_PINNED_MEMORY_CACHE_LIMIT_BYTES
+                value: '0'
   gemma-3-27b-it:
     vllm:
       galaxy:

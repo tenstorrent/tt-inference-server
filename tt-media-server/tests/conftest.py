@@ -342,6 +342,7 @@ def _install_ttml_stubs():
         def __init__(self, trainer, callbacks):
             self.trainer = trainer
             self.callbacks = list(callbacks)
+            self.state = {}
 
         def __call__(self, method_name, *args, **kwargs):
             for callback in self.callbacks:
@@ -396,6 +397,7 @@ def _install_ttml_stubs():
             for attr in list(self.__dict__):
                 if attr not in preserved:
                     delattr(self, attr)
+            self.callback_handler.state.clear()
             self.config = None
             self.global_step = 0
             self.epoch = 0

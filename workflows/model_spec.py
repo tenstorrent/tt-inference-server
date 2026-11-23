@@ -399,6 +399,14 @@ ttml_training_lora_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-inference-server",
     code_path="tt-media-server/tt_model_runners/training_runners/ttml_training_lora_runner.py",
 )
+# tt-blacksmith-backed LoRA runner (CrankLLMTrainer), referenced only by the prod
+# catalog: its code ships in the pinned Forge image, not in this tree.
+trainer_training_lora_impl = ImplSpec(
+    impl_id="trainer_training_lora",
+    impl_name="trainer-training-lora",
+    repo_url="https://github.com/tenstorrent/tt-inference-server",
+    code_path="tt-media-server/tt_model_runners/forge_training_runners/trainer_training_lora_runner.py",
+)
 
 quetzal_impl = ImplSpec(
     impl_id="quetzal",
@@ -508,6 +516,7 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "qwen36_blackhole_vlm": qwen36_blackhole_vlm_impl,
     "diffusion_gemma": diffusion_gemma_impl,
     "ttml_training_lora": ttml_training_lora_impl,
+    "trainer_training_lora": trainer_training_lora_impl,
     "blaze": blaze_impl,
 }
 
