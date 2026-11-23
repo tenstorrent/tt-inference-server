@@ -2625,6 +2625,192 @@ _eval_config_list = [
                     EvalLimitMode.SMOKE_TEST: 3,
                 },
             ),
+            # Short-prompt generation evals. Only mmlu_pro (5-shot) has prompts
+            # above the workers' default min_disagg_tokens (1024); the others
+            # migrate from prefill only when the deployment lowers that threshold.
+            EvalTask(
+                task_name="aime25",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                max_concurrent=15,
+                use_chat_api=True,
+                capture_reasoning=True,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["exact_match,none"],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "max_length": 1048576,
+                    "tokenizer": _KIMI_K31_TOKENIZER,
+                    "timeout": 7200,
+                },
+                gen_kwargs={
+                    "max_gen_toks": 1000000,  # prompt + answer must fit the 1048576 context
+                    # Dynamo rejects an empty stop list with 400; K3/K3.1's EOS string.
+                    "until": ["[EOS]"],
+                    "do_sample": "true",
+                    # Moonshot reports single-step benchmarks at temperature 1.0 / top_p 0.95.
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                    "stream": "false",
+                },
+                limit_samples_map={EvalLimitMode.SMOKE_TEST: 0.1},
+            ),
+            EvalTask(
+                task_name="r1_aime24",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                max_concurrent=15,
+                use_chat_api=True,
+                capture_reasoning=True,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["exact_match,none"],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "max_length": 1048576,
+                    "tokenizer": _KIMI_K31_TOKENIZER,
+                    "timeout": 7200,
+                },
+                gen_kwargs={
+                    "max_gen_toks": 1000000,  # prompt + answer must fit the 1048576 context
+                    # Dynamo rejects an empty stop list with 400; K3/K3.1's EOS string.
+                    "until": ["[EOS]"],
+                    "do_sample": "true",
+                    # Moonshot reports single-step benchmarks at temperature 1.0 / top_p 0.95.
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                    "stream": "false",
+                },
+                limit_samples_map={EvalLimitMode.SMOKE_TEST: 0.1},
+            ),
+            EvalTask(
+                task_name="ifeval",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                max_concurrent=15,
+                use_chat_api=True,
+                capture_reasoning=True,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                            "inst_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "max_length": 1048576,
+                    "tokenizer": _KIMI_K31_TOKENIZER,
+                    "timeout": 7200,
+                },
+                gen_kwargs={
+                    "max_gen_toks": 1000000,  # prompt + answer must fit the 1048576 context
+                    # Dynamo rejects an empty stop list with 400; K3/K3.1's EOS string.
+                    "until": ["[EOS]"],
+                    "do_sample": "true",
+                    # Moonshot reports single-step benchmarks at temperature 1.0 / top_p 0.95.
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                    "stream": "false",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.5,
+                    EvalLimitMode.SMOKE_TEST: 0.05,
+                },
+            ),
+            EvalTask(
+                task_name="r1_math500",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                max_concurrent=15,
+                use_chat_api=True,
+                capture_reasoning=True,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["exact_match,none"],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "max_length": 1048576,
+                    "tokenizer": _KIMI_K31_TOKENIZER,
+                    "timeout": 7200,
+                },
+                gen_kwargs={
+                    "max_gen_toks": 1000000,  # prompt + answer must fit the 1048576 context
+                    # Dynamo rejects an empty stop list with 400; K3/K3.1's EOS string.
+                    "until": ["[EOS]"],
+                    "do_sample": "true",
+                    # Moonshot reports single-step benchmarks at temperature 1.0 / top_p 0.95.
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                    "stream": "false",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.02,
+                },
+            ),
+            EvalTask(
+                task_name="mmlu_pro",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                max_concurrent=15,
+                use_chat_api=True,
+                capture_reasoning=True,
+                num_fewshot=5,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["exact_match,custom-extract"],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "max_length": 1048576,
+                    "tokenizer": _KIMI_K31_TOKENIZER,
+                    "timeout": 7200,
+                },
+                gen_kwargs={
+                    "max_gen_toks": 1000000,  # prompt + answer must fit the 1048576 context
+                    # Dynamo rejects an empty stop list with 400; K3/K3.1's EOS string.
+                    "until": ["[EOS]"],
+                    "do_sample": "true",
+                    # Moonshot reports single-step benchmarks at temperature 1.0 / top_p 0.95.
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                    "stream": "false",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
             # Generate-then-answer LongBench v2 (chat API). Stock longbench2 is
             # multiple_choice/loglikelihood and cannot run on chat-only servers.
             # This is the long-context sweep for K3.1's 1M window: samples are
