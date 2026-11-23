@@ -62,7 +62,13 @@ def test_images_become_a_text_note_at_any_depth():
             "content": [
                 {
                     "type": "tool_result",
-                    "content": [{"type": "image", "source": {"data": "AA"}}],
+                    "content": [
+                        {"type": "image", "source": {"data": "AA"}},
+                        {
+                            "type": "document",
+                            "source": {"media_type": "application/pdf", "data": "AA"},
+                        },
+                    ],
                 }
             ],
         },
@@ -75,7 +81,10 @@ def test_images_become_a_text_note_at_any_depth():
         {"type": "text", "text": IMAGE_NOTE},
         {"type": "text", "text": "kept"},
     ]
-    assert stripped[2]["content"][0]["content"] == [{"type": "text", "text": IMAGE_NOTE}]
+    assert stripped[2]["content"][0]["content"] == [
+        {"type": "text", "text": IMAGE_NOTE},
+        {"type": "text", "text": IMAGE_NOTE},
+    ]
 
 
 def test_config_maps_every_model_to_the_served_model_with_the_image_filter():
