@@ -18,6 +18,7 @@ from __future__ import annotations
 import ipaddress
 import json
 import logging
+import os
 import secrets
 import shutil
 import socket
@@ -40,6 +41,11 @@ UPSTREAM_PROVIDER = "hosted_vllm"
 REQUEST_TIMEOUT_SEC = 60 * 60
 STARTUP_TIMEOUT_SEC = 180
 NUM_WORKERS = 4
+# The inference server's bearer token, as every other agentic driver reads it.
+# The proxy inherits this process's environment, so the config names the
+# variable (LiteLLM resolves ``os.environ/<NAME>``) and the token itself is
+# never written to the run directory.
+UPSTREAM_API_KEY_ENV = "OPENAI_API_KEY"
 CONFIG_NAME = "litellm_config.yaml"
 LOG_NAME = "anthropic_proxy.log"
 _HOOK_FILE = Path(litellm_image_filter.__file__)
@@ -51,6 +57,14 @@ class AnthropicProxy:
     api_key: str
 
 
+def _upstream_api_key() -> str:
+    """The upstream ``api_key``: the server's token by reference when it is set,
+    else a placeholder for a server run without auth (``--no-auth``)."""
+    if os.environ.get(UPSTREAM_API_KEY_ENV, "").strip():
+        return f"os.environ/{UPSTREAM_API_KEY_ENV}"
+    return "none"
+
+
 def proxy_config(upstream_api_base: str, served_model: str, master_key: str) -> dict:
     """The LiteLLM proxy config: any model name -> the served model."""
     return {
@@ -60,7 +74,7 @@ def proxy_config(upstream_api_base: str, served_model: str, master_key: str) -> 
                 "litellm_params": {
                     "model": f"{UPSTREAM_PROVIDER}/{served_model}",
                     "api_base": upstream_api_base,
-                    "api_key": "none",
+                    "api_key": _upstream_api_key(),
                     "timeout": REQUEST_TIMEOUT_SEC,
                 },
             }
@@ -181,7 +195,9 @@ def serve(
         "--num_workers",
         str(NUM_WORKERS),
     ]
-    logger.info("Starting Anthropic proxy on %s:%d -> %s", bind_host, port, upstream_api_base)
+    logger.info(
+        "Starting Anthropic proxy on %s:%d -> %s", bind_host, port, upstream_api_base
+    )
     with open(log_path, "ab") as log:
         process = subprocess.Popen(
             cmd, cwd=run_dir, stdout=log, stderr=subprocess.STDOUT

@@ -100,6 +100,23 @@ def test_config_maps_every_model_to_the_served_model_with_the_image_filter():
     assert config["general_settings"]["master_key"] == "sk-x"
 
 
+def test_config_sends_the_server_token_by_reference(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "secret-jwt")
+    config = anthropic_proxy.proxy_config("http://h:8000/v1", "org/model", "sk-x")
+
+    (entry,) = config["model_list"]
+    assert entry["litellm_params"]["api_key"] == "os.environ/OPENAI_API_KEY"
+    assert "secret-jwt" not in json.dumps(config)
+
+
+def test_config_without_a_server_token_sends_a_placeholder(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    config = anthropic_proxy.proxy_config("http://h:8000/v1", "org/model", "sk-x")
+
+    (entry,) = config["model_list"]
+    assert entry["litellm_params"]["api_key"] == "none"
+
+
 def test_serve_runs_the_proxy_on_the_host_address_until_the_block_exits(tmp_path):
     run_dir = tmp_path / "proxy"
     with anthropic_proxy.serve(
