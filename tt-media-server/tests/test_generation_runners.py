@@ -692,7 +692,8 @@ def _ideogram_runner_and_request(tokens):
     runner.pipeline.count_text_tokens = lambda prompt: tokens
     request = Ideogram4Request(
         structured_prompt={
-            "compositional_deconstruction": {"background": "b", "elements": []}
+            "high_level_description": "h",
+            "compositional_deconstruction": {"background": "b", "elements": []},
         }
     )
     return runner, _resolved(request, 2048, 2048, prompt=request.model_prompt())

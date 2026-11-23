@@ -2131,8 +2131,9 @@ _ENHANCED_PROMPT = (
 )
 
 
+@requires_tt_metal_policy
 async def test_ideogram_plain_prompt_is_enhanced_before_the_device(
-    generations_app, monkeypatch
+    generations_app, ideogram_serving, monkeypatch
 ):
     enhancer = _FakeEnhancer(_ENHANCED)
     _use_enhancer(monkeypatch, enhancer)
@@ -2150,7 +2151,10 @@ async def test_ideogram_plain_prompt_is_enhanced_before_the_device(
     assert output["prompt"] == _ENHANCED_PROMPT
 
 
-async def test_an_unusable_caption_is_asked_for_once_more(generations_app, monkeypatch):
+@requires_tt_metal_policy
+async def test_an_unusable_caption_is_asked_for_once_more(
+    generations_app, ideogram_serving, monkeypatch
+):
     enhancer = _FakeEnhancer({"style_description": {}}, _ENHANCED)
     _use_enhancer(monkeypatch, enhancer)
     client, device = generations_app("tt-ideogram-4")
@@ -2163,6 +2167,7 @@ async def test_an_unusable_caption_is_asked_for_once_more(generations_app, monke
     assert device.requests[0]._prompt == _ENHANCED_PROMPT
 
 
+@requires_tt_metal_policy
 @pytest.mark.parametrize(
     ("captions", "message"),
     [
@@ -2172,7 +2177,7 @@ async def test_an_unusable_caption_is_asked_for_once_more(generations_app, monke
     ids=["unusable-twice", "service-error"],
 )
 async def test_an_enhancer_failure_fails_the_job_before_the_device(
-    generations_app, monkeypatch, captions, message
+    generations_app, ideogram_serving, monkeypatch, captions, message
 ):
     _use_enhancer(monkeypatch, _FakeEnhancer(*captions))
     client, device = generations_app("tt-ideogram-4")
@@ -2186,8 +2191,9 @@ async def test_an_enhancer_failure_fails_the_job_before_the_device(
     assert device.requests == []
 
 
+@requires_tt_metal_policy
 async def test_a_job_cancelled_while_its_prompt_is_enhanced_never_reaches_the_device(
-    generations_app, monkeypatch
+    generations_app, ideogram_serving, monkeypatch
 ):
     _use_enhancer(monkeypatch, _FakeEnhancer(_ENHANCED, delay=0.5))
     client, device = generations_app("tt-ideogram-4")
@@ -2203,7 +2209,10 @@ async def test_a_job_cancelled_while_its_prompt_is_enhanced_never_reaches_the_de
     assert device.requests == []
 
 
-async def test_a_plain_prompt_is_422_without_an_enhancer(generations_app, monkeypatch):
+@requires_tt_metal_policy
+async def test_a_plain_prompt_is_422_without_an_enhancer(
+    generations_app, ideogram_serving, monkeypatch
+):
     _use_enhancer(monkeypatch, None)
     client, device = generations_app("tt-ideogram-4")
     response = await client.post(
@@ -2247,10 +2256,14 @@ async def test_an_explicit_null_is_422(generations_app, body):
 
 def _ideogram_service_at_startup(monkeypatch, enhancer: str):
     """GenerationService() for Ideogram 4 with no API key, up to the point
-    its workers would start."""
-    from config.settings import Settings
+    its workers would start.
+
+    ``Settings`` comes from ``utils.prompt_enhancer``, not ``config.settings``:
+    other test modules replace ``sys.modules["config.settings"]`` with a Mock at
+    import time, while the code under test keeps the real class."""
     from model_services import generation_service
     from pydantic import SecretStr
+    from utils.prompt_enhancer import Settings
 
     monkeypatch.setattr(generation_service.BaseJobService, "__init__", lambda _: None)
     monkeypatch.setattr(generation_service.settings, "model_runner", "tt-ideogram-4")
@@ -2265,7 +2278,7 @@ def _ideogram_service_at_startup(monkeypatch, enhancer: str):
 
 
 def test_ideogram_starts_without_a_key_by_default(monkeypatch):
-    from config.settings import Settings
+    from utils.prompt_enhancer import Settings
 
     default = Settings.model_fields["ideogram_prompt_enhancer"].default
     assert _ideogram_service_at_startup(monkeypatch, default)
