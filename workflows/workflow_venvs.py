@@ -1009,6 +1009,11 @@ _venv_config_list = [
         setup_function=setup_minimax_verifier,
     ),
     VenvConfig(
+        venv_type=WorkflowVenvType.ANTHROPIC_PROXY,
+        requirements_file="anthropic-proxy.txt",
+        python_version="3.12",
+    ),
+    VenvConfig(
         venv_type=WorkflowVenvType.WORKFLOW_RUN_SCRIPT,
         requirements_file="workflow-run-script.txt",
     ),

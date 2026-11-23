@@ -63,6 +63,7 @@
       "Qwen/Qwen3-0.6B",
       "Qwen/Qwen3-1.7B",
       "MiniMaxAI/MiniMax-M3",
+      "tencent/Hy4-preview",
       "MiniMaxAI/MiniMax-M2.7",
       "moonshotai/Kimi-K2.7-Code",
       "google/gemma-4-31B-it",
@@ -619,6 +620,16 @@
       "category": "LLM",
       "compatible_devices": [
         "super_cluster"
+      ]
+    },
+    "hy4_preview": {
+      "id_name": "hy4-preview",
+      "weights": [
+        "tencent/Hy4-preview"
+      ],
+      "category": "LLM",
+      "compatible_devices": [
+        "gpu"
       ]
     },
     "minimax_m2_7": {

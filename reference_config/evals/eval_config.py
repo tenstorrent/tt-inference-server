@@ -343,6 +343,11 @@ class HarborEvalConfig:
     # agent egress (``[agent] network_mode = "no-network"``, e.g. DeepSWE):
     # the endpoint's host joins Harbor's run-specific agent allowlist.
     allow_agent_endpoint: bool = False
+    # For agents that only speak the Anthropic Messages API (``claude-code``):
+    # run a LiteLLM proxy serving it in front of the inference server for the
+    # length of the run, with image content replaced by a text note, and point
+    # the agent at it. Docker environment only.
+    anthropic_proxy: bool = False
     # Images ``docker pull``-ed (with retries) before ``harbor run`` when the
     # environment is docker and the image is not already local, e.g. the base
     # image every trial's environment build starts FROM: concurrent trials
@@ -13584,6 +13589,287 @@ _eval_config_list = [
                     EvalLimitMode.CI_NIGHTLY: 80,
                     EvalLimitMode.CI_LONG: 80,
                     EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
+    # Hy4-preview (tencent/Hy4-preview, 770B MoE / 49B active, 1M native context;
+    # served at 256K with MTP on, so the reasoning evals fit that window).
+    # The card recommends temperature 0.9 / top_p 1.0; reasoning_effort
+    # defaults to "high" (chat_template_kwargs reasoning_effort="no_think"
+    # disables it), so thinking is on for every task below. Published scores
+    # are the card's benchmark table (highest reasoning setting); the card has
+    # no tau3 or LongBench v2 score. GPU references for the agentic evals:
+    # tenstorrent/tt-inference-server#5581 (GPQA and LongBench v2 have none
+    # yet). The agentic evals' CI nightly subset is their first 20 tasks, with
+    # a subset reference scored on the same GPU run.
+    EvalConfig(
+        hf_model_repo="tencent/Hy4-preview",
+        tasks=[
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                max_concurrent=16,
+                use_chat_api=True,
+                # Thinking is on, so the answer can arrive in reasoning_content.
+                capture_reasoning=True,
+                score=EvalTaskScore(
+                    published_score=92.3,
+                    published_score_ref="https://huggingface.co/tencent/Hy4-preview",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    # The MTP server serves a 256K window (a larger max context
+                    # grows the indexer buffer and shrinks the KV pool).
+                    "max_length": 256 * 1024,
+                    # A request may stream max_gen_toks (250K) of reasoning.
+                    # MiMo's CI streams at 400K were cut short at 7200 s and
+                    # lm_eval failed the task, so allow 4 h.
+                    "timeout": 4 * 60 * 60,
+                },
+                gen_kwargs={
+                    # 250K of the 256K window; GPQA prompts are ~2K tokens.
+                    "max_gen_toks": 250 * 1024,
+                    "do_sample": "true",
+                    "temperature": 0.9,
+                    "top_p": 1.0,
+                    "stream": "true",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            # Generate-then-answer LongBench v2 (chat API). Stock longbench2 is
+            # multiple_choice/loglikelihood and cannot run on chat-only servers.
+            # Long-context sweep over the 256K window the MTP server serves
+            # (the card has no LongBench v2 score and no GPU reference exists
+            # yet).
+            EvalTask(
+                task_name="longbench2_generate",
+                max_concurrent=16,
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["exact_match,none"],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "max_length": 256 * 1024,
+                    # A request's time includes its queue on the server: with a
+                    # ~400K-token KV pool only a few 64K-190K prompts are
+                    # resident at once, so the rest wait before prefilling and
+                    # decoding up to 64K tokens. MiMo's CI requests were cut
+                    # short at 7200 s.
+                    "timeout": 4 * 60 * 60,
+                },
+                gen_kwargs={
+                    "max_gen_toks": 64 * 1024,
+                    "do_sample": "true",
+                    "temperature": 0.9,
+                    "top_p": 1.0,
+                    "stream": "true",
+                },
+                # ISL is measured on the raw context alone, so the ceiling also
+                # has to absorb the chat template, question and instruction
+                # wrapper on top of max_gen_toks (65536) before hitting the
+                # 262144 window.
+                custom_dataset_kwargs={
+                    "minimum_isl": 64 * 1024,  # 64K
+                    "maximum_isl": 190 * 1000,  # 190K (< 262144 - 64K gen)
+                    "pretrained": "tencent/Hy4-preview",
+                    "tokenizer_num_proc": 32,
+                },
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            # Claude Code as the harness, through the Anthropic proxy; it picks its
+            # own sampling.
+            EvalTask(
+                task_name="terminal_bench_2_1",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=85.4,
+                    published_score_ref="https://huggingface.co/tencent/Hy4-preview",
+                    # GPU vLLM at a 256K max context, Claude Code, 2 attempts per task
+                    # (CLAUDE_CODE_AUTO_COMPACT_WINDOW=200000, 8 concurrent trials).
+                    gpu_reference_score=81.46,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5581#issuecomment-7096189539",
+                    # CI_NIGHTLY runs the first 20 tasks; scored on the same run.
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=85.0,
+                            ref="first 20 tasks (registry order) of the same GPU run: 34/40 trials over 2 attempts, errored trials scored 0, https://github.com/tenstorrent/tt-inference-server/issues/5581#issuecomment-7096189539",
+                            # Two tasks of slack on 20 (the full-set check keeps 0.05).
+                            tolerance=0.10,
+                        ),
+                    },
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="terminal-bench/terminal-bench-2-1",
+                    agent="claude-code",
+                    n_concurrent_trials=16,
+                    n_attempts=1,
+                    n_tasks=89,
+                    agent_timeout_sec=2 * 60 * 60,
+                    agent_kwargs={"disable_web_search": True},
+                    # Claude Code assumes a 1M window for a model it does not
+                    # know, so it never auto-compacts below the server's 256K;
+                    # the server shrinks max_tokens to the room left instead of
+                    # rejecting, so reactive compaction does not fire either.
+                    # The GPU reference run's window.
+                    agent_env={"CLAUDE_CODE_AUTO_COMPACT_WINDOW": "200000"},
+                    anthropic_proxy=True,
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 20,
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
+            ),
+            EvalTask(
+                task_name="tau3_bench_banking",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    # Not on the model card.
+                    published_score=None,
+                    published_score_ref=None,
+                    # GPU vLLM at a 256K max context, 1 attempt per task.
+                    gpu_reference_score=43.3,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5581#issuecomment-7096189539",
+                    # CI_NIGHTLY runs the first 20 tasks; scored on the same run.
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=55.0,
+                            ref="first 20 tasks (sorted) of the same GPU run: 11/20, https://github.com/tenstorrent/tt-inference-server/issues/5581#issuecomment-7096189539",
+                        ),
+                    },
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                    tolerance=0.10,
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="sierra-research/tau3-bench",
+                    agent="tau3_llm_agent",
+                    agent_import_path="adapters.tau3-bench.tau3_llm_agent:Tau3LLMAgent",
+                    task_names=["sierra-research/tau3-bench__tau3-banking_knowledge-*"],
+                    # A single served instance is shared by the agent,
+                    # the simulated user, and the Natural Language verifier.
+                    n_concurrent_trials=8,
+                    n_attempts=1,
+                    n_tasks=97,
+                    override_cpus=4,
+                    override_memory_mb=8 * 1024,
+                    agent_timeout_sec=3600,
+                    agent_kwargs={
+                        "tau2_trial_index": 0,
+                        "temperature": 0.9,
+                        # The adapter's build_llm_args() sets only temperature.
+                        # Must stay a JSON *string*: the adapter shlex.quotes it
+                        # onto the container command line.
+                        "llm_args_json": '{"top_p": 1.0}',
+                        "max_steps": 200,
+                        # Default is 120s; a single reasoning user-sim turn under
+                        # load can exceed that and trip an MCP request timeout.
+                        "tool_timeout_sec": 900,
+                        "read_timeout_sec": 120,
+                    },
+                    environment_env={
+                        "TAU2_USER_MODEL": "openai/tencent/Hy4-preview",
+                    },
+                    # Every trial's environment builds FROM it; on the Galaxy
+                    # runner the four CI trials' concurrent pulls all failed.
+                    prepull_images=["python:3.12-slim"],
+                    verifier_env={
+                        "TAU2_NL_ASSERTIONS_MODEL": "openai/tencent/Hy4-preview",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 20,
+                    EvalLimitMode.SMOKE_TEST: 3,
+                },
+            ),
+            EvalTask(
+                task_name="deepswe",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=64.3,
+                    published_score_ref="https://huggingface.co/tencent/Hy4-preview",
+                    # GPU vLLM at a 256K max context, 1 attempt per task.
+                    gpu_reference_score=59.29,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5581#issuecomment-7096189539",
+                    # CI_NIGHTLY runs the first 20 tasks; scored on the same run.
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=95.0,
+                            ref="first 20 tasks (sorted) of the same GPU run: 19/20, https://github.com/tenstorrent/tt-inference-server/issues/5581#issuecomment-7096189539",
+                            # Two tasks of slack on 20 (the full-set check keeps 0.05).
+                            tolerance=0.10,
+                        ),
+                    },
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=HarborEvalConfig(
+                    # Checked out from datacurve-ai/deep-swe at v1.1 (see
+                    # llm_module/agentic/deepswe.py); not a registry dataset.
+                    dataset="datacurve/deep-swe",
+                    # The DeepSWE leaderboard runs every model with mini-swe-agent.
+                    agent="mini-swe-agent",
+                    # Tasks block agent egress; let the agent reach the server.
+                    allow_agent_endpoint=True,
+                    # Agent-side test runs and the grader both run jest/vitest.
+                    environment_env=dict(DEEPSWE_TEST_WORKER_ENV),
+                    verifier_env=dict(DEEPSWE_TEST_WORKER_ENV),
+                    n_concurrent_trials=16,
+                    n_attempts=1,
+                    n_tasks=None,
+                    # None keeps each task's own 3h agent timeout.
+                    agent_timeout_sec=None,
+                    agent_kwargs={
+                        # The leaderboard's published job (2026-06-06) ran an
+                        # unpinned mini-swe-agent, i.e. 2.3.0 at that date.
+                        "version": "2.3.0",
+                        "max_tokens": 128 * 1024,
+                        "config": {
+                            "model": {
+                                "model_kwargs": {
+                                    "temperature": 0.9,
+                                    "top_p": 1.0,
+                                }
+                            }
+                        },
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 20,
+                    EvalLimitMode.SMOKE_TEST: 1,
                 },
             ),
         ],

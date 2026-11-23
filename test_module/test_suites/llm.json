@@ -157,6 +157,35 @@
     },
     {
       "models": [
+        "hy4_preview"
+      ],
+      "devices": [
+        "gpu"
+      ],
+      "test_cases": [
+        {
+          "template": "ToolCallSchemaConformanceTest",
+          "enabled": true,
+          "description": "Tool-call arguments validate against walle JSON Schemas, tool_choice auto (pass rate >= 87.62%)",
+          "_comment_threshold": "pass_rate_threshold = mean - 3 sample std of 10 runs on GPU vLLM (all 408 cases, no retries, 2026-11-23): 90.96% - 3 x 1.11% = 87.62%, i.e. at least 358 of 408. Every failure is a schema violation (e.g. {} or a JSON string where an object is required), none HTTP errors or truncation. tool_choice required measured 90.29% - 3 x 0.87% = 87.67%.",
+          "targets": {
+            "pass_rate_threshold": 0.8762
+          }
+        },
+        {
+          "template": "ToolCallSchemaConformanceTest",
+          "enabled": true,
+          "description": "Tool-call arguments validate against walle JSON Schemas, tool_choice required, non-blocking",
+          "test_config": {
+            "tool_choice": "required",
+            "non_blocking": true,
+            "non_blocking_reason": "the tool_choice=required run is informational: reported, never blocking"
+          }
+        }
+      ]
+    },
+    {
+      "models": [
         "minimax_m3"
       ],
       "devices": [
