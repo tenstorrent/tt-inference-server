@@ -4,6 +4,7 @@
 
 
 import ttnn
+from multihost import is_multihost_launch
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 
 
@@ -73,6 +74,8 @@ class BaseMetalDeviceRunner(BaseDeviceRunner):
 
     def _mesh_device(self):
         try:
+            # Blocks while another process holds one of the chips.
+            self.logger.info(f"Device {self.device_id}: discovering TTNN devices")
             device_ids = ttnn.get_device_ids()
             if not device_ids:
                 raise RuntimeError("No TTNN devices available")
@@ -85,6 +88,13 @@ class BaseMetalDeviceRunner(BaseDeviceRunner):
             device_params = self.get_pipeline_device_params()
             updated_device_params = self.get_updated_device_params(device_params)
             fabric_config = self._configure_fabric(updated_device_params)
+            # On a multi-host mesh this is collective: one rank that never
+            # gets here stalls them all.
+            self.logger.info(
+                f"Device {self.device_id}: opening "
+                f"{tuple(self.settings.device_mesh_shape)} mesh device"
+                + (", waiting for all ranks" if is_multihost_launch() else "")
+            )
             mesh_device = self._initialize_mesh_device(
                 mesh_shape, updated_device_params, fabric_config
             )

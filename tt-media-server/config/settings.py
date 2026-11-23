@@ -358,10 +358,8 @@ class Settings(BaseSettings):
             ModelRunners.TT_WAN_2_2_I2V_DISTILL.value,
             ModelRunners.TT_WAN_2_2_I2V_LORA.value,
             ModelRunners.TT_WAN_2_2_I2V_LIGHTNING.value,
-            ModelRunners.TT_MINIMAX_H3_T2VA.value,
             ModelRunners.TT_MINIMAX_H3_FL2VA.value,
             ModelRunners.TT_MINIMAX_H3_REF2VA.value,
-            ModelRunners.TT_MINIMAX_H3_FASTH3.value,
             ModelRunners.TT_MINIMAX_H3_FL2VA_LIGHTX2V.value,
             ModelRunners.TT_MINIMAX_H3_REF2VA_LIGHTX2V.value,
         ]:
