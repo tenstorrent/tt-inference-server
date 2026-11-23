@@ -22,6 +22,8 @@ struct VideoResponse : BaseResponse {
 
   std::string videoPath;
   double generationTimeSeconds = 0.0;
+  /** Submit -> result popped; for the task metrics (see VideoService). */
+  double e2eSeconds = 0.0;
   std::string error;
 
   Json::Value toOpenaiJson() const {

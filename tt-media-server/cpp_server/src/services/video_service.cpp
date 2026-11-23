@@ -190,12 +190,27 @@ Json::Value VideoService::createJob(domain::VideoGenerateRequest request) {
   } catch (const ActiveJobLimitException&) {
     throw QueueFullException{};
   }
+  {
+    std::lock_guard<std::mutex> lock(submitMutex_);
+    jobTasks_.insert(taskId);
+  }
   try {
     submitRequestAsync(std::move(request),
                        [this, taskId](domain::video::VideoResponse&& r) {
-                         jobs.complete(taskId, r.videoPath, r.error);
+                         // Counted by what the job ended as: a cancelled or
+                         // stale job's discarded result is not an "ok" task.
+                         if (const auto ok =
+                                 jobs.complete(taskId, r.videoPath, r.error)) {
+                           tt::metrics::ServerMetrics::instance()
+                               .onVideoTaskDone(*ok, r.generationTimeSeconds,
+                                                r.e2eSeconds);
+                         }
                        });
   } catch (...) {
+    {
+      std::lock_guard<std::mutex> lock(submitMutex_);
+      jobTasks_.erase(taskId);
+    }
     jobs.erase(taskId);
     throw;
   }
@@ -349,8 +364,19 @@ domain::video::VideoResponse VideoService::buildResponse(
                        .count();
     }
   }
-  tt::metrics::ServerMetrics::instance().onVideoTaskDone(
-      response.error.empty(), result.generation_time_seconds, e2eSeconds);
+  response.e2eSeconds = e2eSeconds;
+  // A job's outcome is only known once jobs.complete() has applied the final
+  // status (a cancelled or stale job's result is discarded), so a job records
+  // its outcome in createJob(). A request without a job (sync mode) is done now.
+  bool belongsToJob = false;
+  {
+    std::lock_guard<std::mutex> lock(submitMutex_);
+    belongsToJob = jobTasks_.count(taskId) > 0;
+  }
+  if (!belongsToJob) {
+    tt::metrics::ServerMetrics::instance().onVideoTaskDone(
+        response.error.empty(), result.generation_time_seconds, e2eSeconds);
+  }
   return response;
 }
 
@@ -358,6 +384,7 @@ void VideoService::cleanupTask(uint32_t taskId) {
   {
     std::lock_guard<std::mutex> lock(submitMutex_);
     submitTimes_.erase(taskId);
+    jobTasks_.erase(taskId);
   }
   std::error_code ec;
   std::filesystem::remove(payloadPath(taskId, "request"), ec);

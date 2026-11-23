@@ -4,7 +4,7 @@ The tests are split into folders by what they need to run.
 
 | Folder | What it needs | What is in it |
 |---|---|---|
-| `mock/` | only a build of the server, no device | contract cases, server tests and lifecycle tests that run against the server with the mock runner, and worker crash tests. Guide: `mock/README.md` |
+| `mock/` | only a build of the server, no device | contract cases and server tests that run against the server with the mock runner, and worker crash tests. Guide: `mock/README.md` |
 | `real_device/` | a real server with a device and the model loaded | tests of cancel, the job queue, download and sync mode, grouped by topic. Guide: `real_device/README.md` |
 | `benchmark/` | mock runner (server overhead) or a real server with a device | timings, not validation: sequential and burst video generation, control-plane latency, jobs per second. Guide: `benchmark/README.md` |
 | (this folder) | | `run_device_tests.sh` (the contract checks against a real server with a device, uses `mock/contract_cases.py`) |
@@ -40,8 +40,6 @@ test is in `real_device/README.md`.
 | `real_device/jobs/` | `fields_content_load.py` | request fields and limits (422), a Unicode prompt of 20000 characters, the mp4 (codec, size, faststart), `Range` and a resumed download, latency while the device generates, a 50-step job, memory |
 | `real_device/jobs/` | `disconnect_and_queue_depth.py` | a dropped synchronous request, 30 queued jobs cancelled at once |
 | `real_device/jobs/` | `api_parity.py` | the same 72 probes to the C++ and to the Python server; prints the answers, asserts nothing |
-| `real_device/lifecycle/` | `restart_cases.py` | starts and stops the server itself: purge on start, `PURGE_ON_START=0`, SIGTERM idle and in the middle of a job, seed repeatability across a restart, an unwritable output folder |
-| `real_device/lifecycle/` | `warmup_and_limits.py` | starts the server itself: `503` + `Retry-After` during the warmup, `429` at `MAX_QUEUE_SIZE`, `503` at `MAX_JOBS` |
 
 ```bash
 # from tt-media-server/cpp_server
@@ -51,7 +49,4 @@ python3 tests/video/real_device/jobs/queue_download_sync.py --server-log /path/t
 python3 tests/video/real_device/jobs/queue_download_sync.py --phase validation
 python3 tests/video/real_device/jobs/fields_content_load.py --server-log /path/to/server.log
 python3 tests/video/real_device/jobs/disconnect_and_queue_depth.py --server-log /path/to/server.log
-# these two start and stop the server themselves (nothing else may use the chips)
-python3 tests/video/real_device/lifecycle/restart_cases.py --tt-metal <tt-metal> --media-server <tt-media-server> --dit-cache <cache>
-python3 tests/video/real_device/lifecycle/warmup_and_limits.py --tt-metal <tt-metal> --media-server <tt-media-server> --dit-cache <cache>
 ```

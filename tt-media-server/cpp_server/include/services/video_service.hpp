@@ -13,6 +13,7 @@
 #include <string>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 
 #include "config/runner_config.hpp"
 #include "domain/video/video_response.hpp"
@@ -97,6 +98,9 @@ class VideoService
   std::mutex submitMutex_;
   std::unordered_map<uint32_t, std::chrono::steady_clock::time_point>
       submitTimes_;
+  // Tasks that belong to a job (not sync requests): their outcome is recorded
+  // once the job has its final status. Guarded by submitMutex_.
+  std::unordered_set<uint32_t> jobTasks_;
 
   // Periodic job cleanup (Python job_cleanup_interval_seconds etc.).
   int64_t sweepIntervalSeconds_ = 300;

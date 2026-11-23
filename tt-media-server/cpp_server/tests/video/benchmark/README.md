@@ -33,7 +33,7 @@ Telemetry added to the C++ server (`GET /metrics`):
 | `tt_video_generation_seconds` | the worker's own generation time |
 | `tt_video_e2e_seconds{outcome}` | submit until the result reaches the server |
 | `tt_video_server_overhead_seconds{phase}` | `request_write`, `shm_enqueue`, `response_handling` |
-| `tt_video_tasks_total{outcome}` | finished tasks, `ok` / `error` |
+| `tt_video_tasks_total{outcome}` | finished tasks, `ok` / `error` (a cancelled job, or one the cleanup already failed as stale, is not counted) |
 | `tt_video_jobs{status}` | jobs in the store by status |
 | `tt_video_job_cleanup_total{kind}` | `evicted` (expired) and `stuck` (`stale_job`) |
 

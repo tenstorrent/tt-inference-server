@@ -13,7 +13,6 @@ tests that run against the server with the mock runner. The unit tests are C++ t
 | `server_cases.py` | checks against a real `tt_media_server_cpp` with the mock runner, by phase |
 | `run_server_tests.sh` | starts the server with the mock runner once per phase (private shm names) and runs `contract_cases.py` and `server_cases.py` |
 | `worker_crash_cases.py` | starts its own server with the mock runner, kills the worker with `SIGKILL` and checks that the server exits, and that a worker whose warmup fails exits |
-| `lifecycle_cases.py` | starts its own server per case: the background cleaner, `stale_job`, SIGTERM during a job, a dropped sync request, two sync requests, 400 concurrent requests, 10000 jobs, parallel downloads, no ffmpeg. `--only a,b` runs some cases |
 
 `contract_cases.py` checks the job API (async mode; sync mode is covered by
 `server_cases.py`): `POST /v1/videos/generations` returns 202 and a job id,

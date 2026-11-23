@@ -13,6 +13,7 @@
 #include <fstream>
 #include <iterator>
 #include <set>
+#include <thread>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -99,7 +100,8 @@ TEST(VideoJobStoreTest, CountByStatusFollowsTheLifecycle) {
   store.markInProgress(1);
   store.markInProgress(2);
   EXPECT_EQ(store.countByStatus(), (std::array<size_t, 6>{1, 2, 0, 0, 0, 0}));
-  store.complete(1, "", "boom");  // worker error -> failed
+  EXPECT_EQ(store.complete(1, "", "boom"),
+            std::optional<bool>(false));  // worker error -> failed
   ASSERT_TRUE(store.cancel(3).has_value());  // queued -> cancelled
   ASSERT_TRUE(store.cancel(2).has_value());  // running -> cancelling
   EXPECT_EQ(store.countByStatus(), (std::array<size_t, 6>{0, 0, 0, 1, 1, 1}));
@@ -115,7 +117,8 @@ TEST(VideoJobStoreTest, InProgressThenCompleteKeepsTheFileAndResultPath) {
   ASSERT_TRUE(running.has_value());
   EXPECT_EQ(statusOf(*running), "in_progress");
 
-  store.complete(4, clip.string(), "");
+  // complete() says what the job ended as, for the task metrics
+  EXPECT_EQ(store.complete(4, clip.string(), ""), std::optional<bool>(true));
   auto done = store.get(4);
   ASSERT_TRUE(done.has_value());
   EXPECT_EQ(statusOf(*done), "completed");
@@ -186,7 +189,9 @@ TEST(VideoJobStoreTest, CancelRunningDropsTheFileWhenTheWorkerReturns) {
   EXPECT_FALSE(cancelling->isMember("completed_at"));
   EXPECT_FALSE(store.cancel(9).has_value());
 
-  store.complete(9, clip.string(), "ignored because cancelled");
+  // a discarded result is neither a success nor a failure of the task
+  EXPECT_EQ(store.complete(9, clip.string(), "ignored because cancelled"),
+            std::nullopt);
   EXPECT_EQ(statusOf(*store.get(9)), "cancelled");
   EXPECT_FALSE(store.get(9)->isMember("error"));
   EXPECT_FALSE(store.resultPath(9).has_value());
@@ -904,4 +909,24 @@ TEST(VideoJobStoreResult, RemoveNeverDeletesADirectory) {
   EXPECT_TRUE(
       fs::exists(dir / "x"));  // plain remove() cannot delete a non-empty dir
   fs::remove_all(dir);
+}
+
+TEST(VideoJobStoreTest, ADiscardedResultIsNotCountedAsASuccess) {
+  VideoJobStore store(10, 0);
+  // finished while it was being cancelled: the produced file is dropped
+  const auto cancelled = tempClip("metrics-cancelled");
+  store.create(30, "tt-wan2.2", params("a"));
+  store.markInProgress(30);
+  ASSERT_TRUE(store.cancel(30).has_value());
+  EXPECT_EQ(store.complete(30, cancelled.string(), ""), std::nullopt);
+  // already failed by the sweeper (stale_job): a late result is dropped too
+  const auto stale = tempClip("metrics-stale");
+  store.create(31, "tt-wan2.2", params("b"));
+  store.markInProgress(31);
+  std::this_thread::sleep_for(std::chrono::seconds(2));
+  store.sweep(1);
+  ASSERT_EQ(statusOf(*store.get(31)), "failed");
+  EXPECT_EQ(store.complete(31, stale.string(), ""), std::nullopt);
+  // the job is gone: nothing to count
+  EXPECT_EQ(store.complete(32, "", ""), std::nullopt);
 }

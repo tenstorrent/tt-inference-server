@@ -9,7 +9,7 @@ namespace tt::api {
  * Single-page console for the video service, served at `/` and `/ui` when
  * MODEL_SERVICE=video. Plain HTML/CSS/JS, no external resources, so it works on
  * a machine without internet access. It calls the same-origin API from the
- * browser (the API key is typed into the page and kept in localStorage).
+ * browser (the API key is typed into the page and kept in sessionStorage, so it is gone when the tab is closed).
  */
 inline constexpr const char* kVideoUiHtml = R"VUI(<!doctype html>
 <html lang="en">
@@ -135,7 +135,7 @@ video{width:100%;max-height:420px;margin-top:8px;border-radius:8px;background:#0
       <label for="prompt">Prompt</label>
       <textarea id="prompt">A red fox running through fresh snow, cinematic, 4k</textarea>
       <div class="row">
-        <div><label for="steps">Inference steps (4 to 50)</label><input id="steps" type="number" value="4" min="1" max="100"></div>
+        <div><label for="steps">Inference steps (4 to 50)</label><input id="steps" type="number" value="4" min="4" max="50"></div>
         <div><label for="mode">Mode</label>
           <select id="mode">
             <option value="">default (server setting)</option>
@@ -208,8 +208,8 @@ const el = (tag, props = {}, ...kids) => {
   return e;
 };
 const ls = {
-  get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (_) { return d; } },
-  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (_) {} },
+  get(k, d) { try { const v = sessionStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (_) { return d; } },
+  set(k, v) { try { sessionStorage.setItem(k, JSON.stringify(v)); } catch (_) {} },
 };
 const ORIGIN = location.origin;
 let apiKey = ls.get('vui.key', '');

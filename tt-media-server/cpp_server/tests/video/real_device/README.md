@@ -1,6 +1,6 @@
 # Tests on a real server and device
 
-Most of these tests send HTTP requests to an already running `tt_media_server_cpp` (the ones in `lifecycle/` start the server themselves) with a
+Most of these tests send HTTP requests to an already running `tt_media_server_cpp` with a
 real runner and wait for real generation (about 80 s per job on a T3K with 4
 steps). They do not start the server themselves: the server must be
 `model_ready`.
@@ -44,7 +44,6 @@ Notes:
 |---|---|
 | `cancel/` | cancelling jobs: in the queue, while running, the race with `CLAIMED` |
 | `jobs/` | job queue, `download` and `Range`, repeatability, sync mode, validation |
-| `lifecycle/` | tests that start and stop the server themselves: restart, purge, SIGTERM, warmup answers, queue limits. Nothing else may use the chips while they run |
 | (shared) `common.py` | helpers: HTTP calls, waiting for statuses, reading the log, the PASS/FAIL list. Not a test |
 
 The tests that use the mock runner (`server_cases.py`, `contract_cases.py`,
