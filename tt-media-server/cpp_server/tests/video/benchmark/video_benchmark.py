@@ -48,7 +48,7 @@ class Client:
         parsed = urllib.parse.urlparse(base)
         if parsed.scheme != "http" or parsed.hostname not in ("127.0.0.1", "localhost"):
             raise SystemExit(
-                f"{base!r}: only http://127.0.0.1:<port> or http://localhost:<port> is accepted"
+                "--base-url must be http://127.0.0.1:PORT or http://localhost:PORT"
             )
         self.host = "127.0.0.1" if parsed.hostname == "127.0.0.1" else "localhost"
         self.port = int(parsed.port or 80)

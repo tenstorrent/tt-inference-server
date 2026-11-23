@@ -444,8 +444,10 @@ def main():
             srv.call("GET", "/tt-liveness", token=None)[1].get("status") == "alive",
             "the server is alive",
         )
-        # Fixing the folder is enough: no restart.
-        os.chmod(ro, 0o700)
+        # Fixing the folder is enough: no restart. The read-only folder is removed
+        # (it is still empty); the server checks the folder at every request and
+        # creates it again, writable this time.
+        os.rmdir(ro)
         st, j = srv.submit("after the fix")
         note(st == 202, "after the folder is fixed a request is accepted again", f"http{st}")
         if st == 202:
@@ -457,7 +459,8 @@ def main():
                 str(body.get("error")),
             )
     srv.terminate()
-    os.chmod(ro, 0o700)
+    if os.path.isdir(ro) and not os.listdir(ro):
+        os.rmdir(ro)  # a read-only folder left by a run that stopped early
     return finish()
 
 
