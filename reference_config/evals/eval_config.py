@@ -13699,51 +13699,10 @@ _eval_config_list = [
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
+            # Claude Code as the harness, through the Anthropic proxy; it picks its
+            # own sampling.
             EvalTask(
                 task_name="terminal_bench_2_1",
-                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
-                score=EvalTaskScore(
-                    published_score=85.4,
-                    published_score_ref="https://huggingface.co/tencent/Hy4-preview",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref=None,
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": ["accuracy"],
-                        "unit": "percent",
-                    },
-                ),
-                agentic_eval_config=TerminalBenchEvalConfig(
-                    dataset="terminal-bench/terminal-bench-2-1",
-                    agent="terminus-2",
-                    n_concurrent_trials=16,
-                    n_attempts=1,
-                    n_tasks=89,
-                    agent_timeout_sec=2 * 60 * 60,
-                    agent_kwargs={
-                        "parser_name": "json",
-                        "temperature": 0.9,
-                        # 192K in + 64K out fills the 256K window the MTP server serves.
-                        "model_info": {
-                            "max_input_tokens": 192 * 1024,
-                            "max_output_tokens": 64 * 1024,
-                        },
-                        "llm_kwargs": {
-                            "top_p": 1.0,
-                            "max_tokens": 64 * 1024,
-                            "timeout": 60 * 60,
-                        },
-                    },
-                ),
-                limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 20,
-                    EvalLimitMode.SMOKE_TEST: 5,
-                },
-            ),
-            # Terminal-Bench 2.1 with Claude Code as the harness. Claude Code picks
-            # its own sampling.
-            EvalTask(
-                task_name="terminal_bench_2_1_claude_code",
                 workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
                 score=EvalTaskScore(
                     published_score=85.4,
@@ -13764,6 +13723,13 @@ _eval_config_list = [
                     n_tasks=89,
                     agent_timeout_sec=2 * 60 * 60,
                     agent_kwargs={"disable_web_search": True},
+                    # Claude Code assumes a 1M window for a model it does not
+                    # know, so it never auto-compacts below the server's 256K;
+                    # the server shrinks max_tokens to the room left instead of
+                    # rejecting, so reactive compaction does not fire either.
+                    # Compaction fires at this window minus 33K, leaving room
+                    # for the 32K reply plus a large turn's growth.
+                    agent_env={"CLAUDE_CODE_AUTO_COMPACT_WINDOW": str(224 * 1024)},
                     anthropic_proxy=True,
                 ),
                 limit_samples_map={
