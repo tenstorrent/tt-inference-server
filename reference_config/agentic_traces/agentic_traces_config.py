@@ -475,6 +475,22 @@ _agentic_traces_config_list: List[AgenticTracesConfig] = [
             ),
         ),
     ),
+    # Kimi-K3.1 on SUPER_CLUSTER (dev catalog), disaggregated prefill ->
+    # decode endpoint. Full (1M) dataset, with prompts capped at the prefill
+    # worker's 1018880-token ceiling (the spec's 1048576 max_context is
+    # decode's).
+    AgenticTracesConfig(
+        model_id="id_blaze_Kimi-K3.1_super_cluster",
+        inferencex_git_ref=INFERENCEX_AGENTX_GIT_REF,
+        runs=(
+            AgenticTracesRunSpec(
+                trace_source=TraceSource.INFERENCEX_AGENTX,
+                public_dataset="semianalysis_cc_traces_weka_062126",
+                concurrency=_agentx_concurrency(10),
+                max_context_length=1018880,
+            ),
+        ),
+    ),
 ]
 
 AGENTIC_TRACES_CONFIGS: Dict[str, AgenticTracesConfig] = map_configs_by_attr(
