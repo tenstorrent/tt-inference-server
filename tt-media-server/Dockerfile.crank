@@ -3,8 +3,15 @@
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 # tt-crank image for the trainer runners; shared steps mirror Dockerfile.forge.
-# Ubuntu 24.04 because the tt-crank wheel needs glibc 2.38 / GLIBCXX_3.4.32. Build with:
+# Ubuntu 24.04 because the tt-crank wheel needs glibc 2.38 / GLIBCXX_3.4.32. Build with the
+# tt-crank wheel in a directory (CI downloads it first, so no token enters the build):
+#   docker build --build-context tt-crank=<dir with tt_crank-*.whl> -f tt-media-server/Dockerfile.crank .
+# or let the build download it with a GitHub token that can read tt-mlir's Actions artifacts:
 #   docker build --secret id=gh_token,env=GH_TOKEN -f tt-media-server/Dockerfile.crank .
+
+# Empty unless --build-context tt-crank=<dir> replaces it.
+FROM scratch AS tt-crank
+
 FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-24.04-dev-amd64:latest
 
 LABEL maintainer="Igor Djuric <idjuric@tenstorrent.com>"
@@ -81,15 +88,22 @@ COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "tt-media-serve
 RUN rm -rf ${APP_DIR}/server/cpp_server
 
 # Worker venv. tt-crank is frozen at tt-mlir 40085d6; its wheel is only available as a
-# tt-mlir Actions artifact (needs a GitHub token, expires 2027-01-21). The wheel lacks
+# tt-mlir Actions artifact (expires 2027-01-21), which only a GitHub token can download:
+# CI downloads it and passes the wheel as build context tt-crank. The wheel lacks
 # the SFPI toolchain tt-metal's kernel JIT needs, hence tt-crank-install-sfpi (root).
 USER root
 ARG TT_CRANK_ARTIFACT_ID=12493746911
-RUN --mount=type=secret,id=gh_token \
+RUN --mount=type=bind,from=tt-crank,target=/tmp/tt-crank-context \
+    --mount=type=secret,id=gh_token \
     cd ${APP_DIR}/server \
-    && curl -fsSL -H "Authorization: Bearer $(cat /run/secrets/gh_token)" -o /tmp/tt-crank.zip \
-        "https://api.github.com/repos/tenstorrent/tt-mlir/actions/artifacts/${TT_CRANK_ARTIFACT_ID}/zip" \
-    && unzip -q /tmp/tt-crank.zip -d /tmp/tt-crank \
+    && mkdir -p /tmp/tt-crank \
+    && if ls /tmp/tt-crank-context/tt_crank-*.whl >/dev/null 2>&1; then \
+           cp /tmp/tt-crank-context/tt_crank-*.whl /tmp/tt-crank/; \
+       else \
+           curl -fsSL -H "Authorization: Bearer $(cat /run/secrets/gh_token)" -o /tmp/tt-crank.zip \
+               "https://api.github.com/repos/tenstorrent/tt-mlir/actions/artifacts/${TT_CRANK_ARTIFACT_ID}/zip" \
+           && unzip -q /tmp/tt-crank.zip -d /tmp/tt-crank; \
+       fi \
     && python3.12 -m venv venv-worker \
     && venv-worker/bin/pip install --no-cache-dir /tmp/tt-crank/tt_crank-*.whl \
         -r requirements.txt -r tt_model_runners/forge_training_runners/requirements.txt \
