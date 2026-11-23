@@ -1142,6 +1142,29 @@ class TestModelSpecsStructure:
             assert not hasattr(spec, "device_model_specs")
             assert not hasattr(spec, "weights")
 
+    def test_proprietary_tts_resolves_to_new_quad_implementation(self):
+        from workflows.model_spec import _MODEL_SPECS_DIR, load_templates_from_yaml
+
+        dev_specs = [
+            spec
+            for template in load_templates_from_yaml(
+                _MODEL_SPECS_DIR / "dev" / "audio_tts.yaml", env="dev"
+            )
+            for spec in template.expand_to_specs()
+        ]
+        spec = resolve_model_spec(
+            dev_specs,
+            model="propritery/tts-2",
+            device="quad_galaxy",
+            impl="tt-tts",
+        )
+
+        assert spec.hf_model_repo == "propritery/tts-2"
+        assert spec.impl.impl_id == "tt_tts"
+        assert spec.impl.impl_name == "tt-tts"
+        assert spec.model_type.name == "TEXT_TO_SPEECH"
+        assert spec.inference_engine == InferenceEngine.MEDIA.value
+
 
 class TestRequiredTargetTiers:
     """Tests for ModelStatusTypes.required_target_tiers property."""
