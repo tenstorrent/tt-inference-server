@@ -120,6 +120,24 @@ def cohost_group_document(members: List[CohostMember], device: str) -> dict:
     }
 
 
+def _make_readable_by_container_user(path: Path, uid: int) -> None:
+    """The file is bind-mounted into the container, which reads it as ``--image-user``.
+
+    Like the other bind mounts, add read only for the scope (owner, group or other) that
+    user falls into, and only when it lacks it.
+    """
+    from workflows.utils import check_path_permissions_for_uid
+    from workflows.validate_setup import _try_fix_path_permissions_for_uid
+
+    _try_fix_path_permissions_for_uid(path, uid)
+    ok, reason = check_path_permissions_for_uid(path, uid)
+    if not ok:
+        raise ValueError(
+            f"The container user (--image-user={uid}) cannot read the co-host group "
+            f"file: {reason}"
+        )
+
+
 def write_cohost_group(
     model_spec, runtime_config, output_dir, resolve: Callable
 ) -> Path:
@@ -131,8 +149,7 @@ def write_cohost_group(
     output_dir.mkdir(parents=True, exist_ok=True)
     path = output_dir / f"cohost_group_{runtime_config.run_id}.json"
     path.write_text(json.dumps(document, indent=2, ensure_ascii=False))
-    # Bind-mounted into the container, which reads it as the image's user.
-    path.chmod(0o644)
+    _make_readable_by_container_user(path, int(runtime_config.image_user))
     summary = ", ".join(f"{m.name} on port {m.port}" for m in members)
     logger.info(
         f"Co-host group: {summary}; status on port {document['status_port']} ({path})"

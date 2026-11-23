@@ -5,6 +5,7 @@
 """run.py --cohost-with: argument checks, the group file, and the docker command."""
 
 import json
+import os
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -202,7 +203,29 @@ class TestGroupFile:
             ],
         }
         assert cohost_group_ports(path) == [8000, 8001, 8002]
-        assert path.stat().st_mode & 0o777 == 0o644
+
+    @pytest.mark.parametrize(
+        "image_user, mode",
+        [
+            # The container runs as the file's owner: nothing is widened.
+            (None, 0o600),
+            # A UID with no account on this host: read for "other" only, never write.
+            ("4242424", 0o604),
+        ],
+    )
+    def test_group_file_is_readable_by_the_container_user_only(
+        self, tmp_path, image_user, mode
+    ):
+        specs = {"Llama-3.1-8B-Instruct": _spec("Llama-3.1-8B-Instruct")}
+        runtime_config = _runtime_config(image_user=image_user or str(os.getuid()))
+        previous = os.umask(0o077)
+        try:
+            path = write_cohost_group(
+                _spec("Qwen3-32B"), runtime_config, tmp_path, _resolver(specs)
+            )
+        finally:
+            os.umask(previous)
+        assert path.stat().st_mode & 0o777 == mode
 
     def test_group_file_leaves_out_this_runs_cli_args(self, tmp_path):
         primary = _spec("Qwen3-32B")
