@@ -2811,6 +2811,272 @@ _eval_config_list = [
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
+            # Long-context evals: every prompt is above min_disagg_tokens (1024),
+            # so all of them migrate from prefill.
+            EvalTask(
+                task_name="ruler",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                max_concurrent=15,
+                use_chat_api=True,
+                capture_reasoning=True,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "4096,none",
+                            "8192,none",
+                            "16384,none",
+                            "32768,none",
+                            "65536,none",
+                            "131072,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "max_length": 1048576,
+                    "tokenizer": _KIMI_K31_TOKENIZER,
+                    "timeout": 7200,
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 900000,  # prompt + answer must fit the 1048576 context
+                    "until": ["[EOS]"],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: None,
+                    EvalLimitMode.SMOKE_TEST: None,
+                },
+                custom_dataset_kwargs={
+                    "max_seq_lengths": [4096, 8192, 16384, 32768, 65536, 131072],
+                    "pretrained": _KIMI_K31_TOKENIZER,
+                    "num_samples_per_length": 50,
+                    "limit_factor": 0.1,
+                },
+            ),
+            EvalTask(
+                task_name="longbench_single_e",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                min_context_required=16384,
+                max_concurrent=15,
+                use_chat_api=True,
+                capture_reasoning=True,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["score,none"],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "max_length": 1048576,
+                    "tokenizer": _KIMI_K31_TOKENIZER,
+                    "timeout": 7200,
+                },
+                gen_kwargs={
+                    "max_gen_toks": 900000,  # prompt + answer must fit the 1048576 context
+                    "until": ["[EOS]"],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                    "stream": "false",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.05,
+                },
+            ),
+            EvalTask(
+                task_name="longbench_multi_e",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                min_context_required=16384,
+                max_concurrent=15,
+                use_chat_api=True,
+                capture_reasoning=True,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["score,none"],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "max_length": 1048576,
+                    "tokenizer": _KIMI_K31_TOKENIZER,
+                    "timeout": 7200,
+                },
+                gen_kwargs={
+                    "max_gen_toks": 900000,  # prompt + answer must fit the 1048576 context
+                    "until": ["[EOS]"],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                    "stream": "false",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.05,
+                },
+            ),
+            EvalTask(
+                task_name="longbench_summarization_e",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                min_context_required=16384,
+                max_concurrent=15,
+                use_chat_api=True,
+                capture_reasoning=True,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["score,none"],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "max_length": 1048576,
+                    "tokenizer": _KIMI_K31_TOKENIZER,
+                    "timeout": 7200,
+                },
+                gen_kwargs={
+                    "max_gen_toks": 900000,  # prompt + answer must fit the 1048576 context
+                    "until": ["[EOS]"],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                    "stream": "false",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.05,
+                },
+            ),
+            EvalTask(
+                task_name="longbench_fewshot_e",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                min_context_required=16384,
+                max_concurrent=15,
+                use_chat_api=True,
+                capture_reasoning=True,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["score,none"],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "max_length": 1048576,
+                    "tokenizer": _KIMI_K31_TOKENIZER,
+                    "timeout": 7200,
+                },
+                gen_kwargs={
+                    "max_gen_toks": 900000,  # prompt + answer must fit the 1048576 context
+                    "until": ["[EOS]"],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                    "stream": "false",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.05,
+                },
+            ),
+            EvalTask(
+                task_name="longbench_code_e",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                min_context_required=16384,
+                max_concurrent=15,
+                use_chat_api=True,
+                capture_reasoning=True,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["score,none"],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "max_length": 1048576,
+                    "tokenizer": _KIMI_K31_TOKENIZER,
+                    "timeout": 7200,
+                },
+                gen_kwargs={
+                    "max_gen_toks": 900000,  # prompt + answer must fit the 1048576 context
+                    "until": ["[EOS]"],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                    "stream": "false",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.05,
+                },
+            ),
+            EvalTask(
+                task_name="longbench_synthetic_e",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                min_context_required=16384,
+                max_concurrent=15,
+                use_chat_api=True,
+                capture_reasoning=True,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["score,none"],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "max_length": 1048576,
+                    "tokenizer": _KIMI_K31_TOKENIZER,
+                    "timeout": 7200,
+                },
+                gen_kwargs={
+                    "max_gen_toks": 900000,  # prompt + answer must fit the 1048576 context
+                    "until": ["[EOS]"],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                    "stream": "false",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.05,
+                },
+            ),
             # Generate-then-answer LongBench v2 (chat API). Stock longbench2 is
             # multiple_choice/loglikelihood and cannot run on chat-only servers.
             # This is the long-context sweep for K3.1's 1M window: samples are
