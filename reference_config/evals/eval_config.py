@@ -13738,9 +13738,8 @@ _eval_config_list = [
                     # know, so it never auto-compacts below the server's 256K;
                     # the server shrinks max_tokens to the room left instead of
                     # rejecting, so reactive compaction does not fire either.
-                    # Compaction fires at this window minus 33K, leaving room
-                    # for the 32K reply plus a large turn's growth.
-                    agent_env={"CLAUDE_CODE_AUTO_COMPACT_WINDOW": str(224 * 1024)},
+                    # The GPU reference run's window.
+                    agent_env={"CLAUDE_CODE_AUTO_COMPACT_WINDOW": "200000"},
                     anthropic_proxy=True,
                 ),
                 limit_samples_map={
