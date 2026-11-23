@@ -3131,6 +3131,111 @@ _eval_config_list = [
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
+            EvalTask(
+                # HMMT February 2026 (MathArena), avg@4: 33 problems x 4 samples.
+                # The seed is not sent to the server, so the 4 samples differ.
+                task_name="k2_hmmt_feb_2026_avg4",
+                include_path=_K2_HORIZON_LM_EVAL_TASKS,
+                max_concurrent=15,
+                propagate_seed_to_gen_kwargs=False,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref="https://matharena.ai (K3 96.97, not K3.1)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["exact_match,none"],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                model_kwargs={
+                    "max_length": 1048576,
+                    "tokenizer": _KIMI_K31_TOKENIZER,
+                    "timeout": 14400,
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 1000000,  # prompts are under 1K tokens
+                    "until": ["[EOS]"],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 33,
+                    EvalLimitMode.SMOKE_TEST: 2,
+                },
+            ),
+            EvalTask(
+                # OpenAI GraphWalks, prompts up to 126,996 tokens. Scored by
+                # lm-eval's F1 over answer nodes.
+                task_name="graphwalks_128k",
+                max_concurrent=15,
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={"result_keys": ["f1,none"], "unit": "percent"},
+                ),
+                model_kwargs={
+                    "max_length": 1048576,
+                    "tokenizer": _KIMI_K31_TOKENIZER,
+                    "timeout": 14400,
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 900000,
+                    "until": ["[EOS]"],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                # OpenAI GraphWalks 256K-1M, prompts up to 1,014,023 tokens (under
+                # the 1018880 prompt ceiling); max_gen_toks is what the 1048576
+                # context leaves after the longest prompt and its template.
+                task_name="graphwalks_1M",
+                max_concurrent=15,
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={"result_keys": ["f1,none"], "unit": "percent"},
+                ),
+                model_kwargs={
+                    "max_length": 1048576,
+                    "tokenizer": _KIMI_K31_TOKENIZER,
+                    "timeout": 14400,
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 34000,
+                    "until": ["[EOS]"],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.25,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
         ],
     ),
     EvalConfig(
