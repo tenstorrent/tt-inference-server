@@ -114,6 +114,12 @@ def checkout_pinned_repo(dest: Path, repo: str, ref: str) -> bool:
         if run_command(step, logger=logger) != 0:
             logger.error("Failed to pin %s to %s (%s)", dest, ref, step)
             return False
+    # The forced checkout discards local edits; TT_PINNED_REPO_PATCH_<DIRNAME>
+    # (e.g. TT_PINNED_REPO_PATCH_HARBOR) names a patch to apply on top of it.
+    patch = os.environ.get(f"TT_PINNED_REPO_PATCH_{dest.name.upper()}")
+    if patch and run_command(f"git -C {dest} apply {patch}", logger=logger) != 0:
+        logger.error("Failed to apply %s to %s", patch, dest)
+        return False
     return True
 
 
