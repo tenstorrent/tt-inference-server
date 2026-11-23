@@ -2556,6 +2556,75 @@ _eval_config_list = [
                     EvalLimitMode.SMOKE_TEST: 3,
                 },
             ),
+            # tau3 airline domain (50 tasks): same agent, sampling and harness
+            # timeouts as the banking entry above.
+            EvalTask(
+                task_name="tau3_bench_airline",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    # Not yet measured for K3.1.
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                    tolerance=0.10,
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="sierra-research/tau3-bench",
+                    agent="tau3_llm_agent",
+                    agent_import_path="adapters.tau3-bench.tau3_llm_agent:Tau3LLMAgent",
+                    task_names=["sierra-research/tau3-bench__tau3-airline-*"],
+                    # A single served instance is shared by the agent,
+                    # the simulated user, and the Natural Language verifier.
+                    n_concurrent_trials=15,
+                    n_attempts=1,
+                    n_tasks=50,
+                    override_cpus=4,
+                    override_memory_mb=8 * 1024,
+                    agent_timeout_sec=3600,
+                    agent_kwargs={
+                        "tau2_trial_index": 0,
+                        "temperature": 1.0,
+                        # The adapter's build_llm_args() sets only temperature,
+                        # so top_p has to be pinned here to reach the agent.
+                        #
+                        # Must stay a JSON *string*: agent_kwargs are written
+                        # verbatim into the harbor config file, and the adapter
+                        # shlex.quotes this value onto the container command
+                        # line, which fails with TypeError on a dict.
+                        "llm_args_json": '{"top_p": 1.0}',
+                        "max_steps": 200,
+                        # Default is 120s; a single reasoning user-sim turn under
+                        # load can exceed that and trip an MCP request timeout.
+                        "tool_timeout_sec": 900,
+                        # MCP session.initialize exceeds the 120s default when
+                        # many sandboxes start at once.
+                        "read_timeout_sec": 900,
+                    },
+                    # NOTE: values injected here are passed to the Harbor
+                    # container verbatim. Unlike the task.toml env, the
+                    # "${VAR:-default}" template syntax is NOT resolved on this
+                    # path, so use literal values -- a templated model name
+                    # reaches litellm unexpanded and fails with "LLM Provider
+                    # NOT provided". OPENAI_BASE_URL / OPENAI_API_KEY are
+                    # injected into environment.env by build_harbor_config after
+                    # runtime authentication configures the endpoint.
+                    environment_env={
+                        "TAU2_USER_MODEL": "openai/moonshotai/Kimi-K3.1",
+                    },
+                    verifier_env={
+                        "TAU2_NL_ASSERTIONS_MODEL": "openai/moonshotai/Kimi-K3.1",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 3,
+                },
+            ),
             # Generate-then-answer LongBench v2 (chat API). Stock longbench2 is
             # multiple_choice/loglikelihood and cannot run on chat-only servers.
             # This is the long-context sweep for K3.1's 1M window: samples are
