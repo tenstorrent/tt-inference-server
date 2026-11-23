@@ -11,7 +11,7 @@ import os
 import sys
 import types
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -1655,3 +1655,349 @@ def test_quetzal_metadata_without_vendored_registry_is_unchanged(
 
     assert [name for name, _ in calls] == ["AutoConfig", "AutoTokenizer"]
     assert all(kwargs["trust_remote_code"] is False for _, kwargs in calls)
+
+
+# --- co-host groups (--cohost-group) -------------------------------------------------
+
+COHOST_GROUP_MODULE_PATH = MODULE_PATH.parent / "cohost_group.py"
+_COHOST_ENV_KEYS = (
+    "MESH_DEVICE",
+    "TT_CACHE_PATH",
+    "MODEL_WEIGHTS_DIR",
+    "HF_MODEL",
+    "TT_LLAMA_TEXT_VER",
+    "TT_QWEN3_TEXT_VER",
+    "DISABLE_METAL_OP_TIMEOUT",
+    "TT_METAL_OPERATION_TIMEOUT_SECONDS",
+    "TT_METAL_DISPATCH_TIMEOUT_COMMAND_TO_EXECUTE",
+    "TT_DATA_PARALLEL",
+    "TT_WEIGHT_BRIDGE_DIR",
+    "TT_COLOCATED_INFERENCE",
+    "MULTIHOST_ROLE",
+    "LLAMA_ONLY",
+)
+
+
+@pytest.fixture
+def cohost_group_module(monkeypatch):
+    spec = importlib.util.spec_from_file_location(
+        "cohost_group", COHOST_GROUP_MODULE_PATH
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    monkeypatch.setitem(sys.modules, "cohost_group", module)
+    return module
+
+
+@pytest.fixture
+def cohost_server(monkeypatch, run_vllm_api_server_module):
+    """The server module, its disk-touching setup steps replaced by fakes that set the
+    same env vars. Returns ``(module, downloads)``."""
+    server = run_vllm_api_server_module
+    downloads = []
+
+    def set_cache_paths(spec, device_type):
+        os.environ["MESH_DEVICE"] = "P300x2"
+        os.environ["TT_CACHE_PATH"] = f"/cache/{spec['model_name']}"
+
+    def ensure_weights_available(spec):
+        downloads.append(spec["model_name"])
+        os.environ["MODEL_WEIGHTS_DIR"] = f"/weights/{spec['model_name']}"
+
+    def runtime_settings(spec, no_auth=False):
+        os.environ["HF_MODEL"] = f"/symlinks/{spec['model_name']}"
+
+    monkeypatch.setattr(server, "set_cache_paths", set_cache_paths)
+    monkeypatch.setattr(server, "ensure_weights_available", ensure_weights_available)
+    monkeypatch.setattr(server, "runtime_settings", runtime_settings)
+    for key in _COHOST_ENV_KEYS:
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setattr(sys, "argv", ["run_vllm_api_server.py"])
+    return server, downloads
+
+
+def _cohost_spec(name, impl_id="tt_transformers", tt=None, env_vars=None):
+    tt_config = {"fabric_config": "FABRIC_1D_RING", **(tt or {})}
+    return {
+        "model_id": f"id_{impl_id}_{name}_p300x2",
+        "model_name": name,
+        "hf_model_repo": f"org/{name}",
+        "device_type": "P300X2",
+        "impl": {"impl_id": impl_id},
+        "env_vars": {"VLLM_TARGET_DEVICE": "tt", **(env_vars or {})},
+        "device_model_spec": {
+            "vllm_args": {
+                "model": f"org/{name}",
+                "max_num_seqs": "32",
+                "port": 8000,
+                "additional_config": json.dumps({"tt": tt_config}),
+                "served_model_name": [f"org/{name}", name],
+            }
+        },
+    }
+
+
+def _cohost_group(*members, status_port=8002):
+    return {
+        "cohost_group_version": 1,
+        "device": "p300x2",
+        "status_port": status_port,
+        "members": [
+            {"name": spec["model_name"], "port": 8000 + i, "runtime_model_spec": spec}
+            for i, spec in enumerate(members)
+        ],
+    }
+
+
+def test_cohost_config_gives_each_member_its_own_setup(
+    cohost_server, cohost_group_module
+):
+    server, downloads = cohost_server
+    group = _cohost_group(
+        _cohost_spec("Qwen3-32B", tt={"trace_region_size": 100_000_000}),
+        _cohost_spec("Llama-3.1-8B-Instruct", env_vars={"LLAMA_ONLY": "1"}),
+    )
+    env_before = dict(os.environ)
+
+    config, shared_env = cohost_group_module.build_cohost_config(server, group)
+
+    assert dict(os.environ) == env_before
+    assert sys.argv == ["run_vllm_api_server.py"]
+    assert downloads == ["Qwen3-32B", "Llama-3.1-8B-Instruct"]
+    assert config["cohost_config_version"] == 1
+    assert config["mesh_device"] == "P300x2"
+    assert config["status_port"] == 8002
+    # 100 MB for Qwen + the plugin's 50 MB default for Llama, in one trace region.
+    assert config["tt_config"] == {
+        "fabric_config": "FABRIC_1D_RING",
+        "trace_region_size": 150_000_000,
+    }
+    qwen, llama = config["members"]
+    assert (qwen["name"], qwen["kind"], qwen["port"]) == ("Qwen3-32B", "vllm", 8000)
+    assert (llama["port"], llama["model"]) == (8001, "org/Llama-3.1-8B-Instruct")
+    assert qwen["env"]["HF_MODEL"] == "/symlinks/Qwen3-32B"
+    assert qwen["env"]["MODEL_WEIGHTS_DIR"] == "/weights/Qwen3-32B"
+    assert llama["env"]["TT_CACHE_PATH"] == "/cache/Llama-3.1-8B-Instruct"
+    assert llama["env"]["LLAMA_ONLY"] == "1" and "LLAMA_ONLY" not in qwen["env"]
+    # Set the same for both: they belong to the process that opens the mesh.
+    assert shared_env["MESH_DEVICE"] == "P300x2"
+    assert shared_env["TT_LLAMA_TEXT_VER"] == "tt_transformers"
+    assert "TT_METAL_OPERATION_TIMEOUT_SECONDS" in shared_env
+    assert not set(shared_env) & (set(qwen["env"]) | set(llama["env"]))
+    # tt-cohost passes --model, --host and --port itself.
+    for token in ("--model", "--port", "--host"):
+        assert token not in qwen["args"]
+    assert qwen["args"][qwen["args"].index("--served_model_name") + 1 :][:2] == [
+        "org/Qwen3-32B",
+        "Qwen3-32B",
+    ]
+    assert "--additional_config" in qwen["args"]
+
+
+def test_cohost_host_weights_belong_to_the_first_member(
+    monkeypatch, cohost_server, cohost_group_module
+):
+    server, downloads = cohost_server
+    monkeypatch.setenv("MODEL_WEIGHTS_DIR", "/mounted/Qwen3-32B")
+    group = _cohost_group(_cohost_spec("Qwen3-32B"), _cohost_spec("Llama"))
+
+    config, _ = cohost_group_module.build_cohost_config(server, group)
+
+    qwen, llama = config["members"]
+    assert downloads == ["Llama"]
+    assert qwen["env"]["MODEL_WEIGHTS_DIR"] == "/mounted/Qwen3-32B"
+    assert llama["env"]["MODEL_WEIGHTS_DIR"] == "/weights/Llama"
+
+
+def test_cohost_import_side_effects_stay_with_the_process(
+    monkeypatch, tmp_path, cohost_server, cohost_group_module
+):
+    server, _ = cohost_server
+    package = tmp_path / "vllm"
+    package.mkdir()
+    (package / "__init__.py").write_text(
+        "import os\nos.environ['SET_BY_IMPORT'] = '1'\nModelRegistry = None\n"
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    monkeypatch.delitem(sys.modules, "vllm")
+    monkeypatch.setenv(
+        "SET_BY_IMPORT", ""
+    )  # so the import's value is undone after the test
+    monkeypatch.delenv("SET_BY_IMPORT")
+    monkeypatch.setattr(server, "register_tt_models", MagicMock())
+
+    config, shared_env = cohost_group_module.build_cohost_config(
+        server, _cohost_group(_cohost_spec("A"), _cohost_spec("B"))
+    )
+
+    assert os.environ["SET_BY_IMPORT"] == "1"
+    assert all("SET_BY_IMPORT" not in m["env"] for m in config["members"])
+    assert "SET_BY_IMPORT" not in shared_env
+
+
+def test_cohost_mesh_settings_must_agree(cohost_group_module):
+    with pytest.raises(ValueError, match="a and b need different fabric_config"):
+        cohost_group_module.group_tt_config(
+            {"a": {"fabric_config": "FABRIC_1D"}, "b": {"fabric_config": "FABRIC_2D"}}
+        )
+
+
+def test_cohost_per_model_tt_keys_stay_with_the_member(cohost_group_module):
+    merged = cohost_group_module.group_tt_config(
+        {"a": {"sample_on_device_mode": "all"}, "b": {"worker_l1_size": 1000}}
+    )
+    assert merged == {"worker_l1_size": 1000, "trace_region_size": 100_000_000}
+
+
+def test_cohost_split_vllm_argv(run_vllm_api_server_module, cohost_group_module):
+    model, args, tt_config = cohost_group_module.split_vllm_argv(
+        run_vllm_api_server_module,
+        [
+            "--model=org/m",
+            "--port",
+            "8001",
+            "--enable-auto-tool-choice",
+            "--served-model-name",
+            "a",
+            "b",
+            "--additional-config",
+            '{"tt": {"trace_region_size": 7}}',
+            "--host",
+            "0.0.0.0",
+        ],
+    )
+    assert model == "org/m"
+    assert args == [
+        "--enable-auto-tool-choice",
+        "--served-model-name",
+        "a",
+        "b",
+        "--additional-config",
+        '{"tt": {"trace_region_size": 7}}',
+    ]
+    assert tt_config == {"trace_region_size": 7}
+
+
+@pytest.mark.parametrize(
+    "group, message",
+    [
+        ({"cohost_group_version": 2, "members": [{}, {}]}, "version 2"),
+        ({"cohost_group_version": 1, "members": [{}]}, "fewer than two"),
+    ],
+)
+def test_cohost_group_file_is_checked(cohost_group_module, tmp_path, group, message):
+    path = tmp_path / "group.json"
+    path.write_text(json.dumps(group))
+    with pytest.raises(ValueError, match=message):
+        cohost_group_module.load_group(path)
+
+
+def test_cohost_group_launches_tt_cohost(
+    monkeypatch, cohost_server, cohost_group_module, tmp_path
+):
+    server, _ = cohost_server
+    path = tmp_path / "group.json"
+    path.write_text(json.dumps(_cohost_group(_cohost_spec("A"), _cohost_spec("B"))))
+    ensure = MagicMock()
+    run_module = MagicMock()
+    monkeypatch.setattr(cohost_group_module, "ensure_tt_cohost", ensure)
+    monkeypatch.setattr(cohost_group_module.runpy, "run_module", run_module)
+
+    with patch.dict(os.environ):
+        cohost_group_module.run_cohost_group(server, path)
+        assert os.environ["MESH_DEVICE"] == "P300x2"
+        assert "HF_MODEL" not in os.environ
+
+    ensure.assert_called_once()
+    run_module.assert_called_once_with(
+        "tt_cohost.launch", run_name="__main__", alter_sys=True
+    )
+    assert sys.argv[:2] == ["tt_cohost.launch", "--config"]
+    config = json.loads(Path(sys.argv[2]).read_text())
+    assert [m["name"] for m in config["members"]] == ["A", "B"]
+
+
+def test_cohost_config_loads_in_tt_cohost(cohost_server, cohost_group_module):
+    tt_cohost_config = pytest.importorskip("tt_cohost.config")
+    server, _ = cohost_server
+    config, _ = cohost_group_module.build_cohost_config(
+        server, _cohost_group(_cohost_spec("A"), _cohost_spec("B"))
+    )
+    loaded = tt_cohost_config.loads(json.dumps(config))
+    assert [m.name for m in loaded.members] == ["A", "B"]
+
+
+def test_cohost_installs_tt_cohost_when_missing(
+    monkeypatch, cohost_group_module, tmp_path
+):
+    run = MagicMock()
+    monkeypatch.setattr(cohost_group_module.subprocess, "run", run)
+    monkeypatch.setattr(
+        cohost_group_module.importlib.util, "find_spec", lambda name: None
+    )
+    monkeypatch.setattr(sys, "path", list(sys.path))
+    monkeypatch.setenv("TT_COHOST_SITE_DIR", str(tmp_path))
+    monkeypatch.setenv("TT_COHOST_PIP_SPEC", "tt-cohost @ file:///src")
+    monkeypatch.setenv("PYTHONPATH", "/existing")
+
+    cohost_group_module.ensure_tt_cohost()
+
+    argv = run.call_args.args[0]
+    assert argv[1:] == [
+        "-m",
+        "pip",
+        "install",
+        "--quiet",
+        "--no-deps",
+        "--target",
+        str(tmp_path),
+        "tt-cohost @ file:///src",
+    ]
+    assert sys.path[0] == str(tmp_path)
+    assert os.environ["PYTHONPATH"] == f"{tmp_path}{os.pathsep}/existing"
+
+
+def test_main_serves_a_cohost_group(monkeypatch, run_vllm_api_server_module):
+    args = argparse.Namespace(
+        model=None,
+        tt_device="p300x2",
+        device=None,
+        engine=None,
+        impl=None,
+        no_auth=True,
+        disable_trace_capture=False,
+        service_port=None,
+        cohost_group="/specs/group.json",
+    )
+    monkeypatch.setattr(run_vllm_api_server_module, "parse_args", lambda: (args, []))
+    cohost_group = types.ModuleType("cohost_group")
+    cohost_group.run_cohost_group = MagicMock()
+    monkeypatch.setitem(sys.modules, "cohost_group", cohost_group)
+    load_model_spec = MagicMock()
+    monkeypatch.setattr(run_vllm_api_server_module, "load_model_spec", load_model_spec)
+    monkeypatch.setitem(
+        sys.modules, run_vllm_api_server_module.__name__, run_vllm_api_server_module
+    )
+
+    run_vllm_api_server_module.main()
+
+    cohost_group.run_cohost_group.assert_called_once_with(
+        run_vllm_api_server_module, "/specs/group.json", no_auth=True
+    )
+    load_model_spec.assert_not_called()
+
+
+def test_main_cohost_group_refuses_vllm_args(monkeypatch, run_vllm_api_server_module):
+    args = argparse.Namespace(
+        model=None,
+        tt_device="p300x2",
+        device=None,
+        engine=None,
+        no_auth=False,
+        cohost_group="/specs/group.json",
+    )
+    monkeypatch.setattr(
+        run_vllm_api_server_module, "parse_args", lambda: (args, ["--max-model-len"])
+    )
+    with pytest.raises(ValueError, match="takes no vLLM arguments"):
+        run_vllm_api_server_module.main()

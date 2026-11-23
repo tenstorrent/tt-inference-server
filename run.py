@@ -257,6 +257,13 @@ def parse_arguments():
         help="Tenstorrent device IDs, integer or comma-separated list of non-negative PCI indices (e.g. '0' for /dev/tenstorrent/0)",
     )
     parser.add_argument(
+        "--cohost-with",
+        type=str,
+        help="Serve these models (comma-separated) on the same chips as --model, in one "
+        "container: --model on --service-port, each of these on the next port. vLLM "
+        "models on the same docker image only; requires --workflow server --docker-server.",
+    )
+    parser.add_argument(
         "--override-tt-config",
         type=str,
         help="Override TT config as JSON string (e.g., '{\"data_parallel\": 16}')",
@@ -944,6 +951,27 @@ def parse_arguments():
                 f"scenario's floor), got {args.agentic_traces_duration}s."
             )
 
+    if args.cohost_with is not None:
+        from workflows.cohost import parse_cohost_with
+
+        try:
+            args.cohost_with = ",".join(parse_cohost_with(args.cohost_with))
+        except ValueError as e:
+            parser.error(str(e))
+        if args.workflow != "server" or not args.docker_server:
+            parser.error(
+                "--cohost-with serves a group from one container: it requires "
+                f"--workflow server --docker-server (got --workflow {args.workflow}"
+                f"{' --docker-server' if args.docker_server else ''})."
+            )
+        for flag, value in (
+            ("--interactive", args.interactive),
+            ("--runtime-model-spec-json", args.runtime_model_spec_json),
+            ("--custom-weights", args.custom_weights),
+        ):
+            if value:
+                parser.error(f"--cohost-with cannot be combined with {flag}.")
+
     # Dev specs don't pin a docker image (they're built/published out of band),
     # so dev-mode has no image to run in a container — require an explicit one.
     if args.dev_mode and args.docker_server and not args.override_docker_image:
@@ -1275,6 +1303,18 @@ def main():
     logger.info(f"TT-Inference version: {version}")
     logger.info(f"TT-Inference SHA: {tt_inference_server_sha[:12]}")
     logger.info(format_cli_args_summary(runtime_config))
+
+    if runtime_config.cohost_with:
+        from workflows.cohost import write_cohost_group
+
+        runtime_config.cohost_group_json = str(
+            write_cohost_group(
+                model_spec,
+                runtime_config,
+                runtime_model_spec_dir,
+                resolve=get_runtime_model_spec,
+            )
+        )
 
     # Write runtime model spec + runtime config for subprocess scripts
     json_fpath = runtime_config.to_json(

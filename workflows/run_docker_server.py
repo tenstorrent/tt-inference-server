@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import List, Tuple
 
 from utils.pinned_artifacts import get_pinned_revision
+from workflows.cohost import cohost_docker_args
 from workflows.log_setup import clean_log_file
 from workflows.multihost_orchestrator import (
     MultiHostOrchestrator,
@@ -467,6 +468,7 @@ _RESERVED_WRAPPER_FLAGS = {
     "port",
     "host",
     "quetzal-package-root",
+    "cohost-group",
 }
 
 
@@ -686,6 +688,16 @@ def generate_docker_run_command(
                 f"dst={auxiliary.runtime_root},readonly",
             ])
 
+    cohost_server_args = []
+    if runtime_config.cohost_group_json:
+        cohost_flags, cohost_server_args = cohost_docker_args(
+            runtime_config.cohost_group_json,
+            runtime_config.bind_host,
+            repo_root_path,
+            runtime_config.dev_mode,
+        )
+        docker_command.extend(cohost_flags)
+
     if runtime_config.interactive:
         docker_command.append("-itd")
     # fmt: on
@@ -818,15 +830,24 @@ def generate_docker_run_command(
             docker_command.extend(["--impl", model_spec.impl.impl_name])
         if runtime_config.no_auth:
             docker_command.append("--no-auth")
-        if runtime_config.disable_trace_capture:
-            docker_command.append("--disable-trace-capture")
-        if runtime_config.service_port and str(runtime_config.service_port) != "8000":
-            docker_command.extend(["--service-port", str(runtime_config.service_port)])
-        # Forward explicit vLLM overrides (e.g. --enable-auto-tool-choice /
-        # --tool-call-parser) as passthrough args. run_vllm_api_server forwards
-        # unrecognized args straight to `vllm serve`, so this honors overrides in
-        # normal (non-dev) deployments without mounting the whole runtime spec.
-        docker_command += _vllm_override_cli_args(runtime_config.vllm_override_args)
+        if cohost_server_args:
+            # Every member's port and vLLM overrides are in the group file.
+            docker_command += cohost_server_args
+        else:
+            if runtime_config.disable_trace_capture:
+                docker_command.append("--disable-trace-capture")
+            if (
+                runtime_config.service_port
+                and str(runtime_config.service_port) != "8000"
+            ):
+                docker_command.extend(
+                    ["--service-port", str(runtime_config.service_port)]
+                )
+            # Forward explicit vLLM overrides (e.g. --enable-auto-tool-choice /
+            # --tool-call-parser) as passthrough args. run_vllm_api_server forwards
+            # unrecognized args straight to `vllm serve`, so this honors overrides in
+            # normal (non-dev) deployments without mounting the whole runtime spec.
+            docker_command += _vllm_override_cli_args(runtime_config.vllm_override_args)
     if runtime_config.interactive:
         docker_command.extend(["bash", "-c", "sleep infinity"])
 
