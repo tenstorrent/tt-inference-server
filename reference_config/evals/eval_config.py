@@ -13598,11 +13598,11 @@ _eval_config_list = [
     # The card recommends temperature 0.9 / top_p 1.0; reasoning_effort
     # defaults to "high" (chat_template_kwargs reasoning_effort="no_think"
     # disables it), so thinking is on for every task below. Published scores
-    # are the card's benchmark table (highest reasoning setting). No GPU
-    # reference has been measured yet, and the card has no tau3 or LongBench v2
-    # score, so those two tasks have no reference at all. Concurrency, attempts
-    # and attempts are copied from MiMo-V2.6-Flash-MOPD's config; the agentic
-    # evals' CI nightly subset is their first 20 tasks.
+    # are the card's benchmark table (highest reasoning setting); the card has
+    # no tau3 or LongBench v2 score. GPU references for the agentic evals:
+    # tenstorrent/tt-inference-server#5581 (GPQA and LongBench v2 have none
+    # yet). The agentic evals' CI nightly subset is their first 20 tasks, with
+    # a subset reference scored on the same GPU run.
     EvalConfig(
         hf_model_repo="tencent/Hy4-preview",
         tasks=[
@@ -13707,8 +13707,19 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=85.4,
                     published_score_ref="https://huggingface.co/tencent/Hy4-preview",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref=None,
+                    # GPU vLLM at a 256K max context, Claude Code, 2 attempts per task
+                    # (CLAUDE_CODE_AUTO_COMPACT_WINDOW=200000, 8 concurrent trials).
+                    gpu_reference_score=81.46,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5581#issuecomment-7096189539",
+                    # CI_NIGHTLY runs the first 20 tasks; scored on the same run.
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=85.0,
+                            ref="first 20 tasks (registry order) of the same GPU run: 34/40 trials over 2 attempts, errored trials scored 0, https://github.com/tenstorrent/tt-inference-server/issues/5581#issuecomment-7096189539",
+                            # Two tasks of slack on 20 (the full-set check keeps 0.05).
+                            tolerance=0.10,
+                        ),
+                    },
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["accuracy"],
@@ -13741,11 +13752,19 @@ _eval_config_list = [
                 task_name="tau3_bench_banking",
                 workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
                 score=EvalTaskScore(
-                    # Not on the model card, and no GPU reference measured yet.
+                    # Not on the model card.
                     published_score=None,
                     published_score_ref=None,
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref=None,
+                    # GPU vLLM at a 256K max context, 1 attempt per task.
+                    gpu_reference_score=43.3,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5581#issuecomment-7096189539",
+                    # CI_NIGHTLY runs the first 20 tasks; scored on the same run.
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=55.0,
+                            ref="first 20 tasks (sorted) of the same GPU run: 11/20, https://github.com/tenstorrent/tt-inference-server/issues/5581#issuecomment-7096189539",
+                        ),
+                    },
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["accuracy"],
@@ -13800,8 +13819,18 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=64.3,
                     published_score_ref="https://huggingface.co/tencent/Hy4-preview",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref=None,
+                    # GPU vLLM at a 256K max context, 1 attempt per task.
+                    gpu_reference_score=59.29,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5581#issuecomment-7096189539",
+                    # CI_NIGHTLY runs the first 20 tasks; scored on the same run.
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=95.0,
+                            ref="first 20 tasks (sorted) of the same GPU run: 19/20, https://github.com/tenstorrent/tt-inference-server/issues/5581#issuecomment-7096189539",
+                            # Two tasks of slack on 20 (the full-set check keeps 0.05).
+                            tolerance=0.10,
+                        ),
+                    },
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["accuracy"],
