@@ -23,6 +23,7 @@ Usage:
 """
 
 import argparse
+import http.client
 import json
 import math
 import re
@@ -30,33 +31,46 @@ import statistics
 import sys
 import threading
 import time
-import urllib.error
-import urllib.request
+import urllib.parse
 
 GEN = "/v1/videos/generations"
 
 
 # ---------------------------------------------------------------- http helpers
 class Client:
+    """HTTP client of a server on this machine (the benchmark runs next to it).
+
+    The host is one of two constants, chosen by comparison, so the address that was
+    passed in never reaches the connection.
+    """
+
     def __init__(self, base, key):
-        self.base = base.rstrip("/")
+        parsed = urllib.parse.urlparse(base)
+        if parsed.scheme != "http" or parsed.hostname not in ("127.0.0.1", "localhost"):
+            raise SystemExit(
+                f"{base!r}: only http://127.0.0.1:<port> or http://localhost:<port> is accepted"
+            )
+        self.host = "127.0.0.1" if parsed.hostname == "127.0.0.1" else "localhost"
+        self.port = int(parsed.port or 80)
         self.key = key
 
     def call(self, method, path, body=None, auth=True, timeout=120, read=True):
-        """Returns (status, headers, bytes, seconds)."""
+        """Returns (status, headers, bytes, seconds), for any status."""
         data = None if body is None else json.dumps(body).encode()
-        r = urllib.request.Request(self.base + path, data=data, method=method)
+        headers = {}
         if auth and self.key:
-            r.add_header("authorization", f"Bearer {self.key}")
+            headers["authorization"] = f"Bearer {self.key}"
         if data is not None:
-            r.add_header("content-type", "application/json")
+            headers["content-type"] = "application/json"
+        conn = http.client.HTTPConnection(self.host, self.port, timeout=timeout)
         t0 = time.perf_counter()
         try:
-            with urllib.request.urlopen(r, timeout=timeout) as resp:
-                raw = resp.read() if read else b""
-                return resp.status, resp.headers, raw, time.perf_counter() - t0
-        except urllib.error.HTTPError as e:
-            return e.code, e.headers, e.read(), time.perf_counter() - t0
+            conn.request(method, path, body=data, headers=headers)
+            resp = conn.getresponse()
+            raw = resp.read() if read else b""
+            return resp.status, resp.headers, raw, time.perf_counter() - t0
+        finally:
+            conn.close()
 
     def json(self, *a, **k):
         st, h, raw, dt = self.call(*a, **k)

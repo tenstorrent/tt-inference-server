@@ -27,6 +27,7 @@ Phases (each is a separate server start):
 
 import argparse
 import hashlib
+import http.client
 import json
 import os
 import shutil
@@ -203,6 +204,35 @@ def shm_names(prefixes=("tt_", "TT_MEDIA", "media")):
     )
 
 
+
+def port_answers(port):
+    """True when something on this machine answers GET /tt-liveness on the port."""
+    conn = http.client.HTTPConnection("127.0.0.1", int(port), timeout=3)
+    try:
+        conn.request("GET", "/tt-liveness")
+        return conn.getresponse().status == 200
+    except OSError:
+        return False
+    finally:
+        conn.close()
+
+
+def psnr_of_two_videos(first, second):
+    """ffmpeg's psnr filter over two videos given as bytes. The files are written
+    to a private temporary folder under fixed names, so nothing from the command
+    line reaches the command."""
+    with tempfile.TemporaryDirectory() as tmp:
+        for name, data in (("a.mp4", first), ("b.mp4", second)):
+            with open(os.path.join(tmp, name), "wb") as handle:
+                handle.write(data)
+        return subprocess.run(
+            ["ffmpeg", "-v", "info", "-i", "a.mp4", "-i", "b.mp4", "-lavfi", "psnr", "-f", "null", "-"],
+            capture_output=True,
+            text=True,
+            cwd=tmp,
+            check=False,
+        )
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--tt-metal", required=True)
@@ -220,12 +250,7 @@ def main():
     out = os.path.join(work, "videos")
     os.makedirs(out, exist_ok=True)
     p("workdir:", work)
-    if (
-        subprocess.run(
-            ["curl", "-sf", f"http://127.0.0.1:{args.port}/tt-liveness"], capture_output=True
-        ).returncode
-        == 0
-    ):
+    if port_answers(args.port):
         print("a server already answers on this port; stop it first (this test owns the chips)")
         return 2
 
@@ -325,24 +350,7 @@ def main():
     p(f"  seed 7: run 1 {len(v1)} B sha {sha(v1)}, run 2 {len(v2)} B sha {sha(v2)}")
     p("  identical bytes across a restart:", v1 == v2)
     if v1 != v2 and shutil.which("ffmpeg"):
-        r = subprocess.run(
-            [
-                "ffmpeg",
-                "-v",
-                "info",
-                "-i",
-                os.path.join(work, "seed7_run1.mp4"),
-                "-i",
-                os.path.join(work, "seed7_run2.mp4"),
-                "-lavfi",
-                "psnr",
-                "-f",
-                "null",
-                "-",
-            ],
-            capture_output=True,
-            text=True,
-        )
+        r = psnr_of_two_videos(v1, v2)
         p("  psnr:", [ln for ln in (r.stderr + r.stdout).splitlines() if "PSNR" in ln][-1:])
     note(srv.job(j["id"]).get("status") == "completed", "seed 7 completes again")
 
@@ -406,7 +414,7 @@ def main():
     p("=== phase 4: an output folder the server cannot write to")
     ro = os.path.join(work, "readonly_videos")
     os.makedirs(ro, exist_ok=True)
-    os.chmod(ro, 0o555)
+    os.chmod(ro, 0o500)  # the owner (this user, the server) cannot write
     srv = Server(args, ro, os.path.join(work, "phase4.log")).start()
     ok = srv.wait_ready()
     note(
@@ -437,7 +445,7 @@ def main():
             "the server is alive",
         )
         # Fixing the folder is enough: no restart.
-        os.chmod(ro, 0o755)
+        os.chmod(ro, 0o700)
         st, j = srv.submit("after the fix")
         note(st == 202, "after the folder is fixed a request is accepted again", f"http{st}")
         if st == 202:
@@ -449,7 +457,7 @@ def main():
                 str(body.get("error")),
             )
     srv.terminate()
-    os.chmod(ro, 0o755)
+    os.chmod(ro, 0o700)
     return finish()
 
 
