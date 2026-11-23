@@ -30,7 +30,10 @@ from workflows.utils import (
     get_default_persistent_volume_root,
     resolve_hf_snapshot_dir,
 )
-from workflows.validate_setup import _try_fix_path_permissions_for_uid
+from workflows.validate_setup import (
+    _try_fix_path_permissions_for_uid,
+    check_path_permissions_for_uid,
+)
 from workflows.workflow_types import ModelSource, ModelType, WorkflowVenvType
 from workflows.workflow_venvs import VENV_CONFIGS
 
@@ -863,6 +866,64 @@ class HostSetupManager:
                     cumulative, self.image_user, need_write=True
                 )
 
+    def ensure_mounted_weights_permissions(self):
+        if self.setup_config.local_server or self.image_user is None:
+            return
+        uid = int(self.image_user)
+        roots = []
+        if self.setup_config.host_model_weights_mount_dir:
+            mount_dir = Path(self.setup_config.host_model_weights_mount_dir)
+            if mount_dir.exists():
+                roots.append(mount_dir)
+                shared_blobs = mount_dir.parent / "blobs"
+                if shared_blobs.is_dir():
+                    roots.append(shared_blobs)
+        elif self.setup_config.host_model_volume_root:
+            vol_weights = (
+                Path(self.setup_config.host_model_volume_root)
+                / "weights"
+                / self.model_spec.model_name
+            )
+            if vol_weights.exists():
+                roots.append(vol_weights)
+
+        for root in roots:
+            targets = [root]
+            if root.parent.exists():
+                targets.insert(0, root.parent)
+            for dirpath, dirnames, filenames in os.walk(root):
+                dp = Path(dirpath)
+                for d in dirnames:
+                    targets.append(dp / d)
+                for f in filenames:
+                    p = dp / f
+                    targets.append(p)
+                    if p.is_symlink():
+                        try:
+                            resolved = p.resolve(strict=True)
+                            targets.append(resolved)
+                            if resolved.parent != dp:
+                                targets.append(resolved.parent)
+                        except OSError:
+                            pass
+            for target in targets:
+                if not target.exists():
+                    continue
+                ok, reason = check_path_permissions_for_uid(
+                    target, uid, need_write=False
+                )
+                if not ok:
+                    _try_fix_path_permissions_for_uid(target, uid, need_write=False)
+                    ok, reason = check_path_permissions_for_uid(
+                        target, uid, need_write=False
+                    )
+                if not ok:
+                    raise ValueError(
+                        f"⛔ Container user (--image-user={uid}) cannot read model weights at {target}\n"
+                        f"  {reason}\n"
+                        f"  Fix: run `chmod -R o+rX {root}` on the host."
+                    )
+
     def setup_weights(self):
         if not self.check_setup():
             if self.setup_config.model_source == ModelSource.HUGGINGFACE.value:
@@ -875,6 +936,7 @@ class HostSetupManager:
                 )
             else:
                 raise ValueError("⛔ Invalid model source.")
+        self.ensure_mounted_weights_permissions()
         logger.info("✅ done setup_weights")
 
     def run_setup(self):
@@ -884,6 +946,7 @@ class HostSetupManager:
             return
         setup_completed = self.check_setup()
         if setup_completed:
+            self.ensure_mounted_weights_permissions()
             return
         self.setup_model_environment()
         self.setup_weights()
