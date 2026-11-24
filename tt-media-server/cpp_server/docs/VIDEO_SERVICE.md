@@ -291,7 +291,7 @@ Errors have the FastAPI-style `detail` and an OpenAI-style `error` object:
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `MAX_QUEUE_SIZE` | 5000 | Maximum active jobs before `429` |
+| `MAX_QUEUE_SIZE` | 1000 | Maximum active jobs before `429` (the default of every service of this server; the Python server's is 5000) |
 | `MAX_JOBS` | 10000 | Maximum stored job records before `503` |
 | `JOB_RETENTION_SECONDS` | 86400 | How long a finished job (and its mp4) is kept |
 | `JOB_CLEANUP_INTERVAL_SECONDS` | 300 | Cleanup pass interval; `<= 0` disables the thread |
@@ -341,6 +341,7 @@ codes, error cases and the `Range` behaviour are the same):
 | `ETag`, `Last-Modified` on `download` | sent | not sent (`If-Range` is not usable) |
 | `HEAD` on `download` | `405` | `200` |
 | `?async=false` | ignored (the server setting decides) | supported, and `?async=banana` is `422` |
+| default `MAX_QUEUE_SIZE` | 5000 | 1000 (set `MAX_QUEUE_SIZE=5000` for the same limit) |
 | worker crash on a device | the held job stays `in_progress`, liveness `503`, the process keeps running | the held job becomes `failed`, the process exits with code 1 |
 
 
