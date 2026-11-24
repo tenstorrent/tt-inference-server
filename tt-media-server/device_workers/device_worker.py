@@ -197,8 +197,6 @@ def device_worker(
                         )
             else:
                 responses = device_runner.run(requests)
-                if encode_stage is not None:
-                    responses = EncodeStage.normalize_responses(responses)
 
                 if responses is None or len(responses) == 0:
                     for request in requests:

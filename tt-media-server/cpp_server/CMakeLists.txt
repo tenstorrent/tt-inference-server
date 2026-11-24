@@ -287,7 +287,8 @@ if(ENABLE_BLAZE)
             "(find_package failed) nor present in source tree at "
             "${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine. "
             "Either ensure the prebuilt image's /opt/tt-llm-engine is on "
-            "CMAKE_PREFIX_PATH, or initialize the tt-llm-engine submodule.")
+            "CMAKE_PREFIX_PATH, or set TT_LLM_ENGINE_SOURCE_DIR to an "
+            "external source checkout.")
     endif()
 else()
     message(STATUS "tt-llm-engine: DISABLED (use -DENABLE_BLAZE=ON to enable)")
@@ -1741,12 +1742,14 @@ target_include_directories(apply_delta_prompt_test PRIVATE
 )
 add_test(NAME ApplyDeltaPrompt COMMAND apply_delta_prompt_test)
 
-# Cancellation E2E test (starts mock server, runs Python tests, stops server)
-add_test(NAME CancellationE2E
-    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/e2e/scripts/run_e2e_with_server.sh
-    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-)
-set_tests_properties(CancellationE2E PROPERTIES TIMEOUT 120)
+if(ENABLE_BLAZE)
+    # Cancellation E2E test (starts Blaze mock server, runs Python tests, stops server)
+    add_test(NAME CancellationE2E
+        COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/e2e/scripts/run_e2e_with_server.sh
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    )
+    set_tests_properties(CancellationE2E PROPERTIES TIMEOUT 120)
+endif()
 
 # Prefix cache E2E test (requires external Dynamo server)
 add_executable(prefix_cache_e2e_test tests/e2e/prefix_cache_e2e_test.cpp)

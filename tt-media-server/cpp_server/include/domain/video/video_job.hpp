@@ -55,13 +55,17 @@ inline bool isTerminal(JobStatus status) {
 /** One async video job. The job id is the decimal task id. */
 struct VideoJob {
   uint32_t taskId = 0;
-  std::string uuid;   // public id; empty = use the decimal task id
+  std::string uuid;  // public id; empty = use the decimal task id
   std::string model;
   Json::Value requestParameters;
   JobStatus status = JobStatus::QUEUED;
   int64_t createdAt = 0;
   int64_t completedAt = 0;  // 0 = not finished
-  int64_t progressAt = 0;   // last time the worker claimed it; 0 = never
+  // Last time the worker claimed it; 0 = never. It is not refreshed while the
+  // model runs, so a healthy generation longer than JOB_MAX_STUCK_TIME_SECONDS
+  // (3 h by default) is swept as stale_job. A runner heartbeat would fix that
+  // (follow-up).
+  int64_t progressAt = 0;
   std::string resultPath;
   std::string errorCode;
   std::string errorMessage;
@@ -76,10 +80,16 @@ struct VideoJob {
    *  default is applied here as well for a job that was built without it. Keys
    *  this server adds on top of the Python schema are kept. */
   Json::Value publicRequestParameters() const {
-    static const char* const kFields[] = {
-        "prompt",   "negative_prompt", "num_inference_steps", "seed",
-        "aspect_ratio", "height",      "width",               "fps",
-        "duration", "num_frames"};
+    static const char* const kFields[] = {"prompt",
+                                          "negative_prompt",
+                                          "num_inference_steps",
+                                          "seed",
+                                          "aspect_ratio",
+                                          "height",
+                                          "width",
+                                          "fps",
+                                          "duration",
+                                          "num_frames"};
     Json::Value out(Json::objectValue);
     for (const char* key : kFields) {
       const bool set = requestParameters.isObject() &&

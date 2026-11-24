@@ -60,7 +60,9 @@ class MultiHostLockstepRunner:
     ranks must see requests and canary probes in the same order.
 
     A ``ValueError`` from the runner is a request every rank rejects
-    identically before touching the mesh; it propagates as a request error.
+    identically before touching the mesh, or one rank 0 fails after every
+    rank finished the run (a job deleted while it ran); it propagates as a
+    request error.
     A failed broadcast or any other runner error leaves the ranks out of step
     (some may have received the message, or be waiting in a collective), so it
     ends the job.

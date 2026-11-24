@@ -65,8 +65,9 @@ domain::video::VideoResponse responseFromJson(uint32_t taskId,
   return response;
 }
 
-constexpr size_t kMaxJobs = 10000;
-constexpr int64_t kJobRetentionSeconds = 86400;  // Python job_retention_seconds
+constexpr size_t DEFAULT_MAX_JOBS = 10000;
+// Python job_retention_seconds
+constexpr int64_t DEFAULT_JOB_RETENTION_SECONDS = 86400;
 
 int64_t envInt64(const char* name, int64_t fallback) {
   const char* value = std::getenv(name);
@@ -88,9 +89,10 @@ VideoService::VideoService(
       videoConfig(std::move(config)),
       payloadDir(std::filesystem::temp_directory_path() /
                  ("tt-video-ipc-" + std::to_string(::getpid()))),
-      jobs(static_cast<size_t>(std::max<int64_t>(
-               1, envInt64("MAX_JOBS", static_cast<int64_t>(kMaxJobs)))),
-           envInt64("JOB_RETENTION_SECONDS", kJobRetentionSeconds)) {
+      jobs(
+          static_cast<size_t>(std::max<int64_t>(
+              1, envInt64("MAX_JOBS", static_cast<int64_t>(DEFAULT_MAX_JOBS)))),
+          envInt64("JOB_RETENTION_SECONDS", DEFAULT_JOB_RETENTION_SECONDS)) {
   std::filesystem::create_directories(payloadDir);
   startSweeper();
   if (videoConfig.runner_type == config::ModelRunnerType::VIDEO_DEVICE) {
@@ -186,7 +188,8 @@ Json::Value VideoService::createJob(domain::VideoGenerateRequest request) {
   // create(), under the store lock, so two requests cannot both pass the check.
   Json::Value metadata;
   try {
-    metadata = jobs.create(taskId, servedModelName(), request.toJson(), maxQueueSize);
+    metadata =
+        jobs.create(taskId, servedModelName(), request.toJson(), maxQueueSize);
   } catch (const ActiveJobLimitException&) {
     throw QueueFullException{};
   }

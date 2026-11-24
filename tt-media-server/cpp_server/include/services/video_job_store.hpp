@@ -67,9 +67,9 @@ class VideoJobStore {
   /**
    * Registers a new QUEUED job. The limits are checked under the same lock that
    * inserts the job, so concurrent requests cannot all pass a check made before
-   * any of them is stored. Same order as Python: more than `maxActive` jobs that
-   * are not finished throws ActiveJobLimitException (0 = no limit), then a full
-   * table throws MaxJobsReachedException.
+   * any of them is stored. Same order as Python: more than `maxActive` jobs
+   * that are not finished throws ActiveJobLimitException (0 = no limit), then a
+   * full table throws MaxJobsReachedException.
    */
   Json::Value create(uint32_t taskId, std::string model,
                      Json::Value requestParameters, size_t maxActive = 0) {
@@ -241,6 +241,16 @@ class VideoJobStore {
     std::lock_guard<std::mutex> lock(mutex_);
     removeResultLocked(orphanFile);
     return outcome;
+  }
+
+  /**
+   * Whether a result file a runner reported may be served: the rule complete()
+   * applies to a job, for a request that has no job (sync mode). Inside the
+   * output root (when one is set); `mock://` results are not files.
+   */
+  bool isResultPathAllowed(const std::string& path) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return resultPathAllowed(path);
   }
 
   std::optional<Json::Value> get(uint32_t taskId) const {

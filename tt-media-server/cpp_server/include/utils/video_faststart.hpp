@@ -3,7 +3,9 @@
 
 #pragma once
 
+#include <fcntl.h>
 #include <signal.h>
+#include <spawn.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -14,6 +16,9 @@
 #include <optional>
 #include <string>
 #include <thread>
+#include <vector>
+
+extern char** environ;
 
 namespace tt::utils {
 
@@ -28,19 +33,35 @@ constexpr int kFaststartTimeoutSeconds = 60;
  */
 inline bool ensureFaststart(const std::string& input, const std::string& output,
                             int timeoutSeconds = kFaststartTimeoutSeconds) {
-  const pid_t pid = ::fork();
-  if (pid < 0) return false;
-  if (pid == 0) {
-    // Quiet child: ffmpeg is chatty on stderr and must not read the server
-    // stdin.
-    if (!std::freopen("/dev/null", "r", stdin)) _exit(127);
-    if (!std::freopen("/dev/null", "w", stdout)) _exit(127);
-    if (!std::freopen("/dev/null", "w", stderr)) _exit(127);
-    ::execlp("ffmpeg", "ffmpeg", "-y", "-i", input.c_str(), "-c", "copy",
-             "-movflags", "faststart", output.c_str(),
-             static_cast<char*>(nullptr));
-    _exit(127);
+  // posix_spawnp, not fork() + freopen() + exec: the server is multithreaded,
+  // and between fork() and exec() the child may only call async-signal-safe
+  // functions (freopen takes locks that another thread can hold at the fork,
+  // which would hang the child). The child is quiet: ffmpeg is chatty on stderr
+  // and must not read the server's stdin.
+  posix_spawn_file_actions_t actions;
+  if (posix_spawn_file_actions_init(&actions) != 0) return false;
+  const bool actionsOk =
+      posix_spawn_file_actions_addopen(&actions, STDIN_FILENO, "/dev/null",
+                                       O_RDONLY, 0) == 0 &&
+      posix_spawn_file_actions_addopen(&actions, STDOUT_FILENO, "/dev/null",
+                                       O_WRONLY, 0) == 0 &&
+      posix_spawn_file_actions_addopen(&actions, STDERR_FILENO, "/dev/null",
+                                       O_WRONLY, 0) == 0;
+  if (!actionsOk) {
+    posix_spawn_file_actions_destroy(&actions);
+    return false;
   }
+  std::vector<std::string> args = {"ffmpeg",    "-y",        "-i",
+                                   input,       "-c",        "copy",
+                                   "-movflags", "faststart", output};
+  std::vector<char*> argv;
+  for (auto& a : args) argv.push_back(a.data());
+  argv.push_back(nullptr);
+  pid_t pid = 0;
+  const int rc =
+      ::posix_spawnp(&pid, "ffmpeg", &actions, nullptr, argv.data(), environ);
+  posix_spawn_file_actions_destroy(&actions);
+  if (rc != 0) return false;  // ffmpeg is not installed, or no process left
 
   const auto deadline =
       std::chrono::steady_clock::now() + std::chrono::seconds(timeoutSeconds);

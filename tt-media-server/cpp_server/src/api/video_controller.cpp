@@ -163,10 +163,25 @@ void VideoController::generate(const drogon::HttpRequestPtr& req,
     try {
       service->submitRequestAsync(
           std::move(*request),
-          [callbackPtr](domain::video::VideoResponse response) {
+          [callbackPtr, svc = service](domain::video::VideoResponse response) {
             if (!response.error.empty()) {
               (*callbackPtr)(videoError(drogon::k500InternalServerError,
                                         response.error, "server_error"));
+              return;
+            }
+            // The same rule as a job's result: only a file inside the output
+            // directory is served. A path outside it is not ours to read or
+            // delete, so it is refused and left alone.
+            if (!svc->isResultPathAllowed(response.videoPath)) {
+              TT_LOG_ERROR(
+                  "[VideoController] sync task {}: result '{}' is outside the "
+                  "output dir",
+                  response.task_id, response.videoPath);
+              (*callbackPtr)(videoError(
+                  drogon::k500InternalServerError,
+                  "Video generation failed: result file is outside the "
+                  "output directory",
+                  "server_error"));
               return;
             }
             (*callbackPtr)(syncFileResponse(response));
