@@ -49,7 +49,8 @@ tolerances:
   atol: 0.2
 
 checks:
-  # Final training loss must not exceed the first recorded value (+atol).
+  # Final training loss must be strictly below the first recorded value; fewer
+  # than two train_loss points fails.
   require_decreasing: true
   # Absolute ceiling on the final training loss (guards against a diverged run
   # that happens to be "decreasing"). Tune after regeneration.

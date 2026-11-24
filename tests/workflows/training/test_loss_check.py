@@ -143,6 +143,53 @@ class TestEvaluate:
         )
         assert dec["status"] == "pass"
 
+    def test_rising_loss_within_atol_fails(self):
+        # The shipped fixture's atol=0.2 used to let this rising curve pass.
+        metrics = _metrics(
+            (5, "train_loss", 1.0), (10, "train_loss", 1.1), (15, "train_loss", 1.19)
+        )
+        cfg = self._cfg(atol=0.2, expectations=[])
+        result = evaluate(metrics, cfg, model="m", device="p150")
+        assert result.passed is False
+        dec = next(
+            r for r in result.records if r["test_name"] == "train_loss_decreasing"
+        )
+        assert dec["status"] == "fail"
+
+    def test_flat_loss_fails(self):
+        metrics = _metrics((5, "train_loss", 4.0), (10, "train_loss", 4.0))
+        cfg = self._cfg(expectations=[])
+        result = evaluate(metrics, cfg, model="m", device="p150")
+        assert result.passed is False
+
+    def test_single_train_point_fails_decreasing(self):
+        metrics = _metrics((5, "train_loss", 4.0))
+        cfg = self._cfg(expectations=[])
+        result = evaluate(metrics, cfg, model="m", device="p150")
+        assert result.passed is False
+        dec = next(
+            r for r in result.records if r["test_name"] == "train_loss_decreasing"
+        )
+        assert dec["status"] == "fail"
+        assert "need >= 2" in dec["description"]
+
+    def test_only_val_loss_fails(self):
+        metrics = _metrics((5, "val_loss", 4.0), (10, "val_loss", 3.0))
+        cfg = self._cfg(expectations=[], final_train_loss_max=5.0)
+        result = evaluate(metrics, cfg, model="m", device="p150")
+        assert result.passed is False
+        assert [r["test_name"] for r in result.records] == [
+            "training_produced_train_loss"
+        ]
+        assert result.summary == "0/1 training checks passed"
+
+    def test_no_checks_configured_fails(self):
+        metrics = _metrics((5, "train_loss", 9.0), (10, "train_loss", 4.0))
+        cfg = self._cfg(expectations=[], require_decreasing=False)
+        result = evaluate(metrics, cfg, model="m", device="p150")
+        assert result.passed is False
+        assert result.records[0]["test_name"] == "training_checks_configured"
+
     def test_final_threshold(self):
         metrics = _metrics((5, "train_loss", 9.0), (10, "train_loss", 6.0))
         cfg = self._cfg(expectations=[], final_train_loss_max=5.0)

@@ -5,7 +5,7 @@
 import pytest
 import yaml
 
-from workflows.training.loss_check import parse_config
+from workflows.training.loss_check import evaluate, parse_config
 from workflows.training.registry import expected_config_path
 
 
@@ -38,3 +38,13 @@ def test_shipped_expectation_parses():
     ]
     assert cfg.require_decreasing
     assert cfg.final_train_loss_max is not None
+
+
+def test_shipped_expectation_rejects_rising_loss():
+    path = expected_config_path("Llama-3.1-8B-Instruct", "p150")
+    cfg = parse_config(yaml.safe_load(path.read_text()))
+    metrics = [
+        {"global_step": step, "metric_name": "train_loss", "value": value}
+        for step, value in ((5, 1.0), (10, 1.1), (15, 1.19))
+    ]
+    assert evaluate(metrics, cfg, model="m", device="p150").passed is False

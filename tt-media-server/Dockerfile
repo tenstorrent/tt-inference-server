@@ -140,6 +140,8 @@ RUN git clone --depth 1 https://github.com/tenstorrent-metal/tt-metal.git ${TT_M
     # ttml is its Python package in tt-train/sources/ttml plus the _ttml extension in
     # the build tree. create_venv.sh ran before the build, so it could not add the
     # extension's path; the find_spec check fails the build if either is missing.
+    # The import of ttml.experimental.trainer is checked after the server
+    # requirements are installed, before the merge venv is built.
     && if [ "${BUILD_TT_TRAIN}" = "true" ]; then \
          site_packages=$(${PYTHON_ENV_DIR}/bin/python -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])') \
          && echo "${TT_METAL_HOME}/tt-train/sources/ttml" > "${site_packages}/ttml.pth" \
@@ -226,9 +228,13 @@ RUN /bin/bash -c "python3 -m venv ${AUDIO_VENV_DIR} \
 # UV_PYTHON_INSTALL_DIR keeps that interpreter under TT_METAL_HOME, so the merge venv's
 # symlinks still resolve after the runtime stage copies HOME_DIR.
 # Must run before the cleanup step, which deletes server/scripts.
+# The first command imports ttml.experimental.trainer, which the runner imports, in
+# the main venv now that its last install is done. os._exit skips ttml's atexit
+# hook, which opens the device to close it and can block without one.
 ENV ADAPTER_MERGE_VENV_DIR=${TT_METAL_HOME}/merge-venv
 RUN if [ "${BUILD_TT_TRAIN}" = "true" ]; then \
-      uv="${PYTHON_ENV_DIR}/bin/uv" \
+      ${PYTHON_ENV_DIR}/bin/python -c 'import os, ttml.experimental.trainer; os._exit(0)' \
+      && uv="${PYTHON_ENV_DIR}/bin/uv" \
       && "${uv}" python install 3.12 \
       && "$("${uv}" python find --managed-python 3.12)" "${TT_METAL_HOME}/server/scripts/build_merge_venv.py" \
            "${ADAPTER_MERGE_VENV_DIR}" "${TT_METAL_HOME}/tt-vllm-plugin/pyproject.toml" \
