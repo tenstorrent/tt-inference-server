@@ -832,7 +832,7 @@ templates:
     - device: P300X2
       max_concurrency: 32
       max_context: 262144
-      default_impl: false  # selectable with --impl gemma4-12b-qb2; model code on the tt-metal PR #61987 branch for now
+      default_impl: true  # stopgap only: tt-shield dispatch offers no gemma4-12b-qb2 impl choice
       env_vars:
         MESH_DEVICE: P300x2
         EXTRA_MODELS_DIR: ../../tt-metal/agentic_models/models/gemma_4_12b_it
@@ -1219,7 +1219,7 @@ templates:
     - device: P300X2  # QB2 (2x P300, 4-chip TP mesh)
       max_concurrency: 32
       max_context: 262144  # auto-bounded sliding + chunk 4096 at 256k (metal policy)
-      default_impl: true
+      default_impl: false  # stopgap only (see gemma4_12b_qb2)
       tensor_cache_timeout: 5400.0  # cold TT-cache conversion of the weights; the readiness backstop adds 30 min
       env_vars:
         GEMMA4_PREFILL_PAD_BUCKETS: "256,512,1024"  # Gemma 4 prefill padding: 129-256-token prompts pad to 256 and 257-512 to 512 instead of 1024 (the shared policy); warmed at boot. Measured 2026-10-31 on this block (plain class, same prefill path): c1 TTFT 150 -> 85 ms, c8 1.03 -> 0.64 s, c32 4.0 -> 2.45 s, decode / extremes / prose unchanged, coherent at 256K/128K/short
