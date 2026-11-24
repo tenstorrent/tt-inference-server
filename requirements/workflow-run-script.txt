@@ -49,6 +49,8 @@ jsonschema==4.25.1
 # to keep the eager import chain self-contained.
 jinja2
 librosa
+# tts_correctness transcribes every response with faster-whisper (int8 CPU).
+faster-whisper
 # YOLOX (yolox_nano) evals compute real COCO mAP via pycocotools' COCOeval.
 pycocotools
 datasets==5.0.0

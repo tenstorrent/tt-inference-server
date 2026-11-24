@@ -60,9 +60,7 @@ IMAGE_FORMATS = {
     "jpeg": ("JPEG", "image/jpeg"),
     "webp": ("WEBP", "image/webp"),
 }
-# PIL's defaults, JPEG at quality 75 and lossy WebP at 80, are noticeably lossy
-# for a generated image. JPEG also keeps full-resolution color (4:4:4), which
-# keeps colored edges and small text sharp.
+# PIL's defaults (JPEG 75, WebP 80) are visibly lossy; JPEG keeps 4:4:4 chroma.
 IMAGE_SAVE_OPTIONS = {
     "JPEG": {"quality": 95, "subsampling": 0},
     "WEBP": {"quality": 90},
@@ -445,8 +443,7 @@ class GenerationService(BaseJobService):
     async def post_process(self, result, input_request: GenerationRequest) -> str:
         """Write the output to the job's directory; returns the directory.
 
-        ``count`` is 1, so a job has one output. More will come from one
-        batched pipeline call, not from one request per output.
+        A job has one output.
         """
         writing = asyncio.ensure_future(
             asyncio.to_thread(self._write_outputs, input_request, [result])
@@ -483,7 +480,7 @@ class GenerationService(BaseJobService):
         output = {
             "type": request.OUTPUT_TYPE,
             "seed": request._seed,
-            # a runner that rewrites the prompt on the device reports it with the image
+            # the caption, when the runner rewrote the prompt
             "prompt": getattr(result, "info", {}).get("prompt", request._prompt),
         }
         if request.OUTPUT_TYPE == "image":

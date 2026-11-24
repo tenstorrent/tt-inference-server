@@ -41,6 +41,7 @@ from domain.flux2_klein_4b_request import KLEIN_STEPS, Flux2klein4bRequest
 from domain.flux3_image_klein_request import (
     FLUX3_KLEIN_STEPS,
     Flux3ImageKleinRequest,
+    upsampler_frozen,
 )
 from domain.generation_request import GenerationRequest
 from domain.ideogram4_request import IDEOGRAM_PRESETS, Ideogram4Request
@@ -71,6 +72,32 @@ from utils.decorators import log_execution_time
 from utils.logger import log_exception_chain
 from utils.media_probe import decode_image
 from utils.video_manager import VideoManager
+
+
+class JobDeletedError(ValueError):
+    """The job was deleted while it ran, so its output has nowhere to go.
+
+    A ValueError, so a multi-host deployment keeps serving. Every rank has
+    finished the run, so the ranks are still in step, and
+    MultiHostLockstepRunner ends the deployment on any other error.
+    """
+
+
+def _move_into_job_dir(encoded: str, request: GenerationRequest, name: str) -> str:
+    """Moves the encoded file into the job's directory, so a file a cancelled
+    or failed job leaves behind is deleted with it. Returns its new path."""
+    path = Path(generation_job_dir(request._task_id)) / name
+    try:
+        shutil.move(encoded, path)
+    except FileNotFoundError:
+        if path.parent.is_dir():
+            raise
+        Path(encoded).unlink(missing_ok=True)
+        raise JobDeletedError(
+            f"job {request._task_id} was deleted while it ran"
+        ) from None
+    return str(path)
+
 
 _WARMUP_PROMPT = "Sunrise on a beach"
 # Warmup only compiles and traces, so it runs fewer steps where it can.
@@ -134,9 +161,12 @@ class _GenerationRunner(TTDiTRunner):
         return request
 
     @staticmethod
-    def _images(request: GenerationRequest, name: str) -> list[Image.Image]:
-        """The images of the media field ``name``, decoded from their files."""
-        return [decode_image(data) for data in request._files.get(name, [])]
+    def _images(
+        request: GenerationRequest, name: str, *, rgb: bool = True
+    ) -> list[Image.Image]:
+        """The images of the media field ``name``, decoded from their files, in
+        RGB unless ``rgb`` is false."""
+        return [decode_image(data, rgb=rgb) for data in request._files.get(name, [])]
 
     def _image_stage_recorder(self) -> ImageStageRecorder | None:
         if self._warming_up:
@@ -250,16 +280,7 @@ class TTWan22I2VA14BRunner(_GenerationRunner, TTWan22I2VRunner):
             return [None]
         # The pipeline returns a batch of one video.
         encoded = VideoManager().export_to_mp4(frames[0], fps=request.fps)
-        # Into the job's directory, so a file a cancelled or failed job leaves
-        # behind is deleted with it.
-        path = Path(generation_job_dir(request._task_id)) / "wan.mp4"
-        try:
-            shutil.move(encoded, path)
-        except FileNotFoundError:
-            # The job was deleted while it ran.
-            Path(encoded).unlink(missing_ok=True)
-            raise
-        return [str(path)]
+        return [_move_into_job_dir(encoded, request, "wan.mp4")]
 
 
 class TTQwenImageEdit2511Runner(_GenerationRunner, TTQwenImageRunner):
@@ -469,6 +490,26 @@ class TTFlux2Klein4BRunner(_GenerationRunner):
         return images
 
 
+FLUX3_WARMUP_REFERENCE_SHAPES = "FLUX3_WARMUP_REFERENCE_SHAPES"
+
+
+def _flux3_warmup_reference_shapes() -> list[tuple[int, int]]:
+    """Extra reference shapes to warm up (``WxH,WxH``); each compiles the VAE
+    encoder for its canvas."""
+    raw = os.environ.get(FLUX3_WARMUP_REFERENCE_SHAPES, "")
+    shapes = []
+    for item in filter(None, (item.strip() for item in raw.split(","))):
+        try:
+            width, height = (int(v) for v in item.lower().split("x"))
+        except ValueError:
+            raise ValueError(
+                f"{FLUX3_WARMUP_REFERENCE_SHAPES}={raw!r} must be WxH shapes "
+                "separated by commas"
+            ) from None
+        shapes.append((width, height))
+    return shapes
+
+
 class TTFlux3ImageKleinRunner(_GenerationRunner):
     def create_pipeline(self):
         from models.tt_dit.pipelines.flux3_klein.pipeline_flux3_klein import (
@@ -485,13 +526,15 @@ class TTFlux3ImageKleinRunner(_GenerationRunner):
             else resolve_weights_dir("distilled")
         )
         try:
-            # With frozen prompts the pipeline runs without its upsampler and
-            # uses each prompt as sent.
-            return Flux3KleinPipeline(
+            pipeline = Flux3KleinPipeline(
                 self.ttnn_device,
                 snapshots={"distilled": snapshot},
-                upsample=not self.settings.prompt_upsampler_frozen,
+                upsample=not upsampler_frozen(),
             )
+            pipeline.warmup(
+                sizes=tuple(width for width, _ in Flux3ImageKleinRequest.warmup_sizes())
+            )
+            return pipeline
         except Exception as e:
             log_exception_chain(
                 self.logger, self.device_id, "FLUX.3 pipeline creation failed", e
@@ -499,39 +542,40 @@ class TTFlux3ImageKleinRunner(_GenerationRunner):
             raise
 
     def get_pipeline_device_params(self):
-        # From tt-metal's models/tt_dit/tests/models/flux3_klein: a ring with 8 KB
-        # packets and L1_SMALL for the VAE conv2d, plus the prompt upsampler's two
-        # command queues and trace region (it shares the first chip) unless
-        # prompts are frozen.
+        from models.tt_dit.pipelines.flux3_klein.upsampler_flux3_klein import (
+            SHARED_MESH_PARAMS,
+        )
+
+        # as tt-metal's test_serving_flux3_klein; SHARED_MESH_PARAMS for the
+        # resident upsampler
         router = ttnn.FabricRouterConfig()
         router.max_packet_payload_size_bytes = 8192
-        params = {
+        return {
             "fabric_config": ttnn.FabricConfig.FABRIC_1D_RING,
             "fabric_router_config": router,
             "l1_small_size": 65536,
+            **({} if upsampler_frozen() else SHARED_MESH_PARAMS),
         }
-        if not self.settings.prompt_upsampler_frozen:
-            params |= {
-                "num_command_queues": 2,
-                "trace_region_size": 256 * 1024 * 1024,
-            }
-        return params
 
     def warmup_requests(self) -> list[GenerationRequest]:
-        reference = Image.new("RGB", (1024, 1024))
-        requests = []
-        for width, height in Flux3ImageKleinRequest.warmup_sizes():
-            for images in ({}, {"images": [reference]}):
-                request = _warmup_request(
-                    Flux3ImageKleinRequest.model_construct(prompt=_WARMUP_PROMPT),
-                    width,
-                    height,
-                )
-                # The service decodes FLUX.3's reference (RUNNER_DECODES_IMAGES
-                # is off), so run() reads the decoded image, not a file.
-                request._images = images
-                requests.append(request)
-        return requests
+        # the pipeline warmed its own shapes; only extra reference shapes are left
+        return [
+            _warmup_request(
+                Flux3ImageKleinRequest.model_construct(prompt=_WARMUP_PROMPT),
+                1024,
+                1024,
+                {"images": [_png(width, height)]},
+            )
+            for width, height in _flux3_warmup_reference_shapes()
+        ]
+
+    def _build_warmup_video_request(self) -> GenerationRequest:
+        """A multi-host deep canary's request: the smallest text-to-image."""
+        request = _warmup_request(
+            Flux3ImageKleinRequest.model_construct(prompt=_WARMUP_PROMPT), 1024, 1024
+        )
+        request._task_id = CANARY_DEEP_TASK_ID
+        return request
 
     @_inference_timer
     def run(self, requests: list[Flux3ImageKleinRequest]):
@@ -540,19 +584,45 @@ class TTFlux3ImageKleinRunner(_GenerationRunner):
         )
 
         request = requests[0]
-        result = self.pipeline.generate(
-            Flux3KleinRequest(
-                prompt=request._prompt,
-                width=request._width,
-                height=request._height,
-                seed=request._seed,
-                steps=self._steps(FLUX3_KLEIN_STEPS),
-                images=tuple(request._images.get("images", [])),
+        try:
+            # keep alpha: the upsampler composites it over white
+            images = tuple(self._images(request, "images", rgb=False))
+        except ValueError:
+            raise
+        except Exception as e:
+            # fail the job, not the worker
+            raise ValueError(f"an input could not be decoded: {e}") from e
+        recorder = self._image_stage_recorder()
+        output = None
+        try:
+            result = self.pipeline.generate(
+                Flux3KleinRequest(
+                    prompt=request._prompt,
+                    width=request._width,
+                    height=request._height,
+                    seed=request._seed,
+                    steps=self._steps(FLUX3_KLEIN_STEPS, request),
+                    images=images,
+                )
             )
-        )
-        # the upsampled caption, which the output reports as its prompt
-        result.image.info["prompt"] = result.prompt
-        return [result.image]
+            result.image.info["prompt"] = result.prompt
+            output = [result.image]
+            if recorder is not None:
+                timings = result.timings
+                recorder.engine_seconds = sum(timings.values())
+                recorder.denoise_seconds = timings.get("denoise")
+                recorder.vae_seconds = timings.get("decode")
+                recorder.conditioning_seconds = {
+                    "all": sum(
+                        timings.get(stage, 0.0)
+                        for stage in ("upsample", "encode", "encode_reference")
+                    )
+                }
+        finally:
+            # A failed run is recorded too, as a run with no output.
+            if recorder is not None:
+                recorder.flush(output)
+        return output
 
 
 def _minimax_h3_env_bool(name: str) -> bool | None:
@@ -719,16 +789,7 @@ class _MiniMaxH3Runner(_GenerationRunner):
             fps=output.fps,
             pixel_format=pixel_format,
         )
-        # Into the job's directory, so a file a cancelled or failed job leaves
-        # behind is deleted with it.
-        path = Path(generation_job_dir(request._task_id)) / "h3.mp4"
-        try:
-            shutil.move(encoded, path)
-        except FileNotFoundError:
-            # The job was deleted while it ran.
-            Path(encoded).unlink(missing_ok=True)
-            raise
-        return [str(path)]
+        return [_move_into_job_dir(encoded, request, "h3.mp4")]
 
     def _pipeline_factory(self):
         return MiniMaxH3Pipeline

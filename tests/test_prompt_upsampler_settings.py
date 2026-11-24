@@ -11,19 +11,19 @@ from workflows.prompt_upsampler import prompt_upsampler_env_vars, prompts_frozen
     "dev_mode, environ, env, frozen",
     [
         # dev mode (local and CI) freezes prompts; prod keeps the server's default
-        (True, {}, {"PROMPT_UPSAMPLER_FROZEN": "true"}, True),
+        (True, {}, {"FLUX3_PROMPT_UPSAMPLER_FROZEN": "true"}, True),
         (False, {}, {}, False),
         # a run can choose the upsampler, end to end, in dev mode too
         (
             True,
-            {"PROMPT_UPSAMPLER_FROZEN": "false"},
-            {"PROMPT_UPSAMPLER_FROZEN": "false"},
+            {"FLUX3_PROMPT_UPSAMPLER_FROZEN": "false"},
+            {"FLUX3_PROMPT_UPSAMPLER_FROZEN": "false"},
             False,
         ),
         (
             False,
-            {"PROMPT_UPSAMPLER_FROZEN": "1"},
-            {"PROMPT_UPSAMPLER_FROZEN": "1"},
+            {"FLUX3_PROMPT_UPSAMPLER_FROZEN": "1"},
+            {"FLUX3_PROMPT_UPSAMPLER_FROZEN": "1"},
             True,
         ),
         # other variables stay out, the old remote/local choice among them

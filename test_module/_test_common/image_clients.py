@@ -139,7 +139,7 @@ class GenerationAPIClient:
         self.poll_interval = poll_interval
         self.poll_timeout = poll_timeout
         # Send a case's frozen caption (``frozen_prompt``) where it has one, for
-        # a deployment that uses prompts exactly as sent (PROMPT_UPSAMPLER_FROZEN).
+        # a deployment that uses prompts exactly as sent (FLUX3_PROMPT_UPSAMPLER_FROZEN).
         self.frozen_prompts = frozen_prompts
 
     def published_schema(self, timeout: float = 30) -> tuple[dict, dict] | None:

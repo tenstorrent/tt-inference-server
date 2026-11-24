@@ -59,6 +59,19 @@ else:
 
     _tt_metal_policies = placeholder_policies()
 
+# tt-metal's FLUX.3 pipeline where importable, for the constants drift test
+_TT_METAL_FLUX3_MODULES = (
+    "models.tt_dit.pipelines.flux3_klein.pipeline_flux3_klein",
+    "models.tt_dit.pipelines.flux3_klein.upsampler_flux3_klein",
+)
+try:
+    import models.tt_dit.pipelines.flux3_klein.pipeline_flux3_klein  # noqa: F401
+    import models.tt_dit.pipelines.flux3_klein.upsampler_flux3_klein  # noqa: F401
+
+    _tt_metal_flux3 = {name: sys.modules[name] for name in _TT_METAL_FLUX3_MODULES}
+except ImportError:
+    _tt_metal_flux3 = None
+
 # Mock modules that are not available in test environment
 mock_modules = [
     "ttnn",
@@ -893,3 +906,11 @@ def pytest_generate_tests(metafunc):
                 metafunc.parametrize(
                     "runner_name,expected_class_name", [("mock", "MockRunner")]
                 )
+
+
+@pytest.fixture
+def tt_metal_flux3() -> dict:
+    """tt-metal's FLUX.3 pipeline and upsampler modules, by name."""
+    if _tt_metal_flux3 is None:
+        pytest.skip("needs tt-metal's FLUX.3 pipeline")
+    return _tt_metal_flux3

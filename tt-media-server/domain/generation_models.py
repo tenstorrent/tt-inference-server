@@ -2,31 +2,79 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-from config.constants import ModelRunners
-from domain.flux2_klein_4b_request import FLUX2_KLEIN_4B
-from domain.flux3_image_klein_request import FLUX3_IMAGE_KLEIN
-from domain.generation_request import GenerationModel
-from domain.ideogram4_request import IDEOGRAM_4
-from domain.ltx23_distilled_request import LTX_2_3_22B_DISTILLED
-from domain.minimax_h3_request import (
-    MINIMAX_H3_FL2VA,
-    MINIMAX_H3_FL2VA_LIGHTX2V,
-    MINIMAX_H3_REF2VA,
-    MINIMAX_H3_REF2VA_LIGHTX2V,
-)
-from domain.qwen_image_edit_2511_request import QWEN_IMAGE_EDIT_2511
-from domain.wan22_i2v_a14b_request import WAN22_I2V_A14B
+import importlib
+from collections.abc import Iterator, Mapping
 
-# What each generation runner serves, keyed by runner name.
-GENERATION_MODELS: dict[str, GenerationModel] = {
-    ModelRunners.TT_WAN_2_2_I2V.value: WAN22_I2V_A14B,
-    ModelRunners.TT_QWEN_IMAGE_EDIT_2511.value: QWEN_IMAGE_EDIT_2511,
-    ModelRunners.TT_LTX_2_3_DISTILLED.value: LTX_2_3_22B_DISTILLED,
-    ModelRunners.TT_MINIMAX_H3_FL2VA.value: MINIMAX_H3_FL2VA,
-    ModelRunners.TT_MINIMAX_H3_FL2VA_LIGHTX2V.value: MINIMAX_H3_FL2VA_LIGHTX2V,
-    ModelRunners.TT_FLUX_2_KLEIN_4B.value: FLUX2_KLEIN_4B,
-    ModelRunners.TT_FLUX_3_IMAGE_KLEIN.value: FLUX3_IMAGE_KLEIN,
-    ModelRunners.TT_MINIMAX_H3_REF2VA.value: MINIMAX_H3_REF2VA,
-    ModelRunners.TT_MINIMAX_H3_REF2VA_LIGHTX2V.value: MINIMAX_H3_REF2VA_LIGHTX2V,
-    ModelRunners.TT_IDEOGRAM_4.value: IDEOGRAM_4,
-}
+from config.constants import ModelRunners
+from domain.generation_request import GenerationModel
+
+
+class _GenerationModels(Mapping[str, GenerationModel]):
+    """Imports a model's module only when its entry is read. The video
+    models' modules import tt-metal's serving policies, and every service
+    imports this mapping, so a deployment of another service would otherwise
+    need them too. Checking a runner with ``in`` imports nothing."""
+
+    def __init__(self, paths: dict[str, tuple[str, str]]):
+        self._paths = paths
+
+    def __getitem__(self, runner: str) -> GenerationModel:
+        module, name = self._paths[runner]
+        return getattr(importlib.import_module(module), name)
+
+    def __contains__(self, runner: object) -> bool:
+        return runner in self._paths
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._paths)
+
+    def __len__(self) -> int:
+        return len(self._paths)
+
+
+# What each generation runner serves, keyed by runner name: the module and
+# the name of its GenerationModel.
+GENERATION_MODELS: Mapping[str, GenerationModel] = _GenerationModels(
+    {
+        ModelRunners.TT_WAN_2_2_I2V.value: (
+            "domain.wan22_i2v_a14b_request",
+            "WAN22_I2V_A14B",
+        ),
+        ModelRunners.TT_QWEN_IMAGE_EDIT_2511.value: (
+            "domain.qwen_image_edit_2511_request",
+            "QWEN_IMAGE_EDIT_2511",
+        ),
+        ModelRunners.TT_LTX_2_3_DISTILLED.value: (
+            "domain.ltx23_distilled_request",
+            "LTX_2_3_22B_DISTILLED",
+        ),
+        ModelRunners.TT_MINIMAX_H3_FL2VA.value: (
+            "domain.minimax_h3_request",
+            "MINIMAX_H3_FL2VA",
+        ),
+        ModelRunners.TT_MINIMAX_H3_FL2VA_LIGHTX2V.value: (
+            "domain.minimax_h3_request",
+            "MINIMAX_H3_FL2VA_LIGHTX2V",
+        ),
+        ModelRunners.TT_FLUX_2_KLEIN_4B.value: (
+            "domain.flux2_klein_4b_request",
+            "FLUX2_KLEIN_4B",
+        ),
+        ModelRunners.TT_FLUX_3_IMAGE_KLEIN.value: (
+            "domain.flux3_image_klein_request",
+            "FLUX3_IMAGE_KLEIN",
+        ),
+        ModelRunners.TT_MINIMAX_H3_REF2VA.value: (
+            "domain.minimax_h3_request",
+            "MINIMAX_H3_REF2VA",
+        ),
+        ModelRunners.TT_MINIMAX_H3_REF2VA_LIGHTX2V.value: (
+            "domain.minimax_h3_request",
+            "MINIMAX_H3_REF2VA_LIGHTX2V",
+        ),
+        ModelRunners.TT_IDEOGRAM_4.value: (
+            "domain.ideogram4_request",
+            "IDEOGRAM_4",
+        ),
+    }
+)
