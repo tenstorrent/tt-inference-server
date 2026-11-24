@@ -509,7 +509,7 @@ jobs:
     needs: detect-changes
     if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
     name: C++ Lint & Format Check
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:
       contents: read
@@ -523,13 +523,10 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
-        with:
-          token: ${{ secrets.TT_LLM_ENGINE }}
 
       - name: Set up C++ CI dependencies
         uses: ./.github/actions/setup-cpp-ci
         with:
-          token: ${{ secrets.TT_LLM_ENGINE }}
           # Shares the cpp_server compile ccache with cpp-build (same TUs).
           ccache-key-suffix: server
 
@@ -563,13 +560,13 @@ jobs:
       - name: C++ lint check (build with clang-tidy)
         run: |
           cd cpp_server
-          ./build.sh --clang-tidy --blaze
+          ./build.sh --clang-tidy
 
   prefill-gateway-format-check:
     needs: detect-changes
     if: ${{ needs.detect-changes.outputs.cpp-server == 'true' || needs.detect-changes.outputs.prefill-gateway == 'true' }}
     name: Prefill Gateway Format Check
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
       contents: read
@@ -607,12 +604,12 @@ jobs:
     needs: detect-changes
     if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
     name: C++ Build & Unit Tests
-    # Per-commit compile + unit-test gate on ubuntu-latest. Build runs in ONE
+    # Per-commit compile + unit-test gate on Ubuntu 24.04. Build runs in ONE
     # job; the freshly built binary in cpp_server/build is unit-tested in place
     # via ctest, so there is no build artifact to archive/upload/download/unpack
     # (that round-trip used to cost ~5 min on the critical path). The heavier
     # benches/sanitizers run in cpp-heavy-checks.yml.
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     permissions:
       contents: read
@@ -635,13 +632,10 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
-        with:
-          token: ${{ secrets.TT_LLM_ENGINE }}
 
       - name: Set up C++ CI dependencies
         uses: ./.github/actions/setup-cpp-ci
         with:
-          token: ${{ secrets.TT_LLM_ENGINE }}
           # Shares the cpp_server compile ccache with cpp-format-check.
           ccache-key-suffix: server
 
@@ -661,7 +655,7 @@ jobs:
       - name: Build C++ server
         run: |
           cd cpp_server
-          ./build.sh --blaze
+          ./build.sh
           cd ..
 
       - name: Run C++ unit tests
@@ -679,7 +673,7 @@ jobs:
     # real Kafka broker started via cpp_server/scripts/dev-kafka.sh. The
     # test is not registered with add_test() (opt-in), so it's invoked
     # directly as a binary rather than via ctest.
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:
       contents: read
@@ -696,13 +690,10 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
-        with:
-          token: ${{ secrets.TT_LLM_ENGINE }}
 
       - name: Set up C++ CI dependencies
         uses: ./.github/actions/setup-cpp-ci
         with:
-          token: ${{ secrets.TT_LLM_ENGINE }}
           # Shares the cpp_server compile ccache with cpp-build / cpp-format-check.
           ccache-key-suffix: server
 
@@ -722,7 +713,7 @@ jobs:
       - name: Build C++ server with Kafka enabled
         run: |
           cd cpp_server
-          ./build.sh --blaze --kafka
+          ./build.sh --kafka
 
       - name: Start dev Kafka broker
         run: bash cpp_server/scripts/dev-kafka.sh up
@@ -748,7 +739,7 @@ jobs:
     # ubuntu-latest. The cpp-server-gateway-split perf bench builds its own
     # gateway binary in-job (it runs on the jammy self-hosted runner), so this
     # job no longer needs to publish an artifact for it.
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:
       contents: read
@@ -767,7 +758,6 @@ jobs:
       - name: Set up C++ CI dependencies
         uses: ./.github/actions/setup-cpp-ci
         with:
-          init-private-submodule: "false"
           ccache-key-suffix: gateway
 
       - name: Configure prefill_gateway

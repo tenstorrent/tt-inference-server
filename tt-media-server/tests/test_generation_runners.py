@@ -16,12 +16,14 @@ from unittest.mock import Mock
 
 import numpy as np
 import pytest
+from domain.flux2_klein_4b_request import Flux2klein4bRequest
 from domain.ltx23_distilled_request import Ltx23DistilledRequest
 from domain.ideogram4_request import Ideogram4Request
 from domain.minimax_h3_request import (
     MiniMaxH3FL2VARequest,
     MiniMaxH3Ref2VARequest,
 )
+from domain.qwen_image_edit_2511_request import QwenImageEdit2511Request
 from domain.wan22_i2v_a14b_request import (
     WAN_NEGATIVE_PROMPT,
     WAN_SIZES,
@@ -309,6 +311,35 @@ def test_wan_warmup_conditions_the_last_frame(monkeypatch):
     assert frame_positions == {(0,), (0, 80)}
 
 
+@pytest.mark.parametrize("with_images", [False, True])
+def test_klein_edits_only_with_images(with_images):
+    runner = _runner("TTFlux2Klein4BRunner")
+    files = {"images": [_png(8, 16)]} if with_images else {}
+    request = _resolved(Flux2klein4bRequest(prompt="a cat"), 1024, 1024, files)
+    runner.run([request])
+    (call,) = runner.pipeline.calls
+    if with_images:
+        assert [image.size for image in call["images"]] == [(8, 16)]
+    else:
+        assert call["images"] is None
+    assert call["num_inference_steps"] == 4
+
+
+def test_klein_pipeline_warms_itself_up(monkeypatch):
+    module = Mock()
+    monkeypatch.setitem(
+        sys.modules, "models.tt_dit.pipelines.flux2.pipeline_flux2", module
+    )
+    runner = _runner("TTFlux2Klein4BRunner")
+    runner.ttnn_device = Mock()
+    runner.settings = SimpleNamespace(
+        model_weights_path="black-forest-labs/FLUX.2-klein-4B"
+    )
+    runner.create_pipeline()
+    assert module.Flux2Pipeline.create_pipeline.call_args.kwargs["trace_warmup"] is True
+    assert runner.warmup_requests() == []
+
+
 @pytest.fixture
 def ltx_remuxes(monkeypatch, tmp_path):
     """The (input, output) of each faststart remux the runner makes."""
@@ -367,6 +398,65 @@ def test_ltx_does_not_bring_back_a_deleted_jobs_directory(ltx_remuxes, tmp_path)
         runner.run([request])
     assert list(tmp_path.iterdir()) == []
     assert ltx_remuxes == []
+
+
+def test_qwen_passes_the_input_images():
+    runner = _runner("TTQwenImageEdit2511Runner")
+    request = _resolved(
+        QwenImageEdit2511Request(
+            prompt="add a hat", negative_prompt="blurry", images=["https://x/a.png"] * 2
+        ),
+        1376,
+        768,
+        {"images": [_png(8, 16), _png(24, 12)]},
+    )
+    runner.run([request])
+    (call,) = runner.pipeline.calls
+    assert [image.size for image in call["image"]] == [(8, 16), (24, 12)]
+    assert (call["width"], call["height"], call["cfg_scale"]) == (1376, 768, 4.0)
+    assert call["negative_prompts"] == ["blurry"]
+    assert call["num_inference_steps"] == 40
+
+
+def test_qwen_records_the_stages_of_a_failed_edit():
+    runner = _runner("TTQwenImageEdit2511Runner")
+    recorder = Mock()
+    runner._image_stage_recorder = lambda: recorder
+    runner.pipeline = Mock(side_effect=RuntimeError("device error"))
+    request = _resolved(
+        QwenImageEdit2511Request(prompt="add a hat", images=["https://x/a.png"]),
+        1376,
+        768,
+        {"images": [_png(8, 8)]},
+    )
+    with pytest.raises(RuntimeError):
+        runner.run([request])
+    recorder.flush.assert_called_once_with(None)
+
+
+def test_qwen_pipeline_warms_itself_up():
+    assert _runner("TTQwenImageEdit2511Runner").warmup_requests() == []
+
+
+def test_qwen_pipeline_runs_with_dbcache(monkeypatch):
+    module = Mock()
+    monkeypatch.setitem(
+        sys.modules, "models.tt_dit.pipelines.qwenimage.pipeline_qwenimage", module
+    )
+    runner = _runner("TTQwenImageEdit2511Runner")
+    runner.ttnn_device = SimpleNamespace(shape=(4, 8))
+    runner.settings = SimpleNamespace(model_weights_path="Qwen/Qwen-Image-Edit-2511")
+    assert runner.create_pipeline() is module.QwenImagePipeline.return_value
+    kwargs = module.QwenImagePipelineConfig.default.call_args.kwargs
+    assert kwargs == {
+        "mesh_shape": (4, 8),
+        "checkpoint_name": "Qwen/Qwen-Image-Edit-2511",
+        "dbcache": module.DEFAULT_DBCACHE,
+    }
+    module.QwenImagePipeline.assert_called_once_with(
+        device=runner.ttnn_device,
+        config=module.QwenImagePipelineConfig.default.return_value,
+    )
 
 
 class _H3Pipeline:

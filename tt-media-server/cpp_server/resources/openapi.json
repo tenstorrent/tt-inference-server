@@ -33,6 +33,10 @@
       "description": "OpenAI-compatible image generation, image-to-image, and edit endpoints. Only the route matching the active runner_type is registered at runtime."
     },
     {
+      "name": "Video",
+      "description": "Text-to-video jobs (Wan2.2). Only registered when MODEL_SERVICE=video. POST returns a job id; poll it, download the mp4, cancel or delete it."
+    },
+    {
       "name": "Text to speech processing",
       "description": "Text-to-speech audio generation endpoints. Only registered when MODEL_SERVICE=tts."
     },
@@ -380,6 +384,489 @@
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/videos/generations": {
+      "post": {
+        "tags": [
+          "Video"
+        ],
+        "summary": "Create a text-to-video job",
+        "description": "Queues a text-to-video generation and answers 202 with the job. Poll GET /v1/videos/generations/{job_id} until the status is `completed`, then fetch the mp4 from the `/download` route. With `async=false` (query parameter or JSON field; the query parameter wins) the request is held open and the mp4 is returned in the response instead, with no job record. The default comes from USE_ASYNC_VIDEO (true). Only registered when MODEL_SERVICE=video.",
+        "operationId": "createVideoGeneration",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "async",
+            "in": "query",
+            "required": false,
+            "description": "false = sync mode: wait and return the mp4. One of true/false/1/0/yes/no/on/off.",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VideoGenerateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Job accepted (async mode)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoJob"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Sync mode: the finished mp4",
+            "headers": {
+              "X-Generation-Time": {
+                "description": "Generation time in seconds",
+                "schema": {
+                  "type": "string",
+                  "example": "123.45"
+                }
+              },
+              "Content-Disposition": {
+                "description": "attachment; filename=video_<task_id>.mp4",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "video/mp4": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid authentication token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid JSON body, invalid field value or invalid `async`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many unfinished jobs (MAX_QUEUE_SIZE) or the queue is full",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoError"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying",
+                "schema": {
+                  "type": "integer",
+                  "example": 60
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Sync mode: generation failed or the file is missing",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The model is still warming up (poll /tt-liveness for model_ready) or the stored job limit (MAX_JOBS) is reached",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoError"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying",
+                "schema": {
+                  "type": "integer",
+                  "example": 30
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/videos/generations/{job_id}": {
+      "get": {
+        "tags": [
+          "Video"
+        ],
+        "summary": "Get a video job",
+        "description": "Status and metadata of one job. `request_parameters` echoes the parameters, with null for the ones that were not sent.",
+        "operationId": "getVideoJob",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "description": "Public job id (UUID) returned by POST /v1/videos/generations",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The job",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoJob"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid authentication token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such job",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Video"
+        ],
+        "summary": "Delete a finished video job and its mp4",
+        "description": "Only a finished job (completed, failed or cancelled) can be deleted. Cancel an active job first.",
+        "operationId": "deleteVideoJob",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "description": "Public job id (UUID) returned by POST /v1/videos/generations",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoDeleteResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid authentication token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such job",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The job is still queued, running or cancelling",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/videos/jobs": {
+      "get": {
+        "tags": [
+          "Video"
+        ],
+        "summary": "List video jobs",
+        "description": "All job records the server still holds, in task id order.",
+        "operationId": "listVideoJobs",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Jobs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/VideoJob"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid authentication token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/videos/generations/{job_id}/download": {
+      "get": {
+        "tags": [
+          "Video"
+        ],
+        "summary": "Download the finished mp4",
+        "description": "Streams the mp4 of a completed job. A single `Range` header is honoured (206) so players can seek; other range forms are ignored and the whole file is sent.",
+        "operationId": "downloadVideo",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "description": "Public job id (UUID) returned by POST /v1/videos/generations",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Range",
+            "in": "header",
+            "required": false,
+            "description": "One byte range, for example `bytes=0-99`",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The whole file",
+            "headers": {
+              "Accept-Ranges": {
+                "schema": {
+                  "type": "string",
+                  "example": "bytes"
+                }
+              }
+            },
+            "content": {
+              "video/mp4": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "206": {
+            "description": "The requested byte range",
+            "headers": {
+              "Content-Range": {
+                "schema": {
+                  "type": "string",
+                  "example": "bytes 0-99/1048576"
+                }
+              }
+            },
+            "content": {
+              "video/mp4": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid authentication token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such job, or its file is not available",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The job is not completed yet (the message names the status, keep polling)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoError"
+                }
+              }
+            }
+          },
+          "416": {
+            "description": "Range not satisfiable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/videos/generations/{job_id}/cancel": {
+      "post": {
+        "tags": [
+          "Video"
+        ],
+        "summary": "Cancel a video job",
+        "description": "A queued job becomes `cancelled` at once. A running job becomes `cancelling` and turns `cancelled` when the worker returns, because the device cannot be interrupted mid-generation. 404 also covers a job that is already finished or already cancelling.",
+        "operationId": "cancelVideoJob",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "description": "Public job id (UUID) returned by POST /v1/videos/generations",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The job after the cancel",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoJob"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid authentication token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such job",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoError"
+                }
               }
             }
           }
@@ -1031,6 +1518,235 @@
           "generation_time": {
             "type": "number",
             "description": "Wall-clock generation time in seconds (omitted when zero)"
+          }
+        }
+      },
+      "VideoGenerateRequest": {
+        "type": "object",
+        "required": [
+          "prompt"
+        ],
+        "description": "Text-to-video request. Limits that depend on the served model (frame counts, resolution) are checked by the runner.",
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "description": "Text prompt. Must not be empty or only spaces"
+          },
+          "negative_prompt": {
+            "type": "string",
+            "description": "What to avoid"
+          },
+          "num_inference_steps": {
+            "type": "integer",
+            "minimum": 4,
+            "maximum": 50,
+            "default": 20,
+            "description": "Number of denoising steps"
+          },
+          "seed": {
+            "type": "integer",
+            "description": "Random seed. The same seed gives the same video"
+          },
+          "aspect_ratio": {
+            "type": "string",
+            "description": "For example `16:9`. Must not be empty"
+          },
+          "height": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "width": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "fps": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "duration": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "description": "Length in seconds"
+          },
+          "num_frames": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "async": {
+            "type": "boolean",
+            "description": "false = sync mode (see the `async` query parameter)"
+          }
+        }
+      },
+      "VideoRequestParameters": {
+        "type": "object",
+        "description": "The parameters of the job as Python's model_dump shows them: every field is present and a field that was not sent is null (`num_inference_steps` shows the default, 20).",
+        "properties": {
+          "prompt": {
+            "type": "string"
+          },
+          "negative_prompt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "num_inference_steps": {
+            "type": "integer"
+          },
+          "seed": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "aspect_ratio": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "height": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "width": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "fps": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "duration": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "num_frames": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        }
+      },
+      "VideoJob": {
+        "type": "object",
+        "required": [
+          "id",
+          "job_type",
+          "status",
+          "created_at",
+          "model",
+          "request_parameters"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Public job id"
+          },
+          "job_type": {
+            "type": "string",
+            "enum": [
+              "video"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "in_progress",
+              "completed",
+              "failed",
+              "cancelled",
+              "cancelling"
+            ]
+          },
+          "created_at": {
+            "type": "integer",
+            "description": "Unix time in seconds"
+          },
+          "model": {
+            "type": "string"
+          },
+          "request_parameters": {
+            "$ref": "#/components/schemas/VideoRequestParameters"
+          },
+          "completed_at": {
+            "type": "integer",
+            "description": "Unix time in seconds. Present once the job is finished"
+          },
+          "error": {
+            "type": "object",
+            "description": "Present when the job failed",
+            "properties": {
+              "code": {
+                "type": "string",
+                "example": "processing_error"
+              },
+              "message": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "VideoDeleteResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "object": {
+            "type": "string",
+            "enum": [
+              "video"
+            ]
+          },
+          "deleted": {
+            "type": "boolean"
+          }
+        }
+      },
+      "VideoError": {
+        "type": "object",
+        "description": "FastAPI-style `detail` plus the OpenAI-style `error` object",
+        "properties": {
+          "detail": {
+            "type": "string"
+          },
+          "error": {
+            "type": "object",
+            "properties": {
+              "message": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "example": "invalid_request_error"
+              },
+              "param": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "code": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
           }
         }
       },

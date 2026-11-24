@@ -81,6 +81,7 @@ dit_runner_log_map = {
     ModelRunners.TT_FLUX_1_DEV.value: "FLUX.1-dev",
     ModelRunners.TT_FLUX_1_SCHNELL.value: "FLUX.1-schnell",
     ModelRunners.TT_FLUX_1_KONTEXT_DEV.value: "FLUX.1-Kontext-dev",
+    ModelRunners.TT_FLUX_2_KLEIN_4B.value: "FLUX.2-klein-4B",
     ModelRunners.TT_MOTIF_IMAGE_6B_PREVIEW.value: "Motif-Image-6B-Preview",
     ModelRunners.TT_IDEOGRAM_4.value: "Ideogram-4",
     ModelRunners.TT_MOCHI_1.value: "Mochi1",
@@ -99,6 +100,7 @@ dit_runner_log_map = {
     ModelRunners.TT_MINIMAX_H3_REF2VA_LIGHTX2V.value: "MiniMaxH3-Ref2VA-LightX2V",
     ModelRunners.TT_QWEN_IMAGE.value: "Qwen-Image",
     ModelRunners.TT_QWEN_IMAGE_2512.value: "Qwen-Image-2512",
+    ModelRunners.TT_QWEN_IMAGE_EDIT_2511.value: "Qwen-Image-Edit-2511",
 }
 
 DIT_WEIGHTS_DISTRIBUTION_TIMEOUT_SECONDS = 6000
