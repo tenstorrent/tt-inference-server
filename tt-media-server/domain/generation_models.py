@@ -56,6 +56,10 @@ GENERATION_MODELS: Mapping[str, GenerationModel] = _GenerationModels(
             "domain.minimax_h3_request",
             "MINIMAX_H3_FL2VA_LIGHTX2V",
         ),
+        ModelRunners.TT_FLUX_2_KLEIN_4B.value: (
+            "domain.flux2_klein_4b_request",
+            "FLUX2_KLEIN_4B",
+        ),
         ModelRunners.TT_MINIMAX_H3_REF2VA.value: (
             "domain.minimax_h3_request",
             "MINIMAX_H3_REF2VA",

@@ -16,6 +16,7 @@ from unittest.mock import Mock
 
 import numpy as np
 import pytest
+from domain.flux2_klein_4b_request import Flux2klein4bRequest
 from domain.ltx23_distilled_request import Ltx23DistilledRequest
 from domain.minimax_h3_request import (
     MiniMaxH3FL2VARequest,
@@ -304,6 +305,35 @@ def test_wan_warmup_conditions_the_last_frame(monkeypatch):
         (call,) = runner.pipeline.calls
         frame_positions.add(tuple(pos for _, pos in call["image_prompt"]))
     assert frame_positions == {(0,), (0, 80)}
+
+
+@pytest.mark.parametrize("with_images", [False, True])
+def test_klein_edits_only_with_images(with_images):
+    runner = _runner("TTFlux2Klein4BRunner")
+    files = {"images": [_png(8, 16)]} if with_images else {}
+    request = _resolved(Flux2klein4bRequest(prompt="a cat"), 1024, 1024, files)
+    runner.run([request])
+    (call,) = runner.pipeline.calls
+    if with_images:
+        assert [image.size for image in call["images"]] == [(8, 16)]
+    else:
+        assert call["images"] is None
+    assert call["num_inference_steps"] == 4
+
+
+def test_klein_pipeline_warms_itself_up(monkeypatch):
+    module = Mock()
+    monkeypatch.setitem(
+        sys.modules, "models.tt_dit.pipelines.flux2.pipeline_flux2", module
+    )
+    runner = _runner("TTFlux2Klein4BRunner")
+    runner.ttnn_device = Mock()
+    runner.settings = SimpleNamespace(
+        model_weights_path="black-forest-labs/FLUX.2-klein-4B"
+    )
+    runner.create_pipeline()
+    assert module.Flux2Pipeline.create_pipeline.call_args.kwargs["trace_warmup"] is True
+    assert runner.warmup_requests() == []
 
 
 @pytest.fixture
