@@ -134,7 +134,8 @@ void SingleProcessWorker::start() {
           cfg.runner_config, taskQueue->get(), audioQueue->get(),
           cfg.cancel_queue.get());
     } else if (tt::config::isImageService() ||
-               tt::config::isEmbeddingService()) {
+               tt::config::isEmbeddingService() ||
+               tt::config::isVideoService()) {
       runner_ = tt::utils::ipc_runner_factory::createIpcRunner(
           tt::config::modelService(), cfg.runner_config, nullptr, nullptr,
           nullptr);
@@ -172,7 +173,8 @@ void SingleProcessWorker::start() {
         throw;
       }
     });
-    if (tt::config::isImageService() || tt::config::isEmbeddingService()) {
+    if (tt::config::isImageService() || tt::config::isEmbeddingService() ||
+        tt::config::isVideoService()) {
       TT_LOG_INFO("[SingleProcessWorker] Worker {} runner loop exited ({})",
                   worker_id, runner_ ? runner_->runnerType() : "unknown");
     } else {

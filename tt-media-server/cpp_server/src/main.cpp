@@ -89,6 +89,7 @@ tt::worker::MetricsLayout metricsLayoutFromConfig() {
     case tt::config::ModelService::TTS:
       return tt::worker::MetricsLayout::TTS_RUNNER;
     case tt::config::ModelService::IMAGE:
+    case tt::config::ModelService::VIDEO:
       return tt::worker::MetricsLayout::UNKNOWN;
   }
   return tt::worker::MetricsLayout::UNKNOWN;
