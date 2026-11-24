@@ -14,6 +14,13 @@ def test_known_mapping_resolves_to_existing_file():
     assert path.is_file()
 
 
+@pytest.mark.parametrize("device", ["p300", "p300x2"])
+def test_multichip_blackhole_boards_share_the_p150_expectation(device):
+    assert expected_config_path("Llama-3.1-8B-Instruct", device) == (
+        expected_config_path("Llama-3.1-8B-Instruct", "p150")
+    )
+
+
 def test_device_is_case_insensitive():
     lower = expected_config_path("Llama-3.1-8B-Instruct", "p150")
     upper = expected_config_path("Llama-3.1-8B-Instruct", "P150")

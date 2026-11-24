@@ -20,7 +20,10 @@ EXPECTED_CONFIG_DIR = Path(__file__).parent / "expected"
 # "Llama-3.1-8B-Instruct"), which is what _build_training_cmd forwards — NOT the
 # full HF repo path.
 _EXPECTED_BY_MODEL_DEVICE: Dict[Tuple[str, str], str] = {
+    # The runner trains on chip 0 only, so every Blackhole board runs the same job.
     ("Llama-3.1-8B-Instruct", "p150"): "llama_3_1_8b_instruct_sst2.yaml",
+    ("Llama-3.1-8B-Instruct", "p300"): "llama_3_1_8b_instruct_sst2.yaml",
+    ("Llama-3.1-8B-Instruct", "p300x2"): "llama_3_1_8b_instruct_sst2.yaml",
 }
 
 

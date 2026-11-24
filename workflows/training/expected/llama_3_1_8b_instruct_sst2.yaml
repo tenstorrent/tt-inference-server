@@ -4,7 +4,8 @@
 #
 # Expected LoRA training-loss trajectory for meta-llama/Llama-3.1-8B-Instruct on
 # SST-2, run through the media server's `ttml-training-lora` runner (tt-metal's
-# tt-train SFTTrainer) on P150 (see workflows/training/registry.py).
+# tt-train SFTTrainer) on P150, P300 and P300X2, all single-chip (see
+# workflows/training/registry.py).
 #
 # expected_losses is empty until a P150 run on an image built with
 # BUILD_TT_TRAIN=true records the trajectory; until then the gate grades only
