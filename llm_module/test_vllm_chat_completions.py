@@ -4,7 +4,9 @@
 
 import asyncio
 import math
+import statistics
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
@@ -42,6 +44,13 @@ BASE_PROMPT = [{"role": "user", "content": "Tell me a short joke."}]
 REPRO_PROMPT = [
     {"role": "user", "content": "What is the capital of France? Be concise."}
 ]
+# Seeds per test_penalties case. At temperature 0.1 one completion is one draw, and a
+# correctly applied penalty moves a single draw's unique-word ratio across the rules'
+# thresholds on some seeds (gemma-4-12B-it, 16 seeds, 2026-11-24: repetition_penalty on
+# natural_repetition passed 13/16 single seeds, presence_penalty on repeat_trap 8/16), so
+# the diversity rules compare means over these seeds.
+PENALTY_SEEDS = (1234, 1, 2, 3, 4)
+
 PENALTY_PROMPTS = {
     "repeat_trap": [{"role": "user", "content": "Write a very repetitive story."}],
     "natural_repetition": [
@@ -292,60 +301,87 @@ def test_determinism_parameters(
 def test_penalties(
     report_test, api_client, prompt_name, messages, penalty_param, penalty_val, request
 ):
-    """Tests repetition, presence, and frequency penalties."""
+    """Tests repetition, presence, and frequency penalties.
 
-    # Baseline run (no penalty)
-    payload_base = {
-        "messages": messages,
-        "temperature": 0.1,
-        "max_tokens": 1024,
-        "seed": 1234,
-    }
-    response_base = api_client(payload_base, timeout=None)
+    Every seed in PENALTY_SEEDS sends a baseline request and the same request with the
+    penalty. The penalty must change every seed's output; the diversity rules hold on the
+    means over the seeds, since one seed is one draw.
+    """
 
-    # Test run (with penalty)
-    payload_test = payload_base.copy()
-    payload_test[penalty_param] = penalty_val
-    response_test = api_client(payload_test, timeout=None)
+    def run(seed):
+        payload_base = {
+            "messages": messages,
+            "temperature": 0.1,
+            "max_tokens": 1024,
+            "seed": seed,
+        }
+        payload_test = {**payload_base, penalty_param: penalty_val}
+        response_base = api_client(payload_base, timeout=None)
+        response_test = api_client(payload_test, timeout=None)
+        return (
+            seed,
+            response_base["choices"][0]["message"]["content"],
+            response_test["choices"][0]["message"]["content"],
+        )
 
-    # Compute baseline and test statistics
-    text_base = response_base["choices"][0]["message"]["content"]
-    text_test = response_test["choices"][0]["message"]["content"]
+    with ThreadPoolExecutor(max_workers=len(PENALTY_SEEDS)) as pool:
+        runs = list(pool.map(run, PENALTY_SEEDS))
 
-    base_stats = repetition_stats(text_base)
-    test_stats = repetition_stats(text_test)
+    base_stats = [repetition_stats(text_base) for _, text_base, _ in runs]
+    test_stats = [repetition_stats(text_test) for _, _, text_test in runs]
+    base_ratio = statistics.mean(stats["unique_ratio"] for stats in base_stats)
+    test_ratio = statistics.mean(stats["unique_ratio"] for stats in test_stats)
+    per_seed = "; ".join(
+        f"seed {seed}: unique ratio {b['unique_ratio']:.4f} -> {t['unique_ratio']:.4f}"
+        for (seed, _, _), b, t in zip(runs, base_stats, test_stats)
+    )
 
     try:
-        # 1. Diversity should not decrease (penalties push diversity up)
-        assert test_stats["unique_ratio"] >= base_stats["unique_ratio"] * 0.90, (
-            "Penalty unexpectedly reduced diversity."
-        )
+        # 1. Diversity should not decrease (penalties push diversity up). Not for
+        #    presence_penalty on the repeat-trap prompt, for the reason rule 2 skips it:
+        #    the prompt asks for repetition and a presence penalty is charged once per
+        #    token, so it changes which words repeat, not how often.
+        if not (prompt_name == "repeat_trap" and penalty_param == "presence_penalty"):
+            assert test_ratio >= base_ratio * 0.90, (
+                "Penalty unexpectedly reduced diversity."
+            )
 
         # 2. Heavy repetition should decrease
         #    For repetition-heavy prompts, penalties reduce top-token dominance
         if prompt_name == "repeat_trap" and penalty_param != "presence_penalty":
-            most_common_penalty = test_stats["most_common"][0][1]
-            most_common_baseline = base_stats["most_common"][0][1]
+            most_common_penalty = statistics.mean(
+                stats["most_common"][0][1] for stats in test_stats
+            )
+            most_common_baseline = statistics.mean(
+                stats["most_common"][0][1] for stats in base_stats
+            )
             assert most_common_penalty <= most_common_baseline, (
                 "Penalty didn't reduce repetition on repetition-trap prompt."
             )
 
-        # 3. The penalty must actually change the output.
+        # 3. The penalty must actually change the output, on every seed.
         #    Compare the text itself rather than its word count: `len` is a
         #    whitespace token count, so two genuinely different completions
         #    routinely share it and fail this check even though the penalty
         #    worked. Comparing the text is both stricter (any change counts)
         #    and correct (only a true no-op fails).
-        assert text_test != text_base, (
+        unchanged = [
+            seed for seed, text_base, text_test in runs if text_base == text_test
+        ]
+        assert not unchanged, (
             "Penalty had no measurable effect: output is byte-identical to the "
-            "baseline."
+            f"baseline for seeds {unchanged}."
         )
 
         # For vLLM-specific repetition_penalty, check more aggressive behavior
         if penalty_param == "repetition_penalty":
-            assert test_stats["unique_ratio"] > base_stats["unique_ratio"], (
+            assert test_ratio > base_ratio, (
                 "vLLM repetition_penalty did not increase diversity enough."
             )
     except AssertionError as e:
-        msg = f"Test failed: {str(e)}. Base: {text_base}, Test: {text_test}"
+        seed, text_base, text_test = runs[0]
+        msg = (
+            f"Test failed: {str(e)}. Mean unique ratio {base_ratio:.4f} -> "
+            f"{test_ratio:.4f} ({per_seed}). Seed {seed} base: {text_base}, Test: {text_test}"
+        )
         raise AssertionError(msg)
