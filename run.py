@@ -51,6 +51,7 @@ from workflows.run_docker_server import (
 )
 from workflows.runtime_config import RuntimeConfig
 from workflows.eval_shard import parse_eval_shard  # noqa: E402
+from workflows.agentic_task_names import parse_task_names  # noqa: E402
 from workflows.setup_host import setup_host
 from workflows.utils import (
     ensure_readwriteable_dir,
@@ -564,6 +565,18 @@ def parse_arguments():
         "accepted. When unset (or 'all'), runs every EVALS_AGENTIC task configured "
         "for the model.",
     )
+    agentic_group.add_argument(
+        "--agentic-task-names",
+        type=str,
+        default=None,
+        metavar="NAMES",
+        help="Run only these tasks of one agentic benchmark under --workflow agentic: "
+        "a comma-separated list, or @file with one name per line (Harbor task names, "
+        "sent as --include-task-name). Overrides the configured task list and its "
+        "n_tasks cap. The run is graded PARTIAL; merge the partial runs with "
+        "`python -m report_module.merge_agentic_runs` to grade the benchmark. "
+        "Mutually exclusive with --limit-samples-mode / --ci-mode.",
+    )
 
     agentic_traces_group = parser.add_argument_group(
         "Agentic-traces benchmark",
@@ -900,6 +913,22 @@ def parse_arguments():
             f"--workflow agentic or --workflow release (got --workflow {args.workflow})."
         )
 
+    if args.agentic_task_names is not None:
+        if args.workflow != "agentic":
+            parser.error(
+                "--agentic-task-names requires --workflow agentic "
+                f"(got --workflow {args.workflow})."
+            )
+        if args.limit_samples_mode:
+            parser.error(
+                "--agentic-task-names and --limit-samples-mode (or --ci-mode) are "
+                "mutually exclusive."
+            )
+        try:
+            args.agentic_task_names = parse_task_names(args.agentic_task_names)
+        except ValueError as exc:
+            parser.error(f"--agentic-task-names: {exc}")
+
     if args.repeat_evals is not None and args.repeat_evals < 1:
         parser.error(
             f"--repeat-evals must be a positive integer (got {args.repeat_evals})."
@@ -1080,6 +1109,9 @@ def format_cli_args_summary(runtime_config):
         f"  eval_samples:               {runtime_config.eval_samples}",
         f"  eval_tasks:                 {runtime_config.eval_tasks}",
         f"  eval_shard:                 {runtime_config.eval_shard}",
+        f"  agentic_task_names:         {runtime_config.agentic_task_names}"
+        if runtime_config.agentic_task_names
+        else None,
         f"  skip_system_sw_validation:  {runtime_config.skip_system_sw_validation}",
         "",
         "Host Storage Options:",

@@ -338,6 +338,55 @@ class TestArgumentParsing:
                 assert "--agentic-benchmark" in stderr_output
                 assert "--workflow agentic or --workflow release" in stderr_output
 
+    def _agentic_args(self, *extra):
+        return [
+            "run.py",
+            "--model",
+            "Mistral-7B-Instruct-v0.3",
+            "--workflow",
+            "agentic",
+            "--tt-device",
+            "n150",
+            *extra,
+        ]
+
+    def test_agentic_task_names_parse_list_and_file(self, tmp_path):
+        with patch("sys.argv", self._agentic_args("--agentic-task-names", "a, b")):
+            parsed = parse_arguments()
+        assert parsed.agentic_task_names == ["a", "b"]
+        names = tmp_path / "names.txt"
+        names.write_text("terminal-bench/x\n\nterminal-bench/y\n")
+        with patch("sys.argv", self._agentic_args("--agentic-task-names", f"@{names}")):
+            parsed = parse_arguments()
+        assert parsed.agentic_task_names == ["terminal-bench/x", "terminal-bench/y"]
+        config = RuntimeConfig.from_args(parsed)
+        assert config.agentic_task_names == ["terminal-bench/x", "terminal-bench/y"]
+        assert RuntimeConfig.from_dict(config.to_dict()).agentic_task_names == [
+            "terminal-bench/x",
+            "terminal-bench/y",
+        ]
+
+    @pytest.mark.parametrize(
+        "extra",
+        [
+            ["--agentic-task-names", "a,,b"],
+            ["--agentic-task-names", " "],
+            ["--agentic-task-names", "a,a"],
+            ["--agentic-task-names", "@/nonexistent/names.txt"],
+            ["--agentic-task-names", "a", "--limit-samples-mode", "ci-nightly"],
+            ["--agentic-task-names", "a", "--ci-mode"],
+        ],
+    )
+    def test_agentic_task_names_rejects_bad_values_and_limit_modes(self, extra):
+        with patch("sys.argv", self._agentic_args(*extra)):
+            with pytest.raises(SystemExit):
+                parse_arguments()
+
+    def test_agentic_task_names_requires_agentic_workflow(self, base_args):
+        with patch("sys.argv", ["run.py"] + base_args + ["--agentic-task-names", "a"]):
+            with pytest.raises(SystemExit):
+                parse_arguments()
+
 
 class TestModelSpecCliArgsCompatibility:
     def test_populate_model_spec_cli_args_uses_runtime_config_values(self):

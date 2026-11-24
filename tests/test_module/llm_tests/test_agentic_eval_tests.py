@@ -1555,3 +1555,118 @@ class TestAgenticRequestOverrides:
         task = _harbor_task()
         cfg = build_harbor_config(task, _server(), _driver_context())
         assert cfg.agent_kwargs == dict(task.agentic_eval_config.agent_kwargs)
+
+
+class TestAgenticTaskNames:
+    """--agentic-task-names: an explicit slice of one benchmark, graded PARTIAL."""
+
+    NAMES = ["terminal-bench/a", "terminal-bench/b", "terminal-bench/c"]
+
+    def _rc(self, names=None, limit_samples_mode=None):
+        return SimpleNamespace(
+            limit_samples_mode=limit_samples_mode, agentic_task_names=names
+        )
+
+    def test_names_override_config_lists_and_n_tasks_cap(self):
+        task = _harbor_task()
+        task.agentic_eval_config.task_names = ["terminal-bench/configured"]
+        task.agentic_eval_config.n_tasks = 2
+        rc = self._rc(self.NAMES)
+
+        assert resolve_task_names(task, rc) == self.NAMES
+        assert resolve_n_tasks(task, rc) == 3
+        # Without the flag the config still decides.
+        assert resolve_task_names(task, self._rc()) == ["terminal-bench/configured"]
+        assert resolve_n_tasks(task, self._rc()) == 2
+
+    def test_names_reach_harbor_as_include_task_name(self, tmp_path):
+        task = _harbor_task()
+        task.agentic_eval_config.agent_timeout_sec = None  # plain CLI path
+        rc = self._rc(self.NAMES)
+        cfg = build_harbor_config(
+            task,
+            _server(),
+            DriverContext(output_dir=tmp_path, device="N150"),
+            runtime_config=rc,
+            n_tasks=resolve_n_tasks(task, rc),
+        )
+        with patch("llm_module.agentic.harbor.run_with_progress") as run_cmd:
+            run_cmd.return_value = 17
+            run_harbor(cfg)
+        argv = run_cmd.call_args.args[0]
+        included = [
+            argv[i + 1] for i, a in enumerate(argv) if a == "--include-task-name"
+        ]
+        assert included == self.NAMES
+        assert argv[argv.index("--n-tasks") + 1] == "3"
+
+    def test_names_reach_the_harbor_config_file(self, tmp_path):
+        task = _harbor_task()  # agent_timeout_sec set -> --config path
+        rc = self._rc(self.NAMES)
+        cfg = build_harbor_config(
+            task,
+            _server(),
+            DriverContext(output_dir=tmp_path, device="N150"),
+            runtime_config=rc,
+            n_tasks=resolve_n_tasks(task, rc),
+        )
+        with patch("llm_module.agentic.harbor.run_with_progress") as run_cmd:
+            run_cmd.return_value = 17
+            run_harbor(cfg)
+        config_path = cfg.jobs_dir / f"{cfg.task_name}_harbor_config.json"
+        dataset = json.loads(config_path.read_text())["datasets"][0]
+        assert dataset["task_names"] == self.NAMES
+        assert dataset["n_tasks"] == 3
+
+    def test_subset_run_is_partial_never_pass(self):
+        from report_module.acceptance_criteria import (
+            acceptance_criteria_check,
+            build_acceptance_export,
+        )
+        from report_module.schema import ReportSchema
+        from report_module.status import TestStatus
+
+        driver = HarborAgenticDriver(_harbor_task(), runtime_config=self._rc(["x"]))
+        block = driver.parse(HARBOR_RESULT_FIXTURE, device="N150")  # a passing score
+
+        assert block.data["status"] == TestStatus.PARTIAL.value
+        assert block.data["accuracy_check"] == ReportCheckTypes.NA
+        assert "--agentic-task-names" in block.data["reason"]
+        assert block.data["score"] == pytest.approx(62.0)  # still measured
+        accepted, blockers, categories = acceptance_criteria_check(
+            ReportSchema(metadata={"report_id": "r"}, sections=[block])
+        )
+        export = build_acceptance_export(accepted, blockers, categories)
+        assert accepted is False
+        assert export["acceptance_criteria_metadata"]["enforcement_result"] == "PARTIAL"
+
+    def test_full_run_is_not_partial(self):
+        driver = HarborAgenticDriver(_harbor_task(), runtime_config=self._rc())
+        block = driver.parse(HARBOR_RESULT_FIXTURE, device="N150")
+        assert "status" not in block.data
+        assert block.data["accuracy_check"] == ReportCheckTypes.PASS
+
+    def test_names_need_exactly_one_selected_benchmark(self):
+        ctx = MagicMock()
+        ctx.all_params.tasks = [
+            _harbor_task(task_name="terminal_bench_2_1"),
+            _harbor_task(task_name="tau3_bench_banking"),
+        ]
+        ctx.runtime_config = SimpleNamespace(
+            agentic_benchmark=None, agentic_task_names=["a"]
+        )
+        with pytest.raises(RuntimeError, match="exactly one agentic benchmark"):
+            _select_agentic_tasks(ctx)
+        ctx.runtime_config.agentic_benchmark = "tb2.1"
+        assert [t.task_name for t in _select_agentic_tasks(ctx)] == [
+            "terminal_bench_2_1"
+        ]
+
+    def test_excluded_names_are_warned_about(self, caplog):
+        from llm_module.drivers.agentic import _warn_excluded_explicit_names
+
+        task = _harbor_task()
+        task.agentic_eval_config.exclude_task_names = ["terminal-bench/b*"]
+        with caplog.at_level("WARNING"):
+            _warn_excluded_explicit_names(task, self._rc(self.NAMES))
+        assert "terminal-bench/b" in caplog.text

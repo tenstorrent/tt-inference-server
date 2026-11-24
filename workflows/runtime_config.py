@@ -110,6 +110,10 @@ class RuntimeConfig:
     # EVALS_AGENTIC task(s) to run (comma-separated aliases / raw task names);
     # unset runs them all.
     agentic_benchmark: Optional[str] = None
+    # Explicit Harbor task names for one agentic benchmark (run.py
+    # --agentic-task-names, already parsed): replaces the configured task list
+    # and n_tasks, and grades the run PARTIAL (merge_agentic_runs grades the set).
+    agentic_task_names: Optional[List[str]] = None
 
     # Standard evals (--workflow evals). ``repeat_evals`` runs the evals
     # workflow N times (drives the engine's generic ``--repeat`` loop).
@@ -220,6 +224,7 @@ class RuntimeConfig:
             ),
             spec_decode_metrics_url=getattr(args, "spec_decode_metrics_url", None),
             agentic_benchmark=getattr(args, "agentic_benchmark", None),
+            agentic_task_names=getattr(args, "agentic_task_names", None),
             repeat_evals=getattr(args, "repeat_evals", 1) or 1,
             agentic_traces=getattr(args, "agentic_traces", False),
             agentic_traces_mode=getattr(args, "agentic_traces_mode", None) or "full",

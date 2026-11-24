@@ -322,6 +322,65 @@ Outputs are stored in: `workflow_logs/evals_output/eval_Llama-3.2-1B-Instruct_n3
 
 See [evals docs](../reference_config/evals/README.md) for more detail on code.
 
+### Splitting one eval across runs
+
+A long eval can run as several partial runs, on one server or several, and be
+graded once as a whole. Each partial run's report is `PARTIAL` (a measurement,
+never PASS/FAIL); only the merge tool grades the task, with the same reference
+and accept rule as an unsplit run. Both merge tools exit 0 PASS, 1 graded but
+not PASS, 2 the runs do not form one complete set (nothing graded).
+
+All of a run's outputs go under the workflow log root, `<repo>/workflow_logs`,
+or `$CACHE_ROOT/workflow_logs` when `CACHE_ROOT` is set. Set a distinct
+`CACHE_ROOT` per run to keep each run's outputs in their own directory.
+
+**lm-eval tasks: shards.** `--eval-shard i/N` (0-based) runs every N-th doc of
+each selected task from position i; the N shards are disjoint and cover the
+task's doc set. All shards must share the package, image, ref and eval command
+(including the server URL).
+
+```bash
+python3 run.py --model <hf_repo> --tt-device <device> --workflow evals \
+    --eval-tasks <task> --eval-shard 0/4
+python -m report_module.merge_eval_shards --model <hf_repo> --task <task> \
+    --out <dir> <shard_log_root> [<shard_log_root> ...]
+```
+
+A shard dir is searched recursively for `eval_shard_<task>.json` and the
+lm-eval output next to it (under
+`reports_output/evals/<model>_<device>_evals/eval-attempt-<id>/`), and for the
+shard's `runtime_model_specs/runtime_model_spec_*.json`. The merge writes
+`results_merged.json`, `eval_shard_merge_report.json`, and run.py's report
+layout (`reports_output/evals/data/report_data_<id>.json`).
+
+**Agentic benchmarks: task slices.** `--workflow agentic --agentic-task-names
+a,b,c` (or `@file`, one Harbor task name per line) runs only those tasks of one
+benchmark; narrow the run to that benchmark with `--agentic-benchmark`. The
+list replaces the configured task list and its `n_tasks` cap and cannot be
+combined with `--limit-samples-mode` / `--ci-mode`. Each run writes a Harbor
+job dir,
+`reports_output/agentic/<model>_<device>_agentic/eval_<model>/agentic/<task>_<stamp>/`,
+holding the job's `result.json` and one dir per trial.
+
+```bash
+python3 run.py --model <hf_repo> --tt-device <device> --workflow agentic \
+    --agentic-benchmark tb2.1 --agentic-task-names @slice0.txt
+python -m report_module.merge_agentic_runs --model <hf_repo> \
+    --task terminal_bench_2_1 --out <dir> [--expected-tasks @all.txt] \
+    <job_dir_or_parent> [...]
+```
+
+The merge takes job dirs, their `result.json`, or any directory above them.
+It checks that every expected task (`--expected-tasks`, else the task's
+configured `task_names` when they are plain names, else the union of the runs,
+which must then number the configured `n_tasks`) ran exactly once. A task found
+in several jobs keeps the job that finished it last and is reported as a
+duplicate. The score is Harbor's: the mean reward over all trials, an errored
+trial scoring 0. It writes `merged_result.json` (`status`, `accuracy_check`,
+`score` and `stderr` in percent, `n`, `n_resolved`, `n_errored`, `n_errors`,
+`reference`, `published`, `tolerance`, `missing`, `duplicates`, `problems`,
+`per_task`) and `merge_report.md`.
+
 ## Reports
 
 Reports are generated **automatically** at the end of every workflow — each of `benchmarks`, `evals`, `spec_tests`, `stress_tests`, and `release` writes its own markdown + JSON summary (via the v2 `report_module`) when it completes. There is no separate `reports` workflow to run.

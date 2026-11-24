@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import fnmatch
 import json
 import logging
 import os
@@ -70,6 +71,7 @@ class AgenticEvalDriver(LLMDriver):
             score=task.score,
             limit_mode=_get_limit_mode(runtime_config),
             priority=getattr(task, "priority", "must"),
+            subset_reason=subset_run_reason(runtime_config),
         )
 
     def result_path(self, server: ServerConnection, context: DriverContext) -> Path:
@@ -105,6 +107,7 @@ class AgenticEvalDriver(LLMDriver):
             result_path=result_path,
             limit_mode=_get_limit_mode(self.runtime_config),
             priority=getattr(self.task, "priority", "must"),
+            subset_reason=subset_run_reason(self.runtime_config),
         )
         return DriverResult(return_code=rc, raw=raw, raw_path=result_path)
 
@@ -133,6 +136,7 @@ class HarborAgenticDriver(AgenticEvalDriver):
             return DriverResult(return_code=0, raw=None, raw_path=None)
         self._run_stamp = _run_timestamp()
         _cfg = self.task.agentic_eval_config
+        _warn_excluded_explicit_names(self.task, self.runtime_config)
         logger.info(
             "[agentic] starting %r: n_tasks=%s n_concurrent=%s agent=%s dataset=%s model=%s",
             self.task.task_name,
@@ -286,10 +290,36 @@ def build_harbor_config(
     )
 
 
+def explicit_task_names(runtime_config: Any = None) -> Optional[List[str]]:
+    """The run's ``--agentic-task-names`` list, or None when not set."""
+    names = getattr(runtime_config, "agentic_task_names", None)
+    return list(names) if isinstance(names, (list, tuple)) and names else None
+
+
+def subset_run_reason(runtime_config: Any = None) -> Optional[str]:
+    """Why this agentic run grades only part of the benchmark, or None.
+
+    An explicit ``--agentic-task-names`` list is a slice of the benchmark: its
+    score is a measurement, never a verdict, like an lm-eval ``--eval-shard``.
+    Only ``python -m report_module.merge_agentic_runs`` over all the slices
+    grades the benchmark.
+    """
+    names = explicit_task_names(runtime_config)
+    if names is None:
+        return None
+    return (
+        f"explicit --agentic-task-names subset ({len(names)} task(s)); "
+        "merge all slices with report_module.merge_agentic_runs to grade"
+    )
+
+
 def resolve_task_names(task: Any, runtime_config: Any = None) -> List[str]:
     agentic_config = task.agentic_eval_config
     if agentic_config is None:
         return []
+    explicit = explicit_task_names(runtime_config)
+    if explicit is not None:
+        return explicit
     limit_mode = _get_limit_mode(runtime_config)
     if limit_mode is not None and limit_mode in agentic_config.task_names_map:
         return agentic_config.task_names_map[limit_mode]
@@ -298,6 +328,11 @@ def resolve_task_names(task: Any, runtime_config: Any = None) -> List[str]:
 
 def resolve_n_tasks(task: Any, runtime_config: Any = None) -> Optional[int]:
     agentic_config = task.agentic_eval_config
+    explicit = explicit_task_names(runtime_config)
+    if explicit is not None:
+        # The list is the selection; the configured n_tasks cap (sized for the
+        # full benchmark) must not truncate it.
+        return len(explicit)
     limit_mode = _get_limit_mode(runtime_config)
     if limit_mode is None:
         return agentic_config.n_tasks if agentic_config else None
@@ -312,6 +347,24 @@ def resolve_n_tasks(task: Any, runtime_config: Any = None) -> Optional[int]:
         )
         return 1
     return int(limit_arg)
+
+
+def _warn_excluded_explicit_names(task: Any, runtime_config: Any = None) -> None:
+    """Log requested names that the task's exclude_task_names will drop.
+
+    Harbor applies excludes after includes without a word, so such a task
+    silently never runs and a merge of the slices reports it missing.
+    """
+    names = explicit_task_names(runtime_config) or []
+    excludes = getattr(task.agentic_eval_config, "exclude_task_names", None) or []
+    dropped = [n for n in names if any(fnmatch.fnmatch(n, p) for p in excludes)]
+    if dropped:
+        logger.warning(
+            "[agentic] %s: --agentic-task-names %s match the configured "
+            "exclude_task_names and will not run",
+            task.task_name,
+            dropped,
+        )
 
 
 def _get_limit_mode(runtime_config: Any = None) -> Optional[EvalLimitMode]:
@@ -351,6 +404,8 @@ __all__ = [
     "HarborAgenticDriver",
     "build_harbor_config",
     "make_agentic_driver",
+    "explicit_task_names",
     "resolve_n_tasks",
     "resolve_task_names",
+    "subset_run_reason",
 ]

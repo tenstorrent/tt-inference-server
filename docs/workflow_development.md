@@ -549,6 +549,13 @@ python run.py --model moonshotai/Kimi-K2.7-Code --workflow agentic \
 A selection that matches no configured task fails fast with the list of
 available task names.
 
+To run one benchmark in slices, add `--agentic-task-names a,b,c` (or `@file`)
+to a run narrowed to that benchmark. The names reach Harbor as
+`--include-task-name`, override the configured task list and `n_tasks`, and the
+run is graded `PARTIAL`. `python -m report_module.merge_agentic_runs` merges the
+slices' Harbor jobs and grades the benchmark; see
+[Splitting one eval across runs](workflows_user_guide.md#splitting-one-eval-across-runs).
+
 ## Agentic-traces benchmark
 
 Replay recorded multi-turn agentic coding traces against an already-up

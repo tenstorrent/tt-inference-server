@@ -104,7 +104,7 @@ def _select_agentic_tasks(ctx: MediaContext) -> list:
     would leave no way to run agentic evals in CI.
 
     When ``--agentic-benchmark`` is set, the agentic tasks are further narrowed
-    to the selected benchmark(s).
+    to the selected benchmark(s). ``--agentic-task-names`` needs exactly one.
     """
     tasks = getattr(ctx.all_params, "tasks", []) or []
     agentic = [
@@ -120,9 +120,19 @@ def _select_agentic_tasks(ctx: MediaContext) -> list:
             len(non_agentic),
             [t.task_name for t in non_agentic],
         )
-    selection = getattr(getattr(ctx, "runtime_config", None), "agentic_benchmark", None)
+    runtime_config = getattr(ctx, "runtime_config", None)
+    selection = getattr(runtime_config, "agentic_benchmark", None)
     if isinstance(selection, str) and selection.strip():
         agentic = _filter_agentic_tasks_by_benchmark(agentic, selection)
+    names = getattr(runtime_config, "agentic_task_names", None)
+    if isinstance(names, (list, tuple)) and names and len(agentic) != 1:
+        # Task names belong to one benchmark's dataset; applying one list to
+        # several benchmarks would run nothing (or the wrong tasks) on the rest.
+        raise RuntimeError(
+            "--agentic-task-names applies to exactly one agentic benchmark, but "
+            f"{len(agentic)} are selected: {[t.task_name for t in agentic]}. "
+            "Narrow the run with --agentic-benchmark <task>."
+        )
     return agentic
 
 

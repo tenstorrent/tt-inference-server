@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Dict, Mapping, Optional, Union
 
 from report_module.schema import Block
+from report_module.status import TestStatus
 from utils.model_naming import slugify_name_parts
 from workflow_module.engine_types import ReportCheckTypes
 from workflow_module.target_pack import get_target_pack
@@ -29,6 +30,7 @@ class AgenticEvalParser(LLMResultParser):
         result_path: Optional[Path] = None,
         limit_mode: Any = None,
         priority: str = "must",
+        subset_reason: Optional[str] = None,
     ) -> None:
         self.task_name = task_name
         self.score = score
@@ -41,6 +43,9 @@ class AgenticEvalParser(LLMResultParser):
         # acceptance check reads it from block data and defaults to "must"
         # when absent, so it has to travel with the block here too.
         self.priority = priority
+        # Set when the run graded only a slice of the benchmark
+        # (--agentic-task-names): the block is then PARTIAL, never PASS/FAIL.
+        self.subset_reason = subset_reason
 
     def parse(self, raw: Mapping[str, Any], *, device: str = "") -> Block:
         metrics = extract_harbor_metrics(raw)
@@ -61,6 +66,20 @@ class AgenticEvalParser(LLMResultParser):
         if self.result_path is not None:
             targets["job_result_path"] = str(self.result_path)
         _attach_harbor_targets(targets, metrics)
+        data = _build_evals_data(
+            task_name=self.task_name,
+            score=self.score,
+            metrics=metrics,
+            limit_mode=self.limit_mode,
+            priority=self.priority,
+        )
+        if self.subset_reason is not None:
+            # A slice is a measurement, never a verdict: explicit PARTIAL
+            # short-circuits grading and acceptance cannot pass on it (as for
+            # an lm-eval --eval-shard run; see llm_eval_tests.subset_run_reason).
+            data["status"] = TestStatus.PARTIAL.value
+            data["reason"] = self.subset_reason
+            data["accuracy_check"] = ReportCheckTypes.NA
 
         return Block(
             kind=self.kind,
@@ -68,13 +87,7 @@ class AgenticEvalParser(LLMResultParser):
             title=f"LLM Eval — {self.task_name}",
             id=slugify_name_parts(self.task_name, device),
             targets=targets,
-            data=_build_evals_data(
-                task_name=self.task_name,
-                score=self.score,
-                metrics=metrics,
-                limit_mode=self.limit_mode,
-                priority=self.priority,
-            ),
+            data=data,
         )
 
     def failure_block(self, *, return_code: int, device: str = "") -> Block:
