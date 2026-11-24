@@ -41,6 +41,7 @@ from ..load_param_tests.test_payloads.audio_payload_60s import (
     dataset as dataset60s,
 )
 from ..test_status import AudioTestStatus
+from .openai_transcription import audio_duration, decode_payload, transcribe_streaming
 
 logger = logging.getLogger(__name__)
 
@@ -253,10 +254,42 @@ async def _transcribe_audio(
     )
 
 
+def _is_vllm(ctx: MediaContext) -> bool:
+    engine = getattr(ctx.model_spec, "inference_engine", None)
+    return getattr(engine, "value", engine) == "vLLM"
+
+
+def _streaming_enabled(ctx: MediaContext) -> bool:
+    return _is_vllm(ctx) or is_streaming_enabled_for_whisper(ctx)
+
+
+def _run_openai_transcription_benchmark(
+    ctx: MediaContext, num_calls: int, audio_b64: str
+) -> list[AudioTestStatus]:
+    audio = decode_payload(audio_b64)
+    model = ctx.model_spec.hf_model_repo
+    duration = asyncio.run(audio_duration(ctx.base_url, model, audio))
+    logger.info(f"Audio duration {duration}s")
+    status_list = []
+    for i in range(num_calls):
+        logger.info(f"Transcribing audio {i + 1}/{num_calls}...")
+        t = asyncio.run(transcribe_streaming(ctx.base_url, model, audio, duration))
+        status_list.append(
+            AudioTestStatus(
+                status=t.ok, elapsed=t.elapsed, ttft=t.ttft, tsu=t.tsu, rtr=t.rtr
+            )
+        )
+    return status_list
+
+
 def _run_audio_transcription_benchmark(
     ctx: MediaContext, num_calls: int, audio_b64: Optional[str] = None
 ) -> list[AudioTestStatus]:
     logger.info(f"Running audio transcription benchmark with {num_calls} calls.")
+    if _is_vllm(ctx):
+        return _run_openai_transcription_benchmark(
+            ctx, num_calls, audio_b64 or dataset30s["file"]
+        )
     status_list: list[AudioTestStatus] = []
     for i in range(num_calls):
         logger.info(f"Transcribing audio {i + 1}/{num_calls}...")
@@ -283,7 +316,7 @@ def _audio_target_checks(
     # defines one
     targets = load_targets(ctx)
     ttft_target_attr = "ttft_ms"
-    if is_streaming_enabled_for_whisper(ctx) and targets.ttft_streaming_ms is not None:
+    if _streaming_enabled(ctx) and targets.ttft_streaming_ms is not None:
         ttft_target_attr = "ttft_streaming_ms"
     return run_tiered_check(
         ctx,
@@ -315,15 +348,17 @@ def _is_whisper(ctx: MediaContext) -> bool:
 
 
 def _run_whisper_benchmark_sweep(ctx: MediaContext, num_calls: int) -> Block:
-    """Multi-size audio benchmark for whisper: runs 30s and 60s clips and
-    emits one ``benchmarks`` block with a row per size.
+    """Multi-size audio benchmark for whisper and vLLM servers: runs 30s and 60s
+    clips and emits one ``benchmarks`` block with a row per size.
 
     Target checks are computed from the 60s (heavier) pass and placed at
-    the top level of ``data`` so the acceptance gate keeps working.
+    the top level of ``data`` so the acceptance gate keeps working. A vLLM server
+    is gated on the 30s pass: it splits the 60s clip into two requests that
+    decode together, so that pass has no per-user T/S/U.
     """
-    GATE_LABEL = "Benchmarks 60s"
+    GATE_LABEL = "Benchmarks 30s" if _is_vllm(ctx) else "Benchmarks 60s"
 
-    streaming_enabled = is_streaming_enabled_for_whisper(ctx)
+    streaming_enabled = _streaming_enabled(ctx)
     preprocessing_enabled = is_preprocessing_enabled_for_whisper(ctx)
 
     records = []
@@ -390,7 +425,7 @@ def run_audio_benchmark(ctx: MediaContext) -> Block:
 
     try:
         num_calls = get_num_calls(ctx)
-        if _is_whisper(ctx):
+        if _is_whisper(ctx) or _is_vllm(ctx):
             return _run_whisper_benchmark_sweep(ctx, num_calls)
         status_list = _run_audio_transcription_benchmark(ctx, num_calls)
     except Exception as e:

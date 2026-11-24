@@ -321,6 +321,13 @@ qwen3_tts_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/audio/qwen3_tts",
 )
+# Its own impl: the MEDIA Qwen3-ASR spec serves the same weights on GALAXY.
+qwen3_asr_omni_impl = ImplSpec(
+    impl_id="qwen3_asr_omni",
+    impl_name="qwen3-asr-omni",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/audio/qwen3_asr",
+)
 forge_vllm_plugin_impl = ImplSpec(
     impl_id="forge_vllm_plugin",
     impl_name="forge-vllm-plugin",
@@ -523,6 +530,7 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "whisper": whisper_impl,
     "speecht5_tts": speecht5_impl,
     "qwen3_tts": qwen3_tts_impl,
+    "qwen3_asr_omni": qwen3_asr_omni_impl,
     "forge_vllm_plugin": forge_vllm_plugin_impl,
     "tt_vllm_plugin": tt_vllm_plugin_impl,
     "sdxl_forge": sdxl_forge_impl,
