@@ -9,8 +9,7 @@ the media files, output size, seed and the prompt the model gets.
 The tt_dit pipelines take the output size per call, so one deployment serves
 every size its request schema allows. Warmup runs every size and input
 combination the pipeline does not warm up itself, so none compiles after the
-server reports ready (FLUX.3's VAE encoder still compiles for a reference
-shape nobody warmed; see TTFlux3ImageKleinRunner).
+server reports ready.
 
 The parameters the API leaves out (steps, guidance, sampler shift) are the
 models' reference defaults.
@@ -378,10 +377,8 @@ FLUX3_WARMUP_REFERENCE_SHAPES = "FLUX3_WARMUP_REFERENCE_SHAPES"
 
 
 def _flux3_warmup_reference_shapes() -> list[tuple[int, int]]:
-    """Reference shapes (``WxH,WxH``) to warm up besides the pipeline's own.
-    Each compiles the VAE encoder for its canvas, 30-50 s and about 150
-    programs apiece (job 193924), so a deployment lists the shapes its users
-    send."""
+    """Extra reference shapes to warm up (``WxH,WxH``); each compiles the VAE
+    encoder for its canvas."""
     raw = os.environ.get(FLUX3_WARMUP_REFERENCE_SHAPES, "")
     shapes = []
     for item in filter(None, (item.strip() for item in raw.split(","))):
@@ -412,20 +409,11 @@ class TTFlux3ImageKleinRunner(_GenerationRunner):
             else resolve_weights_dir("distilled")
         )
         try:
-            # With the upsampler ahead of the deployment (upsampler_frozen),
-            # the pipeline is built without it: no VL model loaded, no second
-            # command queue or trace region, and every size is served.
             pipeline = Flux3KleinPipeline(
                 self.ttnn_device,
                 snapshots={"distilled": snapshot},
                 upsample=not upsampler_frozen(),
             )
-            # Every served size (tt-metal's own, minus 4K with the upsampler
-            # resident): without a reference and with one per reference token
-            # bucket, at the model's steps. The DiT's programs then serve a
-            # reference of any shape; the VAE encoder's compile once per new
-            # reference shape (job 193924: 48 s for a 4096x832 canvas), hence
-            # warmup_requests.
             pipeline.warmup(
                 sizes=tuple(width for width, _ in Flux3ImageKleinRequest.warmup_sizes())
             )
@@ -441,9 +429,8 @@ class TTFlux3ImageKleinRunner(_GenerationRunner):
             SHARED_MESH_PARAMS,
         )
 
-        # tt-metal's test_serving_flux3_klein: a ring with 8 KB packets and
-        # L1_SMALL for the VAE conv2d; SHARED_MESH_PARAMS (two command queues,
-        # a trace region) for the prompt upsampler, which shares the first chip.
+        # as tt-metal's test_serving_flux3_klein; SHARED_MESH_PARAMS for the
+        # resident upsampler
         router = ttnn.FabricRouterConfig()
         router.max_packet_payload_size_bytes = 8192
         return {
@@ -454,9 +441,7 @@ class TTFlux3ImageKleinRunner(_GenerationRunner):
         }
 
     def warmup_requests(self) -> list[GenerationRequest]:
-        # The pipeline warmed its served shapes when it was created; only the
-        # deployment's extra reference shapes compile more (the VAE encoder,
-        # once per shape, whatever the output size).
+        # the pipeline warmed its own shapes; only extra reference shapes are left
         return [
             _warmup_request(
                 Flux3ImageKleinRequest.model_construct(prompt=_WARMUP_PROMPT),
@@ -483,14 +468,12 @@ class TTFlux3ImageKleinRunner(_GenerationRunner):
 
         request = requests[0]
         try:
-            # In their own mode: the prompt upsampler composites a transparent
-            # reference over white, and the reference encoder drops its alpha.
+            # keep alpha: the upsampler composites it over white
             images = tuple(self._images(request, "images", rgb=False))
         except ValueError:
             raise
         except Exception as e:
-            # Submit decoded the same bytes and refused a corrupt file with 422;
-            # whatever still fails here fails the job, not the worker.
+            # fail the job, not the worker
             raise ValueError(f"an input could not be decoded: {e}") from e
         recorder = self._image_stage_recorder()
         output = None
@@ -505,14 +488,9 @@ class TTFlux3ImageKleinRunner(_GenerationRunner):
                     images=images,
                 )
             )
-            # the caption the image was rendered from (the prompt as sent when
-            # the upsampler is frozen), which the output reports as its prompt
             result.image.info["prompt"] = result.prompt
             output = [result.image]
             if recorder is not None:
-                # The pipeline sends no events; its result carries the stage
-                # times (upsample, encode, encode_reference, denoise, decode,
-                # to_host).
                 timings = result.timings
                 recorder.engine_seconds = sum(timings.values())
                 recorder.denoise_seconds = timings.get("denoise")

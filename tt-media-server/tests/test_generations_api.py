@@ -1844,7 +1844,6 @@ async def test_flux3_refuses_4k_at_submit_with_the_upsampler_resident(
     assert response.status_code == 422, response.text
     assert "4K is served with the prompt upsampler ahead" in response.text
     assert device.requests == []
-    # 2K is served
     response = await client.post(
         "/v1/generations/black-forest-labs/flux-3-image-klein",
         json={**body, "size": "2K"},

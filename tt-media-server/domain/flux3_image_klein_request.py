@@ -28,11 +28,8 @@ FLUX3_KLEIN_SIZES: dict[str, tuple[int, int]] = {
 }
 FLUX3_KLEIN_STEPS = 16
 
-# The prompt upsampler runs in the deployment (default: on the first chip) or
-# ahead of it (FLUX3_PROMPT_UPSAMPLER_FROZEN=1: prompts reach the model as
-# sent, the pipeline is built without it). Resident, its reserved DRAM is held
-# on every chip of the mesh and the DiT's 4096 activations no longer fit (jobs
-# 192950, 194825, 194959), so 4K is served only with the upsampler ahead.
+# With the prompt upsampler resident, 4K's activations do not fit next to its
+# DRAM holds.
 FLUX3_PROMPT_UPSAMPLER_FROZEN = "FLUX3_PROMPT_UPSAMPLER_FROZEN"
 FLUX3_RESIDENT_UNSERVED_SIZES = ("4K",)
 
@@ -60,13 +57,12 @@ class Flux3ImageKleinRequest(GenerationRequest):
         description=(
             "What to generate or how to edit, in plain words. The model's prompt "
             "upsampler rewrites it into the detailed caption the model was trained "
-            "on; it runs in the deployment or ahead of it "
-            "(`FLUX3_PROMPT_UPSAMPLER_FROZEN`), and with it ahead the prompt reaches "
-            "the model as sent. Each output reports the caption it was rendered "
-            "from as its `prompt`. At most 20,000 characters; the upsampler's input "
-            "(prompt, reference and template) is at most 8,191 tokens, a longer one "
-            "fails the job, and the caption is encoded, truncated past 4096 "
-            "tokens.\n\n"
+            "on; it runs in the deployment or ahead of it, and with it ahead the "
+            "prompt reaches the model as sent. Each output reports the caption it "
+            "was rendered from as its `prompt`. At most 20,000 characters; the "
+            "upsampler's input (prompt, reference and template) is at most 8,191 "
+            "tokens, a longer one fails the job, and the caption is encoded, "
+            "truncated past 4096 tokens.\n\n"
             "Refer to `images` by tag: `<ref_image_0>` is the first.\n\n"
             "Bounding boxes go at the end of the prompt: tag each element in the "
             "text (`<balloon_1>`), then add one space and a JSON list with a row "
@@ -110,9 +106,8 @@ class Flux3ImageKleinRequest(GenerationRequest):
             "| `aspect_ratio` | `1K`      | `2K`      | `4K`      |\n"
             "| -------------- | --------- | --------- | --------- |\n"
             "| `1:1`          | 1024×1024 | 2048×2048 | 4096×4096 |\n\n"
-            "`4K` is served with the prompt upsampler ahead of the deployment "
-            "(`FLUX3_PROMPT_UPSAMPLER_FROZEN=1`); with it in the deployment, a `4K` "
-            "request is refused with 422."
+            "`4K` is served only by deployments that run the prompt upsampler "
+            "ahead; others refuse it with 422."
         ),
     )
     format: ImageFormat = "png"
@@ -132,7 +127,6 @@ class Flux3ImageKleinRequest(GenerationRequest):
 
     @classmethod
     def served_sizes(cls) -> dict[str, tuple[int, int]]:
-        """The size tiers this deployment serves."""
         if upsampler_frozen():
             return FLUX3_KLEIN_SIZES
         return {

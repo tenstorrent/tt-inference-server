@@ -57,8 +57,7 @@ else:
 
     _tt_metal_policies = placeholder_policies()
 
-# tt-metal's FLUX.3 pipeline, for real where importable: the drift test
-# compares the server's copies of its constants with it; skipped elsewhere.
+# tt-metal's FLUX.3 pipeline where importable, for the constants drift test
 _TT_METAL_FLUX3_MODULES = (
     "models.tt_dit.pipelines.flux3_klein.pipeline_flux3_klein",
     "models.tt_dit.pipelines.flux3_klein.upsampler_flux3_klein",

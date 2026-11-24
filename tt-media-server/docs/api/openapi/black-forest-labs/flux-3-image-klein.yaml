@@ -387,11 +387,11 @@ components:
           title: Prompt
           description: 'What to generate or how to edit, in plain words. The model''s prompt
             upsampler rewrites it into the detailed caption the model was trained on; it runs
-            in the deployment or ahead of it (`FLUX3_PROMPT_UPSAMPLER_FROZEN`), and with it
-            ahead the prompt reaches the model as sent. Each output reports the caption it
-            was rendered from as its `prompt`. At most 20,000 characters; the upsampler''s
-            input (prompt, reference and template) is at most 8,191 tokens, a longer one fails
-            the job, and the caption is encoded, truncated past 4096 tokens.
+            in the deployment or ahead of it, and with it ahead the prompt reaches the model
+            as sent. Each output reports the caption it was rendered from as its `prompt`.
+            At most 20,000 characters; the upsampler''s input (prompt, reference and template)
+            is at most 8,191 tokens, a longer one fails the job, and the caption is encoded,
+            truncated past 4096 tokens.
 
 
             Refer to `images` by tag: `<ref_image_0>` is the first.
@@ -455,8 +455,8 @@ components:
             | `1:1`          | 1024×1024 | 2048×2048 | 4096×4096 |
 
 
-            `4K` is served with the prompt upsampler ahead of the deployment (`FLUX3_PROMPT_UPSAMPLER_FROZEN=1`);
-            with it in the deployment, a `4K` request is refused with 422.'
+            `4K` is served only by deployments that run the prompt upsampler ahead; others
+            refuse it with 422.'
           default: 2K
         format:
           $ref: '#/components/schemas/ImageFormat'

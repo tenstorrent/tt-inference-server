@@ -54,8 +54,7 @@ _IMAGE_FORMATS = ("PNG", "JPEG", "MPO", "WEBP")
 def decode_image(data: bytes, *, rgb: bool = True) -> Image.Image:
     """The image in ``data``, upright as a camera's EXIF orientation says.
 
-    It is in RGB unless ``rgb`` is false. Then it keeps its own mode, e.g. RGBA
-    with its alpha channel, for a pipeline that converts it itself.
+    In RGB unless ``rgb`` is false (then in its own mode, alpha kept).
 
     Raises ``ValueError`` if it is not PNG, JPEG or WebP or has more than
     ``Image.MAX_IMAGE_PIXELS`` pixels, and PIL's ``UnidentifiedImageError`` or
