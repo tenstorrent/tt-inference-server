@@ -35,7 +35,7 @@ GROUP_VERSION = 1
 COHOST_CONFIG_VERSION = 1
 TT_COHOST_LAUNCH_MODULE = "tt_cohost.launch"
 # Installed at container start when the image does not ship tt-cohost.
-TT_COHOST_SHA = "64348af7e8b9fa6c3e51d45dfe65505311201001"
+TT_COHOST_SHA = "cb0116506ea12b435aeae96de360262593cbbed8"
 DEFAULT_TT_COHOST_PIP_SPEC = (
     "tt-cohost @ https://github.com/jashansinghTT/tt-cohost/archive/"
     f"{TT_COHOST_SHA}.tar.gz"
