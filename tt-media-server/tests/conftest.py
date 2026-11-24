@@ -387,7 +387,7 @@ def _install_ttml_stubs():
             return float(loss)
 
         def current_learning_rate(self):
-            return [optimizer.lr for optimizer in self.config.optimizer]
+            return [optimizer["lr"] for optimizer in self.config.optimizer]
 
         def save_checkpoint(self, path, metadata=None):
             pass
@@ -421,7 +421,6 @@ def _install_ttml_stubs():
         **{
             name: type(name, (StubConfig,), {})
             for name in (
-                "AdamWConfig",
                 "CheckpointConfig",
                 "CustomDatasetConfig",
                 "DatasetConfig",

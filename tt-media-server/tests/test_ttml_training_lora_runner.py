@@ -16,7 +16,6 @@ from config.constants import (
 )
 from domain.training_request import TrainingRequest
 from pydantic import ValidationError
-from ttml.experimental.trainer import AdamWConfig
 
 MODEL_ID = ModelNames.LLAMA_3_1_8B_INSTRUCT.value
 HF_REPO_ID = SupportedModels.LLAMA_3_1_8B_INSTRUCT.value
@@ -192,12 +191,8 @@ class TestJobConfig:
         assert config.model.name == HF_REPO_ID
         assert config.dtype == "bfloat16"
         assert config.batch_size == 8
-        [optimizer] = config.optimizer
-        assert isinstance(optimizer, AdamWConfig)
-        assert optimizer.lr == 1e-4
-        assert optimizer.weight_decay == 0.0
         # No modules: it trains every adapter weight.
-        assert not hasattr(optimizer, "modules")
+        assert config.optimizer == [{"type": "adamw", "lr": 1e-4, "weight_decay": 0.0}]
         assert config.stopping_criteria.type == "epoch"
         assert config.stopping_criteria.limit == 3
         assert config.gradient_accumulation_steps == 4
@@ -220,13 +215,13 @@ class TestJobConfig:
 
     def test_optimizer_defaults_to_adamw(self, runner):
         [optimizer] = runner._job_config(_request()).optimizer
-        assert isinstance(optimizer, AdamWConfig)
+        assert optimizer["type"] == "adamw"
 
     def test_seed_defaults_to_zero(self, runner):
         assert runner._job_config(_request()).seed == 0
 
     def test_weight_decay_defaults_to_adamws_own(self, runner):
-        assert runner._job_config(_request()).optimizer[0].weight_decay == 0.01
+        assert runner._job_config(_request()).optimizer[0]["weight_decay"] == 0.01
 
     def test_no_save_disables_step_saves(self, runner):
         config = runner._job_config(
@@ -314,13 +309,13 @@ class TestValidate:
         # The trainer's setup rejects it, before it opens the device.
         runner._validate(_request(dtype="float32"))
 
-    def test_rejects_unknown_dataset(self, runner):
-        with pytest.raises(ValueError, match="Unsupported dataset.id"):
-            runner._validate(_request(dataset={"id": "nonexistent"}))
+    def test_leaves_the_dataset_to_the_trainer(self, runner):
+        # The trainer's setup rejects an unknown id, before it opens the device.
+        runner._validate(_request(dataset={"id": "nonexistent"}))
 
-    def test_rejects_other_optimizer(self, runner):
-        with pytest.raises(ValueError, match="Unsupported optimizer.type"):
-            runner._validate(_request(optimizer={"type": "sgd"}))
+    def test_leaves_the_optimizer_to_the_trainer(self, runner):
+        # ttml's config rejects an unknown type as the runner builds it.
+        runner._validate(_request(optimizer={"type": "sgd"}))
 
     def test_rejects_full_fine_tuning(self, runner):
         with pytest.raises(ValueError, match="Full fine-tuning is not supported"):

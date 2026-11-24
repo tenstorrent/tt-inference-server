@@ -8,11 +8,7 @@ import contextlib
 import math
 from typing import Optional
 
-from config.constants import (
-    ModelNames,
-    SupportedModels,
-    TrainingOptimizers,
-)
+from config.constants import ModelNames, SupportedModels
 from domain.training_request import TrainingRequest
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 from tt_model_runners.training_runners.callbacks import (
@@ -22,7 +18,6 @@ from tt_model_runners.training_runners.callbacks import (
     StopTraining,
 )
 from ttml.experimental.trainer import (
-    AdamWConfig,
     CheckpointConfig,
     CustomDatasetConfig,
     DatasetConfig,
@@ -39,13 +34,6 @@ from ttml.experimental.trainer import (
     ValidationMetricsConfig,
 )
 from utils.decorators import log_execution_time
-
-# ttml's ids, which it matches case-insensitively.
-DATASET_IDS = ("sst2", "alpaca", "custom")
-
-OPTIMIZER_CONFIGS = {
-    TrainingOptimizers.ADAMW.value: AdamWConfig,
-}
 
 
 class TtmlTrainingLoraRunner(BaseDeviceRunner):
@@ -161,8 +149,8 @@ class TtmlTrainingLoraRunner(BaseDeviceRunner):
             raise ValueError(error)
 
     def _validation_error(self, request: TrainingRequest) -> Optional[str]:
-        # The dtype and LoRA targets are the model's to check: `setup` rejects
-        # them before it opens the device or downloads weights.
+        # The dtype, LoRA targets, dataset id and optimizer type are ttml's to
+        # check: it rejects them before it opens the device or downloads weights.
         if request.device_type != self.settings.device:
             return (
                 f"Request device '{request.device_type}' does not match "
@@ -170,16 +158,6 @@ class TtmlTrainingLoraRunner(BaseDeviceRunner):
             )
         if request.model.lora is None:
             return "Full fine-tuning is not supported yet; model.lora must be set"
-        if request.dataset.id.lower() not in DATASET_IDS:
-            return (
-                f"Unsupported dataset.id '{request.dataset.id}'; "
-                f"expected one of {list(DATASET_IDS)}"
-            )
-        if request.optimizer.type not in OPTIMIZER_CONFIGS:
-            return (
-                f"Unsupported optimizer.type '{request.optimizer.type}'; "
-                f"expected one of {sorted(OPTIMIZER_CONFIGS)}"
-            )
         return None
 
     def _dataset_config(self, request: TrainingRequest) -> DatasetConfig:
@@ -190,7 +168,6 @@ class TtmlTrainingLoraRunner(BaseDeviceRunner):
         return DatasetConfig(id=dataset.id, custom_options=custom_options)
 
     def _job_config(self, request: TrainingRequest) -> SFTTrainerConfig:
-        optimizer = request.optimizer
         lora = request.model.lora
         return SFTTrainerConfig(
             model=ModelConfig(
@@ -198,12 +175,9 @@ class TtmlTrainingLoraRunner(BaseDeviceRunner):
                 lora=LoraConfig(**lora.model_dump()) if lora is not None else None,
             ),
             dataset=self._dataset_config(request),
-            # One optimizer over every trainable weight (the adapters).
-            optimizer=[
-                OPTIMIZER_CONFIGS[optimizer.type](
-                    lr=optimizer.lr, weight_decay=optimizer.weight_decay
-                )
-            ],
+            # One optimizer over every trainable weight (the adapters). ttml
+            # validates it as the optimizer its `type` names.
+            optimizer=[request.optimizer.model_dump()],
             dtype=request.dtype,
             max_length=request.max_length,
             batch_size=request.batch_size,
