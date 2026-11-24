@@ -461,6 +461,17 @@ kolibri_1_qb2_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/autoports/aleph_alpha_kolibri_1_bf16",
 )
+# google/gemma-4-12B-it TP4 on QB2: dedicated implementation under
+# models/demos/gemma4_12b_qb2 (architecture TTGemma4_12BQB2ForCausalLM), produced by the
+# tt-model-bringup pipeline. Currently on the tt-metal PR #61987 branch
+# (vkovacevic/gemma-4-12b-it-qb2-model); moving to tenstorrent/agentic-models (tt-metal pin
+# 58afa857). repo_url and code_path must be repointed once that layout exists.
+gemma4_12b_qb2_impl = ImplSpec(
+    impl_id="gemma4_12b_qb2",
+    impl_name="gemma4-12b-qb2",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="agentic_models/models/gemma_4_12b_it/vllm",
+)
 # C++ Blaze media server. Remote SUPER_CLUSTER catalog entries use this.
 blaze_impl = ImplSpec(
     impl_id="blaze",
@@ -478,6 +489,14 @@ k2_horizon_7b_qb2_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/k2_horizon_7b_qb2",
 )
+# IFM/K2-Horizon-MoVA-36B-A4B TP4/EP4 on QB2 under models/demos/k2_horizon_mova_36b_a4b_qb2
+# (architecture TTK2HorizonMoVAQB2ForCausalLM), produced by the tt-model-bringup pipeline.
+k2_horizon_mova_qb2_impl = ImplSpec(
+    impl_id="k2_horizon_mova_qb2",
+    impl_name="k2-horizon-mova-qb2",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="agentic_models/models/k2_horizon_mova_36b_a4b/vllm",
+)
 
 # meta-models/Muse-Glimmer-30B TP4 on QB2 under models/demos/muse_glimmer_30b_qb2,
 # produced by the tt-model-bringup pipeline.
@@ -493,11 +512,13 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "tt_transformers": tt_transformers_impl,
     "gemma4_dflash_contract": gemma4_dflash_contract_impl,
     "gemma4_31b_qb2": gemma4_31b_qb2_impl,
+    "gemma4_12b_qb2": gemma4_12b_qb2_impl,
     "gemma4_26b_a4b_qb2": gemma4_26b_a4b_qb2_impl,
     "granite42_30b_qb2": granite42_30b_qb2_impl,
     "qwen38_27b_qb2": qwen38_27b_qb2_impl,
     "kolibri_1_qb2": kolibri_1_qb2_impl,
     "k2_horizon_7b_qb2": k2_horizon_7b_qb2_impl,
+    "k2_horizon_mova_qb2": k2_horizon_mova_qb2_impl,
     "muse_glimmer_30b_qb2": muse_glimmer_30b_qb2_impl,
     "llama3_70b_galaxy": llama3_70b_galaxy_impl,
     "llama31_8b_qb2": llama31_8b_qb2_impl,
