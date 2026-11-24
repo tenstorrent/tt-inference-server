@@ -211,7 +211,7 @@ python3 run.py --model Qwen3-32B --tt-device p300x2 --workflow server --docker-s
 ```
 
 - `--model` is served on `--service-port` (default `8000`), each `--cohost-with` model on the next port (`8001`, ...), and the group's status endpoint (each model's readiness, DRAM and L1 use) on the port after the last model.
-- Each model runs with exactly the settings it gets when served alone (its model spec's env vars, vLLM args and tt config). The group opens one mesh: the models must agree on its settings (fabric, dispatch axis, L1 sizes), and the trace region is the sum of theirs.
+- Each model runs with exactly the settings it gets when served alone (its model spec's env vars, vLLM args and tt config), with one exception: tt-transformers models sample on the host (`sample_on_device_mode` is dropped and the log says so), because their on-device sampling state does not survive another model's step between their own decode steps. The group opens one mesh: the models must agree on its settings (fabric, dispatch axis, L1 sizes), and the trace region is the sum of theirs.
 - Only `--workflow server --docker-server`, only vLLM models, and only models whose specs use the same Docker image (one process means one tt-metal build). `run.py` refuses anything else and names the model and the reason. `--vllm-override-args` applies to `--model` only.
 - Host setup (weights, disk check) runs for `--model`; the other models' weights are downloaded inside the container into the same cache volume.
 - If tt-cohost is not in the image, the container installs a pinned version at start (`TT_COHOST_PIP_SPEC` overrides it). The repo's in-container launcher is mounted, as `--dev-mode` does, so images published before this option work too.
