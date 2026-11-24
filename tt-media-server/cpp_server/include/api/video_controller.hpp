@@ -29,14 +29,14 @@ class VideoController : public drogon::HttpController<VideoController> {
   METHOD_LIST_BEGIN
   ADD_METHOD_TO(VideoController::generate, "/v1/videos/generations",
                 drogon::Post);
-  ADD_METHOD_TO(VideoController::getJob, "/v1/videos/generations/{1}",
+  ADD_METHOD_TO(VideoController::getJob, "/v1/videos/generations/{job_id}",
                 drogon::Get);
   ADD_METHOD_TO(VideoController::listJobs, "/v1/videos/jobs", drogon::Get);
   ADD_METHOD_TO(VideoController::download,
-                "/v1/videos/generations/{1}/download", drogon::Get);
-  ADD_METHOD_TO(VideoController::cancelJob, "/v1/videos/generations/{1}/cancel",
-                drogon::Post);
-  ADD_METHOD_TO(VideoController::deleteJob, "/v1/videos/generations/{1}",
+                "/v1/videos/generations/{job_id}/download", drogon::Get);
+  ADD_METHOD_TO(VideoController::cancelJob,
+                "/v1/videos/generations/{job_id}/cancel", drogon::Post);
+  ADD_METHOD_TO(VideoController::deleteJob, "/v1/videos/generations/{job_id}",
                 drogon::Delete);
   METHOD_LIST_END
 
