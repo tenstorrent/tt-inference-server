@@ -24,3 +24,9 @@ templates:
     - device: P150
       max_concurrency: 1
       max_context: 1024
+    - device: P300
+      max_concurrency: 1
+      max_context: 1024
+    - device: P300X2
+      max_concurrency: 1
+      max_context: 1024
