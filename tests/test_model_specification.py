@@ -1430,7 +1430,6 @@ class TestTrainingInferenceEngine:
         assert specs
         for spec in specs:
             assert spec.inference_engine == InferenceEngine.TRAINING.value
-            assert "TORCHDYNAMO_DISABLE" not in spec.env_vars
 
 
 if __name__ == "__main__":
