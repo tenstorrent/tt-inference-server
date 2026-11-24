@@ -509,7 +509,7 @@ jobs:
     needs: detect-changes
     if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
     name: C++ Lint & Format Check
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:
       contents: read
@@ -604,12 +604,12 @@ jobs:
     needs: detect-changes
     if: ${{ needs.detect-changes.outputs.cpp-server == 'true' }}
     name: C++ Build & Unit Tests
-    # Per-commit compile + unit-test gate on ubuntu-latest. Build runs in ONE
+    # Per-commit compile + unit-test gate on Ubuntu 24.04. Build runs in ONE
     # job; the freshly built binary in cpp_server/build is unit-tested in place
     # via ctest, so there is no build artifact to archive/upload/download/unpack
     # (that round-trip used to cost ~5 min on the critical path). The heavier
     # benches/sanitizers run in cpp-heavy-checks.yml.
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     permissions:
       contents: read
@@ -673,7 +673,7 @@ jobs:
     # real Kafka broker started via cpp_server/scripts/dev-kafka.sh. The
     # test is not registered with add_test() (opt-in), so it's invoked
     # directly as a binary rather than via ctest.
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:
       contents: read
@@ -739,7 +739,7 @@ jobs:
     # ubuntu-latest. The cpp-server-gateway-split perf bench builds its own
     # gateway binary in-job (it runs on the jammy self-hosted runner), so this
     # job no longer needs to publish an artifact for it.
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:
       contents: read
