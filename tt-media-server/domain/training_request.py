@@ -56,8 +56,13 @@ class DatasetOptions(_Options):
 
     @model_validator(mode="after")
     def _check_custom_options(self) -> "DatasetOptions":
-        if self.id.lower() == "custom" and self.custom_options is None:
+        is_custom = self.id.lower() == "custom"
+        if is_custom and self.custom_options is None:
             raise ValueError("custom_options is required when id is 'custom'")
+        if not is_custom and self.custom_options is not None:
+            raise ValueError(
+                f"custom_options is only read when id is 'custom', not {self.id!r}"
+            )
         return self
 
 
@@ -79,7 +84,7 @@ class TrainMetricsOptions(_Options):
 
 class ValidationMetricsOptions(_Options):
     # 0 disables validation.
-    frequency: int = Field(default=50, ge=0)
+    frequency: int = Field(default=0, ge=0)
 
 
 class MetricsOptions(_Options):
@@ -135,6 +140,44 @@ class TrainingRequest(BaseRequest):
     _worker_assignment: object = PrivateAttr(default=None)
     # Worker-local timestamp used to throttle writes to the shared tracker.
     _last_heartbeat_time: float = PrivateAttr(default=0.0)
+
+    @model_validator(mode="after")
+    def _check_validation_data(self) -> "TrainingRequest":
+        # ttml's setup rejects a validation frequency without a validation split,
+        # and a custom dataset has one only with val_dataset_path.
+        if (
+            self.dataset.id.lower() == "custom"
+            and self.dataset.custom_options.val_dataset_path is None
+            and self.metrics.validation.frequency > 0
+        ):
+            raise ValueError(
+                "metrics.validation.frequency must be 0 for a custom dataset "
+                "without dataset.custom_options.val_dataset_path"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _check_save_frequency(self) -> "TrainingRequest":
+        # Every checkpoint carries the train and validation loss of its own step.
+        save_strategy = self.checkpoint.save_strategy
+        if save_strategy.type != "step":
+            return self
+        metrics = self.metrics
+        fields = [("metrics.train.frequency", metrics.train.frequency)]
+        # ttml's setup rejects a validation frequency without validation data,
+        # so a run validates exactly when the frequency is set.
+        if metrics.validation.frequency > 0:
+            fields.append(
+                ("metrics.validation.frequency", metrics.validation.frequency)
+            )
+        for field, metrics_frequency in fields:
+            if save_strategy.frequency % metrics_frequency:
+                raise ValueError(
+                    f"checkpoint.save_strategy.frequency ({save_strategy.frequency}) "
+                    f"must be a multiple of {field} ({metrics_frequency}), so every "
+                    "checkpoint carries the metrics of its own step"
+                )
+        return self
 
     def touch_progress(self) -> None:
         """Publish a throttled runner heartbeat to the API process."""

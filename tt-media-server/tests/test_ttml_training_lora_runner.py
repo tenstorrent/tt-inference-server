@@ -184,7 +184,7 @@ class TestJobConfig:
             seed=23,
             stopping_criteria={"type": "epoch", "limit": 3},
             metrics={"train": {"frequency": 5}, "validation": {"frequency": 20}},
-            checkpoint={"save_strategy": {"type": "step", "frequency": 25}},
+            checkpoint={"save_strategy": {"type": "step", "frequency": 40}},
         )
         config = runner._job_config(request)
 
@@ -215,7 +215,7 @@ class TestJobConfig:
         assert config.model.lora.task_type == "CAUSAL_LM"
         assert config.metrics.train.frequency == 5
         assert config.checkpoint.save_strategy.type == "step"
-        assert config.checkpoint.save_strategy.frequency == 25
+        assert config.checkpoint.save_strategy.frequency == 40
         assert config.checkpoint.save_strategy.project_dir == "/tmp/job"
 
     def test_optimizer_defaults_to_adamw(self, runner):
@@ -296,6 +296,7 @@ class TestJobConfig:
         assert custom_options.template == "alpaca"
         assert custom_options.val_dataset_path is None
         assert custom_options.column_mapping is None
+        assert config.metrics.validation.frequency == 0
 
     def test_wandb_is_disabled(self, runner):
         assert runner._job_config(_request()).logging.use_wandb is False
@@ -365,9 +366,53 @@ class TestTrainingRequest:
     def test_built_in_datasets_need_no_custom_options(self):
         assert _request().dataset.custom_options is None
 
+    def test_built_in_datasets_reject_custom_options(self):
+        with pytest.raises(ValidationError, match="only read when id is 'custom'"):
+            _request(
+                dataset={
+                    "id": "alpaca",
+                    "custom_options": {"train_dataset_path": "/datasets/train.json"},
+                }
+            )
+
     def test_validation_frequency_zero_is_allowed(self):
         request = _request(metrics={"validation": {"frequency": 0}})
         assert request.metrics.validation.frequency == 0
+
+    def test_does_not_validate_by_default(self):
+        assert _request().metrics.validation.frequency == 0
+
+    def test_a_custom_dataset_without_a_val_path_does_not_validate_by_default(self):
+        request = _request(
+            dataset={
+                "id": "custom",
+                "custom_options": {"train_dataset_path": "/datasets/train.json"},
+            }
+        )
+        assert request.metrics.validation.frequency == 0
+
+    def test_validates_a_custom_dataset_with_a_val_path(self):
+        request = _request(
+            dataset={
+                "id": "custom",
+                "custom_options": {
+                    "train_dataset_path": "/datasets/train.json",
+                    "val_dataset_path": "/datasets/val.json",
+                },
+            },
+            metrics={"validation": {"frequency": 20}},
+        )
+        assert request.metrics.validation.frequency == 20
+
+    def test_rejects_validation_of_a_custom_dataset_without_a_val_path(self):
+        with pytest.raises(ValidationError, match="val_dataset_path"):
+            _request(
+                dataset={
+                    "id": "custom",
+                    "custom_options": {"train_dataset_path": "/datasets/train.json"},
+                },
+                metrics={"validation": {"frequency": 20}},
+            )
 
     def test_stops_after_500_steps_by_default(self):
         stopping = _request().stopping_criteria
@@ -376,6 +421,30 @@ class TestTrainingRequest:
     def test_saves_every_100_steps_by_default(self):
         strategy = _request().checkpoint.save_strategy
         assert (strategy.type, strategy.frequency) == ("step", 100)
+
+    @pytest.mark.parametrize(
+        "metrics, field",
+        [
+            ({"train": {"frequency": 15}}, "metrics.train.frequency"),
+            ({"validation": {"frequency": 30}}, "metrics.validation.frequency"),
+        ],
+    )
+    def test_rejects_a_save_frequency_that_is_not_a_multiple(self, metrics, field):
+        with pytest.raises(ValidationError, match=rf"multiple of {field} \("):
+            _request(metrics=metrics)
+
+    def test_accepts_a_save_frequency_that_is_a_multiple(self):
+        request = _request(
+            metrics={"train": {"frequency": 20}, "validation": {"frequency": 50}},
+        )
+        assert request.checkpoint.save_strategy.frequency == 100
+
+    def test_metrics_frequencies_are_free_without_step_saves(self):
+        request = _request(
+            metrics={"train": {"frequency": 15}, "validation": {"frequency": 30}},
+            checkpoint={"save_strategy": {"type": "none"}},
+        )
+        assert request.metrics.train.frequency == 15
 
     @pytest.mark.parametrize(
         "fields",
@@ -498,6 +567,19 @@ class TestRun:
                 runner.run([_request()])
 
         assert _job_failures(runner) == ["Job failed during setup: dataset missing"]
+
+    @pytest.mark.asyncio
+    async def test_reports_an_invalid_job_config_to_callbacks(self, runner):
+        await runner.warmup()
+        boom = ValueError("custom_options is only read when id is 'custom'")
+
+        with patch.object(runner, "_dataset_config", side_effect=boom):
+            with pytest.raises(ValueError, match="only read"):
+                runner.run([_request()])
+
+        assert _job_failures(runner) == [
+            "Job failed during setup: custom_options is only read when id is 'custom'"
+        ]
 
     @pytest.mark.asyncio
     async def test_announces_the_weight_download_before_the_model_loads(self, runner):

@@ -145,7 +145,14 @@ class TtmlTrainingLoraRunner(BaseDeviceRunner):
             "Downloading and preparing model weights for training.",
             extra={"log_type": "info", "step": 0},
         )
-        trainer.setup(self._job_config(request))
+        # `setup` reports only its own failures to the callbacks, and the config
+        # is validated as it is built, before `setup` is entered.
+        try:
+            config = self._job_config(request)
+        except Exception as exception:
+            trainer.callback_handler("on_setup_error", exception)
+            raise
+        trainer.setup(config)
 
     def _validate(self, request: TrainingRequest) -> None:
         error = self._validation_error(request)

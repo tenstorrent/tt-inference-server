@@ -220,6 +220,23 @@ RUN /bin/bash -c "python3 -m venv ${AUDIO_VENV_DIR} \
     && uv pip install --no-cache-dir --index-strategy unsafe-best-match --overrides uv-overrides.txt -r audio-requirements.txt \
     && echo 'Audio venv created successfully with whisperx and torch 2.7.x'"
 
+# Dedicated CPU venv for merging LoRA adapters under the *inference* transformers version,
+# used by the ttml-training-lora runner's checkpoint merge. build_merge_venv.py needs
+# Python 3.11+ (tomllib) but python_env is 3.10, so it runs under a uv-managed 3.12.
+# UV_PYTHON_INSTALL_DIR keeps that interpreter under TT_METAL_HOME, so the merge venv's
+# symlinks still resolve after the runtime stage copies HOME_DIR.
+# Must run before the cleanup step, which deletes server/scripts.
+ENV ADAPTER_MERGE_VENV_DIR=${TT_METAL_HOME}/merge-venv
+RUN if [ "${BUILD_TT_TRAIN}" = "true" ]; then \
+      uv="${PYTHON_ENV_DIR}/bin/uv" \
+      && "${uv}" python install 3.12 \
+      && "$("${uv}" python find --managed-python 3.12)" "${TT_METAL_HOME}/server/scripts/build_merge_venv.py" \
+           "${ADAPTER_MERGE_VENV_DIR}" "${TT_METAL_HOME}/tt-vllm-plugin/pyproject.toml" \
+           --forge-python "${PYTHON_ENV_DIR}/bin/python" \
+      && cd "${TT_METAL_HOME}/server" \
+      && PYTHONPATH=. "${ADAPTER_MERGE_VENV_DIR}/bin/python" -c 'import peft, transformers, torch, utils.adapter_merge_utils'; \
+    fi
+
 # Fix GPG keys before installing cpp_server dependencies
 RUN apt-get clean && rm -rf /var/lib/apt/lists/* \
     && apt-get update --allow-insecure-repositories || true \
@@ -309,6 +326,8 @@ ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
     PYTHONPATH=${HOME_DIR}/tt-metal \
     PYTHON_ENV_DIR=${HOME_DIR}/tt-metal/python_env \
     AUDIO_VENV_PYTHON=${HOME_DIR}/tt-metal/audio_venv/bin/python \
+    # Only exists in BUILD_TT_TRAIN=true images; nothing else launches the merge.
+    ADAPTER_MERGE_PYTHON=${HOME_DIR}/tt-metal/merge-venv/bin/python \
     LD_LIBRARY_PATH=${HOME_DIR}/tt-metal/build/lib \
     VLLM_USE_V1=1 \
     TT_METAL_LOGS_PATH=${HOME_DIR}/logs
@@ -333,7 +352,8 @@ COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} 
     /home/container_app_user ${HOME_DIR}
 
 # Fix venv permissions (COPY --chown can break symlink permissions)
-RUN chmod -R +x ${PYTHON_ENV_DIR}/bin
+RUN chmod -R +x ${PYTHON_ENV_DIR}/bin \
+    && if [ -d "${HOME_DIR}/tt-metal/merge-venv/bin" ]; then chmod -R +x "${HOME_DIR}/tt-metal/merge-venv/bin"; fi
 
 USER ${CONTAINER_APP_USERNAME}
 WORKDIR ${HOME_DIR}/tt-metal

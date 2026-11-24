@@ -63,9 +63,38 @@ class TestSubmitCustomDatasetJob:
         assert custom_options.train_dataset_path == "/datasets/train.json"
         assert custom_options.file_type == "json"
         assert custom_options.template == "alpaca"
+        assert request.metrics.validation.frequency == 0
+
+    def test_rejects_validation_without_a_val_path(self, submit):
+        response = submit(
+            {"train_dataset_path": "/datasets/train.json"},
+            metrics={"validation": {"frequency": 50}},
+        )
+        assert response.status_code == 422
+
+    def test_rejects_a_save_frequency_that_is_not_a_multiple(
+        self, submit, mock_service
+    ):
+        response = submit(
+            {"train_dataset_path": "/datasets/train.json"},
+            metrics={"train": {"frequency": 10}},
+            checkpoint={"save_strategy": {"type": "step", "frequency": 25}},
+        )
+        assert response.status_code == 422
+        assert "metrics.train.frequency" in response.text
+        mock_service.create_job.assert_not_called()
 
     def test_rejects_a_custom_dataset_without_custom_options(self, submit):
         assert submit().status_code == 422
+
+    def test_rejects_custom_options_for_a_built_in_dataset(self, submit):
+        response = submit(
+            dataset={
+                "id": "sst2",
+                "custom_options": {"train_dataset_path": "/datasets/train.json"},
+            },
+        )
+        assert response.status_code == 422
 
     def test_rejects_a_custom_dataset_without_a_path(self, submit):
         assert submit({"file_type": "json", "template": "alpaca"}).status_code == 422

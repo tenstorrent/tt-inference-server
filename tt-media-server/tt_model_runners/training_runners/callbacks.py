@@ -216,9 +216,9 @@ class AdapterCheckpointCallback(JobCallback):
     """Saves the LoRA adapter every ``frequency`` optimizer steps of a "step"
     ``checkpoint.save_strategy``, and on the run's last step.
 
-    Every checkpoint carries the train and validation loss of its own step: the
-    frequency must be a multiple of the metrics' ``frequency``, and the last step
-    logs and validates too.
+    Every checkpoint carries the train and validation loss of its own step:
+    ``TrainingRequest`` requires the frequency to be a multiple of the metrics'
+    ``frequency``, and the last step logs and validates too.
     """
 
     def __init__(self, logger, metrics: JobMetricsCallback):
@@ -230,27 +230,7 @@ class AdapterCheckpointCallback(JobCallback):
         self._total_steps = None
 
     def on_train_start(self, trainer, *args, **kwargs):
-        self._check_config(trainer)
         self._total_steps = trainer.total_steps()
-
-    def _check_config(self, trainer) -> None:
-        # Raising here stops the job before it trains.
-        strategy = trainer.config.checkpoint.save_strategy
-        if strategy.type != "step":
-            return
-        metrics = trainer.config.metrics
-        fields = [("metrics.train.frequency", metrics.train.frequency)]
-        if trainer.validation_enabled:
-            fields.append(
-                ("metrics.validation.frequency", metrics.validation.frequency)
-            )
-        for field, metrics_frequency in fields:
-            if strategy.frequency % metrics_frequency:
-                raise ValueError(
-                    f"checkpoint.save_strategy.frequency ({strategy.frequency}) must "
-                    f"be a multiple of {field} ({metrics_frequency}), so every checkpoint "
-                    "carries the metrics of its own step"
-                )
 
     def on_step_end(self, trainer, global_step, *args, **kwargs):
         strategy = trainer.config.checkpoint.save_strategy
