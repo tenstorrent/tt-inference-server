@@ -1,6 +1,6 @@
 # Tests on a real server and device
 
-These tests send HTTP requests to an already running `tt_media_server_cpp` with a
+Most of these tests send HTTP requests to an already running `tt_media_server_cpp` with a
 real runner and wait for real generation (about 80 s per job on a T3K with 4
 steps). They do not start the server themselves: the server must be
 `model_ready`.

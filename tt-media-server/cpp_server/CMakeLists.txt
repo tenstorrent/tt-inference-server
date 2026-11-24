@@ -2052,6 +2052,7 @@ set(SOURCES
     src/services/embedding_service.cpp
     src/api/image_controller.cpp
     src/api/video_controller.cpp
+    src/api/video_ui_controller.cpp
     src/runtime/runners/sdxl/sdxl_runner.cpp
     src/runtime/runners/media_ipc_runner.cpp
     src/runtime/runners/image_ipc_runner.cpp

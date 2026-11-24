@@ -87,6 +87,25 @@ TEST(VideoJobStoreTest, CreateGetAndListUseTaskIdOrder) {
             std::optional<uint32_t>(3U));
 }
 
+TEST(VideoJobStoreTest, CountByStatusFollowsTheLifecycle) {
+  VideoJobStore store(10, 0);
+  // indexed like JobStatus: queued, in_progress, completed, failed, cancelled,
+  // cancelling
+  EXPECT_EQ(store.countByStatus(), (std::array<size_t, 6>{0, 0, 0, 0, 0, 0}));
+  store.create(1, "tt-wan2.2", params("a"));
+  store.create(2, "tt-wan2.2", params("b"));
+  store.create(3, "tt-wan2.2", params("c"));
+  EXPECT_EQ(store.countByStatus(), (std::array<size_t, 6>{3, 0, 0, 0, 0, 0}));
+  store.markInProgress(1);
+  store.markInProgress(2);
+  EXPECT_EQ(store.countByStatus(), (std::array<size_t, 6>{1, 2, 0, 0, 0, 0}));
+  EXPECT_EQ(store.complete(1, "", "boom"),
+            std::optional<bool>(false));     // worker error -> failed
+  ASSERT_TRUE(store.cancel(3).has_value());  // queued -> cancelled
+  ASSERT_TRUE(store.cancel(2).has_value());  // running -> cancelling
+  EXPECT_EQ(store.countByStatus(), (std::array<size_t, 6>{0, 0, 0, 1, 1, 1}));
+}
+
 TEST(VideoJobStoreTest, InProgressThenCompleteKeepsTheFileAndResultPath) {
   VideoJobStore store(10, 0);
   const auto clip = tempClip("complete");
@@ -97,7 +116,8 @@ TEST(VideoJobStoreTest, InProgressThenCompleteKeepsTheFileAndResultPath) {
   ASSERT_TRUE(running.has_value());
   EXPECT_EQ(statusOf(*running), "in_progress");
 
-  store.complete(4, clip.string(), "");
+  // complete() says what the job ended as, for the task metrics
+  EXPECT_EQ(store.complete(4, clip.string(), ""), std::optional<bool>(true));
   auto done = store.get(4);
   ASSERT_TRUE(done.has_value());
   EXPECT_EQ(statusOf(*done), "completed");
@@ -168,7 +188,9 @@ TEST(VideoJobStoreTest, CancelRunningDropsTheFileWhenTheWorkerReturns) {
   EXPECT_FALSE(cancelling->isMember("completed_at"));
   EXPECT_FALSE(store.cancel(9).has_value());
 
-  store.complete(9, clip.string(), "ignored because cancelled");
+  // a discarded result is neither a success nor a failure of the task
+  EXPECT_EQ(store.complete(9, clip.string(), "ignored because cancelled"),
+            std::nullopt);
   EXPECT_EQ(statusOf(*store.get(9)), "cancelled");
   EXPECT_FALSE(store.get(9)->isMember("error"));
   EXPECT_FALSE(store.resultPath(9).has_value());
@@ -638,6 +660,41 @@ TEST(VideoOutputDir, StoreRefusesToDeleteOutsideRoot) {
   fs::remove_all(root);
 }
 
+TEST(VideoOutputDir, CheckDirWritableCreatesMissingDirAndLeavesNoProbe) {
+  namespace fs = std::filesystem;
+  const fs::path root = fs::temp_directory_path() / "tt-video-writable-test";
+  fs::remove_all(root);
+  const fs::path dir = root / "a" / "b";
+  EXPECT_EQ(tt::utils::checkDirWritable(dir), "");
+  EXPECT_TRUE(fs::is_directory(dir));
+  EXPECT_TRUE(fs::is_empty(dir));
+  fs::remove_all(root);
+}
+
+TEST(VideoOutputDir, CheckDirWritableReportsNotADirectory) {
+  namespace fs = std::filesystem;
+  const fs::path root = fs::temp_directory_path() / "tt-video-writable-file";
+  fs::remove_all(root);
+  fs::create_directories(root);
+  const fs::path file = root / "plain";
+  std::ofstream(file) << "x";
+  EXPECT_NE(tt::utils::checkDirWritable(file), "");
+  EXPECT_NE(tt::utils::checkDirWritable(file / "sub"), "");
+  fs::remove_all(root);
+}
+
+TEST(VideoOutputDir, CheckDirWritableReportsReadOnlyDirectory) {
+  namespace fs = std::filesystem;
+  if (::geteuid() == 0) GTEST_SKIP() << "root ignores directory permissions";
+  const fs::path root = fs::temp_directory_path() / "tt-video-writable-ro";
+  fs::remove_all(root);
+  fs::create_directories(root);
+  fs::permissions(root, fs::perms::owner_read | fs::perms::owner_exec);
+  EXPECT_NE(tt::utils::checkDirWritable(root), "");
+  fs::permissions(root, fs::perms::owner_all);
+  EXPECT_EQ(tt::utils::checkDirWritable(root), "");
+}
+
 TEST(VideoOutputDir, TheSyncPathUsesTheSameRuleAsAJobsResult) {
   namespace fs = std::filesystem;
   const fs::path root = "/tmp/tt-outdir-sync";
@@ -890,4 +947,24 @@ TEST(VideoJobStoreResult, RemoveNeverDeletesADirectory) {
   EXPECT_TRUE(
       fs::exists(dir / "x"));  // plain remove() cannot delete a non-empty dir
   fs::remove_all(dir);
+}
+
+TEST(VideoJobStoreTest, ADiscardedResultIsNotCountedAsASuccess) {
+  VideoJobStore store(10, 0);
+  // finished while it was being cancelled: the produced file is dropped
+  const auto cancelled = tempClip("metrics-cancelled");
+  store.create(30, "tt-wan2.2", params("a"));
+  store.markInProgress(30);
+  ASSERT_TRUE(store.cancel(30).has_value());
+  EXPECT_EQ(store.complete(30, cancelled.string(), ""), std::nullopt);
+  // already failed by the sweeper (stale_job): a late result is dropped too
+  const auto stale = tempClip("metrics-stale");
+  store.create(31, "tt-wan2.2", params("b"));
+  store.markInProgress(31);
+  std::this_thread::sleep_for(std::chrono::seconds(2));
+  store.sweep(1);
+  ASSERT_EQ(statusOf(*store.get(31)), "failed");
+  EXPECT_EQ(store.complete(31, stale.string(), ""), std::nullopt);
+  // the job is gone: nothing to count
+  EXPECT_EQ(store.complete(32, "", ""), std::nullopt);
 }
