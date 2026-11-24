@@ -17,11 +17,14 @@ from unittest.mock import Mock
 import numpy as np
 import pytest
 from domain.flux3_image_klein_request import Flux3ImageKleinRequest
+from domain.flux2_klein_4b_request import Flux2klein4bRequest
 from domain.ltx23_distilled_request import Ltx23DistilledRequest
+from domain.ideogram4_request import Ideogram4Request
 from domain.minimax_h3_request import (
     MiniMaxH3FL2VARequest,
     MiniMaxH3Ref2VARequest,
 )
+from domain.qwen_image_edit_2511_request import QwenImageEdit2511Request
 from domain.wan22_i2v_a14b_request import (
     WAN_NEGATIVE_PROMPT,
     WAN_SIZES,
@@ -120,6 +123,9 @@ class _Pipeline:
     def __call__(self, **kwargs):
         self.calls.append(kwargs)
         return ["output"]
+
+    def count_text_tokens(self, prompt):
+        return 1
 
     def generate(self, prompt, **kwargs):
         self.calls.append({"prompt": prompt, **kwargs})
@@ -544,6 +550,35 @@ def test_flux3_serves_the_shapes_the_pipeline_warms(
     } == upsampler.SHARED_MESH_PARAMS
 
 
+@pytest.mark.parametrize("with_images", [False, True])
+def test_klein_edits_only_with_images(with_images):
+    runner = _runner("TTFlux2Klein4BRunner")
+    files = {"images": [_png(8, 16)]} if with_images else {}
+    request = _resolved(Flux2klein4bRequest(prompt="a cat"), 1024, 1024, files)
+    runner.run([request])
+    (call,) = runner.pipeline.calls
+    if with_images:
+        assert [image.size for image in call["images"]] == [(8, 16)]
+    else:
+        assert call["images"] is None
+    assert call["num_inference_steps"] == 4
+
+
+def test_klein_pipeline_warms_itself_up(monkeypatch):
+    module = Mock()
+    monkeypatch.setitem(
+        sys.modules, "models.tt_dit.pipelines.flux2.pipeline_flux2", module
+    )
+    runner = _runner("TTFlux2Klein4BRunner")
+    runner.ttnn_device = Mock()
+    runner.settings = SimpleNamespace(
+        model_weights_path="black-forest-labs/FLUX.2-klein-4B"
+    )
+    runner.create_pipeline()
+    assert module.Flux2Pipeline.create_pipeline.call_args.kwargs["trace_warmup"] is True
+    assert runner.warmup_requests() == []
+
+
 @pytest.fixture
 def ltx_remuxes(monkeypatch, tmp_path):
     """The (input, output) of each faststart remux the runner makes."""
@@ -602,6 +637,65 @@ def test_ltx_does_not_bring_back_a_deleted_jobs_directory(ltx_remuxes, tmp_path)
         runner.run([request])
     assert list(tmp_path.iterdir()) == []
     assert ltx_remuxes == []
+
+
+def test_qwen_passes_the_input_images():
+    runner = _runner("TTQwenImageEdit2511Runner")
+    request = _resolved(
+        QwenImageEdit2511Request(
+            prompt="add a hat", negative_prompt="blurry", images=["https://x/a.png"] * 2
+        ),
+        1376,
+        768,
+        {"images": [_png(8, 16), _png(24, 12)]},
+    )
+    runner.run([request])
+    (call,) = runner.pipeline.calls
+    assert [image.size for image in call["image"]] == [(8, 16), (24, 12)]
+    assert (call["width"], call["height"], call["cfg_scale"]) == (1376, 768, 4.0)
+    assert call["negative_prompts"] == ["blurry"]
+    assert call["num_inference_steps"] == 40
+
+
+def test_qwen_records_the_stages_of_a_failed_edit():
+    runner = _runner("TTQwenImageEdit2511Runner")
+    recorder = Mock()
+    runner._image_stage_recorder = lambda: recorder
+    runner.pipeline = Mock(side_effect=RuntimeError("device error"))
+    request = _resolved(
+        QwenImageEdit2511Request(prompt="add a hat", images=["https://x/a.png"]),
+        1376,
+        768,
+        {"images": [_png(8, 8)]},
+    )
+    with pytest.raises(RuntimeError):
+        runner.run([request])
+    recorder.flush.assert_called_once_with(None)
+
+
+def test_qwen_pipeline_warms_itself_up():
+    assert _runner("TTQwenImageEdit2511Runner").warmup_requests() == []
+
+
+def test_qwen_pipeline_runs_with_dbcache(monkeypatch):
+    module = Mock()
+    monkeypatch.setitem(
+        sys.modules, "models.tt_dit.pipelines.qwenimage.pipeline_qwenimage", module
+    )
+    runner = _runner("TTQwenImageEdit2511Runner")
+    runner.ttnn_device = SimpleNamespace(shape=(4, 8))
+    runner.settings = SimpleNamespace(model_weights_path="Qwen/Qwen-Image-Edit-2511")
+    assert runner.create_pipeline() is module.QwenImagePipeline.return_value
+    kwargs = module.QwenImagePipelineConfig.default.call_args.kwargs
+    assert kwargs == {
+        "mesh_shape": (4, 8),
+        "checkpoint_name": "Qwen/Qwen-Image-Edit-2511",
+        "dbcache": module.DEFAULT_DBCACHE,
+    }
+    module.QwenImagePipeline.assert_called_once_with(
+        device=runner.ttnn_device,
+        config=module.QwenImagePipelineConfig.default.return_value,
+    )
 
 
 class _H3Pipeline:
@@ -901,3 +995,88 @@ def test_h3_ref2va_keeps_its_l1_pool(class_name, l1_small_size, monkeypatch):
     monkeypatch.setattr(runners, "_minimax_h3_device_params", fake_params)
     _h3_runner(class_name).get_pipeline_device_params()
     assert captured["l1_small_size"] == l1_small_size
+
+
+def test_ideogram_gets_the_caption_and_preset():
+    runner = _runner("TTIdeogram4Runner")
+    request = Ideogram4Request(
+        structured_prompt={
+            "high_level_description": "h",
+            "compositional_deconstruction": {"background": "b", "elements": []},
+        },
+        rendering_speed="quality",
+    )
+    request = _resolved(request, 1024, 1024, prompt=request.model_prompt())
+    runner.run([request])
+    (call,) = runner.pipeline.calls
+    assert call["prompts"] == [
+        '{"high_level_description":"h",'
+        '"compositional_deconstruction":{"background":"b","elements":[]}}'
+    ]
+    assert call["preset"] == "V4_QUALITY_48"
+
+
+def _ideogram_runner_and_request(tokens):
+    runner = _runner("TTIdeogram4Runner")
+    runner.pipeline.count_text_tokens = lambda prompt: tokens
+    request = Ideogram4Request(
+        structured_prompt={
+            "high_level_description": "h",
+            "compositional_deconstruction": {"background": "b", "elements": []},
+        }
+    )
+    return runner, _resolved(request, 2048, 2048, prompt=request.model_prompt())
+
+
+@pytest.mark.requires_tt_metal_policy
+def test_ideogram_runs_a_caption_at_the_token_limit():
+    runner, request = _ideogram_runner_and_request(2048)
+    runner.run([request])
+    assert len(runner.pipeline.calls) == 1
+
+
+@pytest.mark.requires_tt_metal_policy
+def test_ideogram_fails_an_over_long_caption():
+    runner, request = _ideogram_runner_and_request(2049)
+    with pytest.raises(
+        ValueError, match="prompt is 2049 tokens, over the 2048-token limit"
+    ):
+        runner.run([request])
+    assert runner.pipeline.calls == []
+
+
+def test_ideogram_warmup_covers_every_size():
+    # 4 sizes; one preset compiles all three.
+    runner = _runner("TTIdeogram4Runner", warming_up=True)
+    requests = runner.warmup_requests()
+    assert len(requests) == 4
+    for request in requests:
+        runner.pipeline.calls.clear()
+        runner.run([request])
+        (call,) = runner.pipeline.calls
+        assert (call["width"], call["height"]) == (request._width, request._height)
+
+
+@pytest.mark.parametrize(
+    ("mesh_shape", "fabric"), [((4, 8), "FABRIC_1D_RING"), ((2, 4), "FABRIC_1D")]
+)
+def test_ideogram_fabric_follows_the_pipeline_preset(mesh_shape, fabric):
+    runner = _runner("TTIdeogram4Runner")
+    runner.settings.device_mesh_shape = mesh_shape
+    params = runner.get_pipeline_device_params()
+    assert params["fabric_config"] is getattr(runners.ttnn.FabricConfig, fabric)
+
+
+def test_ideogram_pipeline_gets_the_weights_path_as_is(monkeypatch):
+    # The pipeline resolves a repo id itself, from tenstorrent/tt-metal#63894 on.
+    pipeline = ModuleType("pipeline_ideogram4")
+    pipeline.Ideogram4Pipeline = Mock()
+    monkeypatch.setitem(
+        sys.modules, "models.tt_dit.pipelines.ideogram4.pipeline_ideogram4", pipeline
+    )
+    runner = _runner("TTIdeogram4Runner")
+    runner.settings.model_weights_path = "ideogram-ai/ideogram-4-fp8"
+    runner.ttnn_device = Mock()
+    runner.create_pipeline()
+    kwargs = pipeline.Ideogram4Pipeline.create_pipeline.call_args.kwargs
+    assert kwargs["weights_dir"] == "ideogram-ai/ideogram-4-fp8"

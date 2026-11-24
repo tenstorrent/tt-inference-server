@@ -21,23 +21,28 @@ from types import SimpleNamespace
 
 import httpx
 import numpy as np
+import domain.ideogram4_request as ideogram_request
 import domain.wan22_i2v_a14b_request as wan_request
 import pytest
 import yaml
 from config.constants import JobTypes
 from domain.flux3_image_klein_request import Flux3ImageKleinRequest
+from domain.flux2_klein_4b_request import Flux2klein4bRequest
 from domain.generation_request import MEDIA_MAX_BYTES
+from domain.ideogram4_request import Ideogram4Request
 from domain.ltx23_distilled_request import Ltx23DistilledRequest
 from domain.generation_models import GENERATION_MODELS
 from domain.minimax_h3_request import MiniMaxH3FL2VARequest, MiniMaxH3Ref2VARequest
+from domain.qwen_image_edit_2511_request import QwenImageEdit2511Request
 from domain.wan22_i2v_a14b_request import WAN_NEGATIVE_PROMPT, Wan22i2vA14bRequest
 from fastapi import FastAPI
 from PIL import Image
 from pydantic import ValidationError
 from utils.media_probe import ReferenceMediaProbe, media_format_error
+from utils.prompt_enhancer import UNAVAILABLE, PromptEnhancementError
 from utils.video_manager import VideoManager
 
-from tests.fake_tt_metal_policy import H3_POLICY, WAN_POLICY
+from tests.fake_tt_metal_policy import H3_POLICY, IDEOGRAM_POLICY, WAN_POLICY
 
 requires_tt_metal_policy = pytest.mark.requires_tt_metal_policy
 
@@ -81,7 +86,12 @@ def _spec_param(runner, model):
     # Their documents quote tt-metal's policy values.
     quotes_tt_metal = issubclass(
         model.request,
-        (Wan22i2vA14bRequest, MiniMaxH3FL2VARequest, MiniMaxH3Ref2VARequest),
+        (
+            Wan22i2vA14bRequest,
+            MiniMaxH3FL2VARequest,
+            MiniMaxH3Ref2VARequest,
+            Ideogram4Request,
+        ),
     )
     marks = [requires_tt_metal_policy] if quotes_tt_metal else []
     return pytest.param(runner, model, id=model.id, marks=marks)
@@ -176,6 +186,42 @@ def test_ltx_serves_one_shape(fields):
 def test_ltx_rejects(fields, message):
     with pytest.raises(ValidationError, match=message):
         Ltx23DistilledRequest(prompt="a violinist", **fields)
+
+
+@pytest.mark.parametrize(
+    ("fields", "images", "expected"),
+    [
+        ({}, [], (1024, 1024)),
+        ({"size": "2K"}, [], (2048, 2048)),
+        ({}, [(1600, 900)], (1024, 1024)),
+        ({"size": "2K"}, [(900, 1250)], (2048, 2048)),
+    ],
+)
+def test_klein_output_size(fields, images, expected):
+    if images:
+        fields["images"] = ["https://x/a.png"] * len(images)
+        request = _with_image_sizes(
+            Flux2klein4bRequest(prompt="a cat", **fields), images=images
+        )
+    else:
+        request = Flux2klein4bRequest(prompt="a cat", **fields)
+    assert request.output_size() == expected
+
+
+def test_klein_has_2_sizes():
+    assert set(Flux2klein4bRequest.warmup_sizes()) == {(1024, 1024), (2048, 2048)}
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"aspect_ratio": "16:9"},
+        {"images": ["https://x/a.png", "https://x/b.png"]},
+    ],
+)
+def test_klein_serves_the_initial_release_shapes_only(fields):
+    with pytest.raises(ValidationError):
+        Flux2klein4bRequest(prompt="a cat", **fields)
 
 
 # --- Router and jobs -------------------------------------------------------------
@@ -1243,7 +1289,100 @@ async def test_outputs_of_a_job_cancelled_while_writing_go_with_the_job(
     assert not (tmp_path / job["id"]).exists()
 
 
-# --- MiniMax-H3 ------------------------------------------------------------------
+async def test_klein_keeps_only_the_image_sizes(generations_app):
+    client, device = generations_app("tt-flux.2-klein-4b")
+    response = await client.post(
+        "/v1/generations/black-forest-labs/flux.2-klein-4b",
+        json={"prompt": "add a hat", "images": [_data_uri(1600, 900)]},
+    )
+    assert response.status_code == 202, response.text
+    job = await _wait_final(client, response.json()["id"])
+    assert job["status"] == "completed", job
+    (request,) = device.requests
+    assert request._images == {}
+    assert request._image_sizes == {"images": [(1600, 900)]}
+    assert Image.open(BytesIO(request._files["images"][0])).size == (1600, 900)
+
+
+# --- Qwen-Image-Edit-2511 --------------------------------------------------------
+
+
+def test_qwen_size_follows_last_image():
+    request = QwenImageEdit2511Request(
+        prompt="add a hat", images=["https://x/a.png", "https://x/b.png"]
+    )
+    assert request.negative_prompt == " "
+    _with_image_sizes(request, images=[(1000, 1000), (1600, 900)])
+    assert request.output_size() == (1376, 768)
+    request.aspect_ratio = "3:4"
+    assert request.output_size() == (896, 1184)
+
+
+@pytest.mark.parametrize(
+    "fields", [{"images": ["https://x/a.png"] * 4}, {"count": 2}, {"size": "1K"}]
+)
+def test_qwen_rejects(fields):
+    with pytest.raises(ValidationError):
+        QwenImageEdit2511Request(
+            prompt="x", **{"images": ["https://x/a.png"], **fields}
+        )
+
+
+async def test_image_job(generations_app):
+    client, device = generations_app("tt-qwen-image-edit-2511")
+    response = await client.post(
+        "/v1/generations/qwen/qwen-image-edit-2511",
+        json={
+            "prompt": "add a hat",
+            "images": [_data_uri(1600, 900)],
+            "seed": 7,
+            "format": "jpeg",
+        },
+    )
+    assert response.status_code == 202, response.text
+    job = await _wait_final(client, response.json()["id"])
+    assert job["status"] == "completed"
+    (request,) = device.requests
+    assert request.negative_prompt == " "
+
+    (output,) = job["outputs"]
+    assert output == {
+        "type": "image",
+        "url": f"v1/jobs/{job['id']}/content/0",
+        "content_type": "image/jpeg",
+        "seed": 7,
+        "prompt": "add a hat",
+        "width": 1376,
+        "height": 768,
+    }
+    content = await client.get(output["url"])
+    assert content.headers["content-type"] == "image/jpeg"
+    assert Image.open(BytesIO(content.content)).size == (1376, 768)
+
+
+async def test_qwen_keeps_only_the_upright_image_sizes(generations_app):
+    client, device = generations_app("tt-qwen-image-edit-2511")
+    # Stored landscape, shown portrait: EXIF orientation 6 is "rotate 90° CW".
+    exif = Image.Exif()
+    exif[0x0112] = 6
+    buffer = BytesIO()
+    Image.new("RGB", (800, 600)).save(buffer, format="JPEG", exif=exif)
+    rotated = "data:image/jpeg;base64," + base64.b64encode(buffer.getvalue()).decode()
+    response = await client.post(
+        "/v1/generations/qwen/qwen-image-edit-2511",
+        json={"prompt": "add a hat", "images": [_data_uri(1600, 900), rotated]},
+    )
+    assert response.status_code == 202, response.text
+    await _wait_final(client, response.json()["id"])
+    (request,) = device.requests
+    # The runner decodes the images: only their files and sizes go to the device.
+    assert request._images == {}
+    assert request._image_sizes == {"images": [(1600, 900), (600, 800)]}
+    assert len(request._files["images"]) == 2
+    assert (request._width, request._height) == (896, 1184)
+
+
+# --- MiniMax-H3------------------------------------------------------------------
 
 
 def _clip_data_uri(seconds: float, video: bool = True, channels: int = 2) -> str:
@@ -1909,3 +2048,543 @@ async def test_flux3_reports_the_upsampled_caption(generations_app, monkeypatch)
     assert device.requests[0]._prompt == "a cat"
     (output,) = job["outputs"]
     assert output["prompt"] == "a detailed caption"
+
+
+# --- Ideogram 4 ------------------------------------------------------------------
+
+_CAPTION = {
+    "high_level_description": "An open sign.",
+    "compositional_deconstruction": {
+        "background": "a brick wall",
+        "elements": [
+            {"type": "text", "text": "OPEN", "bbox": [10, 20, 30, 40], "desc": "neon"}
+        ],
+    },
+}
+
+
+@pytest.fixture
+def ideogram_serving(monkeypatch):
+    """Serve Ideogram 4 on a 4x8 mesh."""
+    monkeypatch.setattr(
+        ideogram_request,
+        "get_settings",
+        lambda: SimpleNamespace(device_mesh_shape=(4, 8)),
+    )
+
+
+@requires_tt_metal_policy
+@pytest.mark.parametrize(
+    ("fields", "expected"),
+    [
+        ({}, (2048, 2048)),
+        ({"aspect_ratio": "16:9"}, (2048, 1152)),
+        ({"aspect_ratio": "2:3", "size": "2K"}, (1360, 2048)),
+    ],
+)
+def test_ideogram_output_size(fields, expected):
+    request = Ideogram4Request(structured_prompt=_CAPTION, **fields)
+    assert request.output_size() == expected
+    assert len(set(Ideogram4Request.warmup_sizes())) == 4
+
+
+@pytest.mark.parametrize("fields", [{"size": "1K"}, {"aspect_ratio": "3:2"}])
+def test_ideogram_serves_the_initial_release_shapes_only(fields):
+    with pytest.raises(ValidationError):
+        Ideogram4Request(structured_prompt=_CAPTION, **fields)
+
+
+def test_ideogram_caption_is_written_in_the_model_key_order():
+    request = Ideogram4Request(
+        structured_prompt={
+            "compositional_deconstruction": {
+                "elements": [{"desc": "d", "bbox": [0, 0, 1, 1], "type": "obj"}],
+                "background": "b",
+            },
+            "style_description": {
+                "medium": "m",
+                "photo": "p",
+                "lighting": "l",
+                "aesthetics": "a",
+            },
+            "high_level_description": "Ein Café",
+        }
+    )
+    assert request.model_prompt() == (
+        '{"high_level_description":"Ein Café",'
+        '"style_description":{"aesthetics":"a","lighting":"l","photo":"p","medium":"m"},'
+        '"compositional_deconstruction":{"background":"b",'
+        '"elements":[{"type":"obj","bbox":[0,0,1,1],"desc":"d"}]}}'
+    )
+
+
+def _caption_with(element: dict) -> dict:
+    return {
+        "high_level_description": "h",
+        "compositional_deconstruction": {"background": "b", "elements": [element]},
+    }
+
+
+@pytest.mark.parametrize(
+    ("caption", "message"),
+    [
+        (_caption_with({"type": "obj", "desc": "d", "bbox": [30, 0, 10, 10]}), "ymin <= ymax"),
+        (_caption_with({"type": "obj", "desc": "d", "bbox": [0, 0, 10]}), "at least 4"),
+        (_caption_with({"type": "obj", "desc": "d", "color_palette": ["red"]}), "pattern"),
+        (_caption_with({"type": "text", "text": "t"}), "desc"),
+        ({"compositional_deconstruction": {"background": "b", "elements": []}}, "high_level_description"),
+        ({**_CAPTION, "caption": "plain"}, "extra"),
+    ],
+)  # fmt: skip
+def test_ideogram_rejects_invalid_captions(caption, message):
+    with pytest.raises(ValidationError, match=message):
+        Ideogram4Request(structured_prompt=caption)
+
+
+def test_ideogram_takes_a_caption_the_hosted_api_documents():
+    # The example response on Ideogram's magic-prompt reference page.
+    request = Ideogram4Request(
+        structured_prompt={
+            "high_level_description": "A photorealistic ginger cat perched on a "
+            "vintage wooden chair by a sunlit window.",
+            "compositional_deconstruction": {
+                "background": "A dim room with a bright window casting warm light.",
+                "elements": [
+                    {
+                        "type": "obj",
+                        "desc": "ginger cat with green eyes sitting upright on a "
+                        "vintage wooden chair",
+                    }
+                ],
+            },
+            "style_description": {
+                "aesthetics": "warm, cozy, nostalgic",
+                "lighting": "soft natural window light",
+                "medium": "photograph",
+            },
+        }
+    )
+    assert request.model_prompt() == (
+        '{"high_level_description":"A photorealistic ginger cat perched on a '
+        'vintage wooden chair by a sunlit window.",'
+        '"style_description":{"aesthetics":"warm, cozy, nostalgic",'
+        '"lighting":"soft natural window light","medium":"photograph"},'
+        '"compositional_deconstruction":{"background":"A dim room with a bright '
+        'window casting warm light.",'
+        '"elements":[{"type":"obj","desc":"ginger cat with green eyes sitting '
+        'upright on a vintage wooden chair"}]}}'
+    )
+
+
+def test_ideogram_takes_what_the_hosted_schema_allows():
+    # photo with art_style, lowercase hex, and palettes over the 16 and 5 colors
+    # that ideogram-oss/ideogram4's CaptionVerifier allows.
+    request = Ideogram4Request(
+        structured_prompt={
+            "high_level_description": "h",
+            "style_description": {
+                "photo": "p",
+                "art_style": "s",
+                "color_palette": ["#ff2e88"] * 17,
+            },
+            "compositional_deconstruction": {
+                "background": "b",
+                "elements": [
+                    {"type": "obj", "desc": "d", "color_palette": ["#00ff00"] * 6}
+                ],
+            },
+        }
+    )
+    assert request.model_prompt() == (
+        '{"high_level_description":"h",'
+        '"style_description":{"photo":"p","art_style":"s",'
+        '"color_palette":[' + ",".join(['"#FF2E88"'] * 17) + "]},"
+        '"compositional_deconstruction":{"background":"b",'
+        '"elements":[{"type":"obj","desc":"d",'
+        '"color_palette":[' + ",".join(['"#00FF00"'] * 6) + "]}]}}"
+    )
+
+
+def test_a_reported_enhancer_caption_is_a_valid_structured_prompt():
+    reported = Ideogram4Request(prompt="p").prompt_from_enhancer(
+        {
+            "mood": "unnamed key",
+            "high_level_description": "h",
+            "style_description": {
+                "photo": "p",
+                "art_style": "s",
+                "color_palette": ["#ff2e88"],
+            },
+            "compositional_deconstruction": {
+                "background": "b",
+                "elements": [
+                    {"type": "text", "bbox": [5], "text": "T", "desc": "d"},
+                    {"type": "obj", "desc": "d"},
+                ],
+            },
+        }
+    )
+    request = Ideogram4Request(structured_prompt=json.loads(reported))
+    assert request.model_prompt() == reported
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {},
+        {"prompt": "a poster", "structured_prompt": _CAPTION},
+        {"prompt": ""},
+        {"prompt": None},
+        {"structured_prompt": None},
+        {"prompt": None, "structured_prompt": _CAPTION},
+        {"prompt": "a poster", "structured_prompt": None},
+    ],
+    ids=[
+        "neither",
+        "both",
+        "empty",
+        "null",
+        "null-caption",
+        "null-prompt",
+        "null-structured",
+    ],
+)
+def test_ideogram_takes_exactly_one_prompt(fields):
+    with pytest.raises(ValidationError):
+        Ideogram4Request(**fields)
+
+
+def test_ideogram_plain_prompt_goes_to_the_enhancer():
+    request = Ideogram4Request(prompt="a poster", aspect_ratio="2:3")
+    assert request.needs_prompt_enhancement()
+    assert request.enhancer_arguments() == ("a poster", "2:3")
+    assert not Ideogram4Request(structured_prompt=_CAPTION).needs_prompt_enhancement()
+
+
+def test_enhancer_caption_drops_bboxes_and_aspect_ratio_in_model_key_order():
+    # Keys out of order, an unnamed key (aspect_ratio), a bbox.
+    request = Ideogram4Request(prompt="a cafe sign")
+    caption = request.prompt_from_enhancer(
+        {
+            "aspect_ratio": "1x1",
+            "compositional_deconstruction": {
+                "elements": [
+                    {"desc": "d", "bbox": [0, 0, 9, 9], "text": "CAFÉ", "type": "text"}
+                ],
+                "background": "b",
+            },
+            "style_description": {"medium": "m", "art_style": "s"},
+            "high_level_description": "h",
+        }
+    )
+    assert caption == (
+        '{"high_level_description":"h",'
+        '"style_description":{"medium":"m","art_style":"s"},'
+        '"compositional_deconstruction":{"background":"b",'
+        '"elements":[{"type":"text","text":"CAFÉ","desc":"d"}]}}'
+    )
+
+
+@pytest.mark.parametrize(
+    "caption",
+    [
+        None,
+        "not a caption",
+        {"high_level_description": "h", "style_description": {"photo": "p"}},
+        {"compositional_deconstruction": {"background": "b", "elements": []}},
+        _caption_with({"type": "obj"}),
+        _caption_with({"type": "text", "desc": "d"}),
+        _caption_with({"type": "text", "text": "t"}),
+        _caption_with({"type": "obj", "bbox": [0, 0, 9, 1001], "desc": "d"}),
+        _caption_with({"type": "obj", "desc": "d", "color_palette": ["red"]}),
+    ],
+    ids=[
+        "none",
+        "string",
+        "no-composition",
+        "no-high-level-description",
+        "obj-without-desc",
+        "text-without-text",
+        "text-without-desc",
+        "bbox-over-1000",
+        "color-not-hex",
+    ],
+)
+def test_enhancer_caption_follows_the_hosted_schema(caption):
+    with pytest.raises(ValueError, match="enhancer"):
+        Ideogram4Request(prompt="p").prompt_from_enhancer(caption)
+
+
+def test_enhancer_caption_takes_what_the_hosted_schema_allows():
+    # Unnamed keys, photo with art_style, lowercase hex, a bbox of any length.
+    caption = Ideogram4Request(prompt="p").prompt_from_enhancer(
+        {
+            "mood": "unnamed key",
+            "high_level_description": "h",
+            "style_description": {
+                "photo": "p",
+                "art_style": "s",
+                "medium": "m",
+                "color_palette": ["#ff2e88"],
+            },
+            "compositional_deconstruction": {
+                "background": "b",
+                "elements": [
+                    {"type": "obj", "bbox": [5], "desc": "d", "text": "unnamed"}
+                ],
+            },
+        }
+    )
+    assert caption == (
+        '{"high_level_description":"h",'
+        '"style_description":{"photo":"p","medium":"m","art_style":"s",'
+        '"color_palette":["#FF2E88"]},'
+        '"compositional_deconstruction":{"background":"b",'
+        '"elements":[{"type":"obj","desc":"d"}]}}'
+    )
+
+
+class _FakeEnhancer:
+    """Returns ``captions`` in turn, or raises one that is an exception;
+    waits ``delay`` seconds before each."""
+
+    def __init__(self, *captions, delay: float = 0.0):
+        self.captions = list(captions)
+        self.delay = delay
+        self.calls = []
+
+    async def enhance(self, prompt, aspect_ratio):
+        self.calls.append((prompt, aspect_ratio))
+        await asyncio.sleep(self.delay)
+        caption = self.captions.pop(0)
+        if isinstance(caption, Exception):
+            raise caption
+        return caption
+
+
+def _use_enhancer(monkeypatch, enhancer):
+    monkeypatch.setattr(
+        "model_services.generation_service.get_prompt_enhancer",
+        lambda name: enhancer,
+    )
+
+
+_ENHANCED = {
+    "high_level_description": "A neon sign.",
+    "compositional_deconstruction": {
+        "background": "a wall",
+        "elements": [
+            {
+                "type": "text",
+                "bbox": [1, 2, 3, 4],
+                "text": "OPEN",
+                "desc": "a neon sign",
+            }
+        ],
+    },
+}
+_ENHANCED_PROMPT = (
+    '{"high_level_description":"A neon sign.",'
+    '"compositional_deconstruction":{"background":"a wall",'
+    '"elements":[{"type":"text","text":"OPEN","desc":"a neon sign"}]}}'
+)
+
+
+@requires_tt_metal_policy
+async def test_ideogram_plain_prompt_is_enhanced_before_the_device(
+    generations_app, ideogram_serving, monkeypatch
+):
+    enhancer = _FakeEnhancer(_ENHANCED)
+    _use_enhancer(monkeypatch, enhancer)
+    client, device = generations_app("tt-ideogram-4")
+    response = await client.post(
+        "/v1/generations/ideogram-ai/ideogram-4",
+        json={"prompt": "an open sign", "aspect_ratio": "9:16"},
+    )
+    assert response.status_code == 202, response.text
+    job = await _wait_final(client, response.json()["id"])
+    assert job["status"] == "completed"
+    assert enhancer.calls == [("an open sign", "9:16")]
+    assert device.requests[0]._prompt == _ENHANCED_PROMPT
+    (output,) = job["outputs"]
+    assert output["prompt"] == _ENHANCED_PROMPT
+
+
+@requires_tt_metal_policy
+async def test_an_unusable_caption_is_asked_for_once_more(
+    generations_app, ideogram_serving, monkeypatch
+):
+    enhancer = _FakeEnhancer({"style_description": {}}, _ENHANCED)
+    _use_enhancer(monkeypatch, enhancer)
+    client, device = generations_app("tt-ideogram-4")
+    response = await client.post(
+        "/v1/generations/ideogram-ai/ideogram-4", json={"prompt": "an open sign"}
+    )
+    job = await _wait_final(client, response.json()["id"])
+    assert job["status"] == "completed"
+    assert len(enhancer.calls) == 2
+    assert device.requests[0]._prompt == _ENHANCED_PROMPT
+
+
+@requires_tt_metal_policy
+@pytest.mark.parametrize(
+    ("captions", "message"),
+    [
+        (({"style_description": {}}, None), "unusable caption"),
+        ((PromptEnhancementError(UNAVAILABLE),), "unavailable"),
+    ],
+    ids=["unusable-twice", "service-error"],
+)
+async def test_an_enhancer_failure_fails_the_job_before_the_device(
+    generations_app, ideogram_serving, monkeypatch, captions, message
+):
+    _use_enhancer(monkeypatch, _FakeEnhancer(*captions))
+    client, device = generations_app("tt-ideogram-4")
+    response = await client.post(
+        "/v1/generations/ideogram-ai/ideogram-4", json={"prompt": "an open sign"}
+    )
+    job = await _wait_final(client, response.json()["id"])
+    assert job["status"] == "failed"
+    assert job["error"]["code"] == "prompt_enhancement_error"
+    assert message in job["error"]["message"]
+    assert device.requests == []
+
+
+@requires_tt_metal_policy
+async def test_a_job_cancelled_while_its_prompt_is_enhanced_never_reaches_the_device(
+    generations_app, ideogram_serving, monkeypatch
+):
+    _use_enhancer(monkeypatch, _FakeEnhancer(_ENHANCED, delay=0.5))
+    client, device = generations_app("tt-ideogram-4")
+    job = (
+        await client.post(
+            "/v1/generations/ideogram-ai/ideogram-4", json={"prompt": "an open sign"}
+        )
+    ).json()
+    assert job["status"] == "queued"
+    await client.post(f"/v1/jobs/{job['id']}/cancel")
+    assert (await _wait_final(client, job["id"]))["status"] == "cancelled"
+    await asyncio.sleep(0.7)
+    assert device.requests == []
+
+
+@requires_tt_metal_policy
+async def test_a_plain_prompt_is_422_without_an_enhancer(
+    generations_app, ideogram_serving, monkeypatch
+):
+    _use_enhancer(monkeypatch, None)
+    client, device = generations_app("tt-ideogram-4")
+    response = await client.post(
+        "/v1/generations/ideogram-ai/ideogram-4", json={"prompt": "an open sign"}
+    )
+    assert response.status_code == 422
+    assert "structured_prompt" in response.text
+    ok = await client.post(
+        "/v1/generations/ideogram-ai/ideogram-4", json={"structured_prompt": _CAPTION}
+    )
+    assert ok.status_code == 202
+
+
+def test_ideogram_accepts_lowercase_colors():
+    caption = {
+        "high_level_description": "h",
+        "compositional_deconstruction": {
+            "background": "b",
+            "elements": [{"type": "obj", "desc": "d", "color_palette": ["#ff2e88"]}],
+        },
+    }
+    request = Ideogram4Request(structured_prompt=caption)
+    assert '"color_palette":["#FF2E88"]' in request.model_prompt()
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"prompt": None},
+        {"structured_prompt": None},
+        {"prompt": None, "structured_prompt": _CAPTION},
+    ],
+    ids=["prompt", "structured-prompt", "beside-a-caption"],
+)
+async def test_an_explicit_null_is_422(generations_app, body):
+    client, device = generations_app("tt-ideogram-4")
+    response = await client.post("/v1/generations/ideogram-ai/ideogram-4", json=body)
+    assert response.status_code == 422, response.text
+    assert not device.requests
+
+
+def _ideogram_service_at_startup(monkeypatch, enhancer: str):
+    """GenerationService() for Ideogram 4 with no API key, up to the point
+    its workers would start.
+
+    ``Settings`` comes from ``utils.prompt_enhancer``, not ``config.settings``:
+    other test modules replace ``sys.modules["config.settings"]`` with a Mock at
+    import time, while the code under test keeps the real class."""
+    from model_services import generation_service
+    from pydantic import SecretStr
+    from utils.prompt_enhancer import Settings
+
+    monkeypatch.setattr(generation_service.BaseJobService, "__init__", lambda _: None)
+    monkeypatch.setattr(generation_service.settings, "model_runner", "tt-ideogram-4")
+    monkeypatch.setattr("utils.prompt_enhancer._enhancer", None)
+    monkeypatch.setattr(
+        "utils.prompt_enhancer.get_settings",
+        lambda: Settings.model_construct(
+            ideogram_prompt_enhancer=enhancer, ideogram_api_key=SecretStr("")
+        ),
+    )
+    return generation_service.GenerationService()
+
+
+def test_ideogram_starts_without_a_key_by_default(monkeypatch):
+    from utils.prompt_enhancer import Settings
+
+    default = Settings.model_fields["ideogram_prompt_enhancer"].default
+    assert _ideogram_service_at_startup(monkeypatch, default)
+
+
+def test_ideogram_with_the_enhancer_on_refuses_to_start_without_a_key(monkeypatch):
+    with pytest.raises(ValueError, match="IDEOGRAM_API_KEY"):
+        _ideogram_service_at_startup(monkeypatch, "ideogram-api")
+
+
+@requires_tt_metal_policy
+async def test_ideogram_gets_the_serialized_caption(generations_app, ideogram_serving):
+    client, device = generations_app("tt-ideogram-4")
+    response = await client.post(
+        "/v1/generations/ideogram-ai/ideogram-4",
+        json={"structured_prompt": _CAPTION, "aspect_ratio": "16:9"},
+    )
+    job = await _wait_final(client, response.json()["id"])
+    caption = (
+        '{"high_level_description":"An open sign.",'
+        '"compositional_deconstruction":{"background":"a brick wall",'
+        '"elements":[{"type":"text","bbox":[10,20,30,40],"text":"OPEN","desc":"neon"}]}}'
+    )
+    assert device.requests[0]._prompt == caption
+    (output,) = job["outputs"]
+    assert output["prompt"] == caption
+    assert (output["width"], output["height"]) == (2048, 1152)
+
+
+@requires_tt_metal_policy
+async def test_ideogram_rejects_an_unserved_size(
+    generations_app, ideogram_serving, monkeypatch
+):
+    monkeypatch.setattr(
+        importlib.import_module(IDEOGRAM_POLICY),
+        "served_resolutions",
+        lambda mesh_shape: ((2048, 2048),),
+    )
+    client, device = generations_app("tt-ideogram-4")
+    response = await client.post(
+        "/v1/generations/ideogram-ai/ideogram-4",
+        json={"structured_prompt": _CAPTION, "aspect_ratio": "16:9"},
+    )
+    assert response.status_code == 422, response.text
+    (error,) = response.json()["detail"]
+    assert error["loc"] == ["body", "size"]
+    assert error["msg"] == (
+        "unsupported size 2048x1152; this deployment serves [(2048, 2048)]"
+    )
+    assert device.requests == [] and (await client.get("/v1/jobs")).json() == []

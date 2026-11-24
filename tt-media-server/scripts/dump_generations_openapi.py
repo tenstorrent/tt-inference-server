@@ -80,6 +80,7 @@ class Stubs(importlib.abc.MetaPathFinder, importlib.abc.Loader):
 
 sys.meta_path.insert(0, Stubs())
 try:
+    import models.tt_dit.pipelines.ideogram4.policy
     import models.tt_dit.pipelines.minimax_h3.policy
     import models.tt_dit.pipelines.wan.policy
 except ImportError:

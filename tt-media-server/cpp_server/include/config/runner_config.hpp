@@ -21,7 +21,7 @@ struct RunnerConfigBase {
   ModelRunnerType runner_type = ModelRunnerType::MOCK;
 };
 
-/** Shared fields for media runners (image, TTS). Mirrors the
+/** Shared fields for media runners (image, video, TTS). Mirrors the
  *  device/weight knobs from tt-media-server's `config/settings.py`. */
 struct MediaRunnerConfigBase : RunnerConfigBase {
   size_t worker_id = 0;
@@ -128,6 +128,15 @@ struct ImageConfig : MediaRunnerConfigBase {
   size_t imageHeight = 1024;
 };
 
+/** Video deployment settings. `pythonRunner` is the Python `ModelRunners`
+ *  value (`tt-wan2.2`, `tt-ltx-2.3-distilled`, ...). The device runner passes
+ *  it through as MODEL_RUNNER. Shape stays on the request. */
+struct VideoConfig : MediaRunnerConfigBase {
+  VideoConfig() { runner_type = ModelRunnerType::VIDEO_DEVICE; }
+
+  std::string pythonRunner;
+};
+
 /** Qwen3-TTS deployment settings; one release per deployment. */
 struct Qwen3TtsConfig {
   Qwen3TtsRelease release = Qwen3TtsRelease::BASE;
@@ -192,7 +201,7 @@ struct TtsConfig : RunnerConfigBase {
   std::optional<Qwen3TtsConfig> qwen3;
 };
 
-using RunnerConfig =
-    std::variant<BlazeConfig, EmbeddingConfig, ImageConfig, TtsConfig>;
+using RunnerConfig = std::variant<BlazeConfig, EmbeddingConfig, ImageConfig,
+                                  TtsConfig, VideoConfig>;
 
 }  // namespace tt::config

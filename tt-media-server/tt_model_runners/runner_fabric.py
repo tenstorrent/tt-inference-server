@@ -34,15 +34,24 @@ AVAILABLE_RUNNERS = {
     ModelRunners.TT_FLUX_3_IMAGE_KLEIN: lambda wid: __import__(
         "tt_model_runners.generation_runners", fromlist=["TTFlux3ImageKleinRunner"]
     ).TTFlux3ImageKleinRunner(wid),
+    ModelRunners.TT_FLUX_2_KLEIN_4B: lambda wid: __import__(
+        "tt_model_runners.generation_runners", fromlist=["TTFlux2Klein4BRunner"]
+    ).TTFlux2Klein4BRunner(wid),
     ModelRunners.TT_MOTIF_IMAGE_6B_PREVIEW: lambda wid: __import__(
         "tt_model_runners.dit_runners", fromlist=["TTMotifImage6BPreviewRunner"]
     ).TTMotifImage6BPreviewRunner(wid),
+    ModelRunners.TT_IDEOGRAM_4: lambda wid: __import__(
+        "tt_model_runners.generation_runners", fromlist=["TTIdeogram4Runner"]
+    ).TTIdeogram4Runner(wid),
     ModelRunners.TT_QWEN_IMAGE: lambda wid: __import__(
         "tt_model_runners.dit_runners", fromlist=["TTQwenImageRunner"]
     ).TTQwenImageRunner(wid),
     ModelRunners.TT_QWEN_IMAGE_2512: lambda wid: __import__(
         "tt_model_runners.dit_runners", fromlist=["TTQwenImage2512Runner"]
     ).TTQwenImageRunner(wid),
+    ModelRunners.TT_QWEN_IMAGE_EDIT_2511: lambda wid: __import__(
+        "tt_model_runners.generation_runners", fromlist=["TTQwenImageEdit2511Runner"]
+    ).TTQwenImageEdit2511Runner(wid),
     ModelRunners.TT_MOCHI_1: lambda wid: __import__(
         "tt_model_runners.dit_runners", fromlist=["TTMochi1Runner"]
     ).TTMochi1Runner(wid),
