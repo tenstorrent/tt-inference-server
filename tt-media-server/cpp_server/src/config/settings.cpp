@@ -1029,10 +1029,8 @@ uint32_t prefillMaxInFlight() {
 }
 
 size_t maxQueueSize() {
-  // Other services keep 1000; the video service uses Python's 5000.
-  static const size_t cached = static_cast<size_t>(envUlong(
-      "MAX_QUEUE_SIZE", isVideoService() ? defaults::VIDEO_MAX_QUEUE_SIZE
-                                         : defaults::MAX_QUEUE_SIZE));
+  static const size_t cached =
+      static_cast<size_t>(envUlong("MAX_QUEUE_SIZE", defaults::MAX_QUEUE_SIZE));
   return cached;
 }
 
