@@ -571,7 +571,8 @@ def parse_arguments():
         default=None,
         metavar="NAMES",
         help="Run only these tasks of one agentic benchmark under --workflow agentic: "
-        "a comma-separated list, or @file with one name per line (Harbor task names, "
+        "a comma-separated list, or @file (one name per line, or a JSON list as written "
+        "by report_module.list_agentic_tasks; Harbor task names, "
         "sent as --include-task-name). Overrides the configured task list and its "
         "n_tasks cap. The run is graded PARTIAL; merge the partial runs with "
         "`python -m report_module.merge_agentic_runs` to grade the benchmark. "

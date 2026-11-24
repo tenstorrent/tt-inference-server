@@ -285,37 +285,63 @@ def _format_kwarg(value: Any) -> str:
     return str(value)
 
 
-def _write_harbor_config(config: HarborRunConfig) -> Path:
-    config_path = config.jobs_dir / f"{config.task_name}_harbor_config.json"
-    config.jobs_dir.mkdir(parents=True, exist_ok=True)
+def harbor_dataset_config(
+    dataset: str,
+    *,
+    dataset_ref: Optional[str] = None,
+    dataset_path: Optional[Path] = None,
+    task_names: list[str] = (),
+    exclude_task_names: list[str] = (),
+    n_tasks: Optional[int] = None,
+) -> dict[str, Any]:
+    """The ``datasets[]`` entry of a Harbor job config (Harbor's DatasetConfig).
 
-    task_names = config.task_names
-    exclude_task_names = config.exclude_task_names
-    if config.dataset_path is not None:
+    Harbor selects a job's tasks from exactly this: the dataset (registry
+    ``name``/``ref``, or a local ``path``), then ``task_names`` /
+    ``exclude_task_names`` glob filters, then the first ``n_tasks``.
+    """
+    task_names = list(task_names)
+    exclude_task_names = list(exclude_task_names)
+    if dataset_path is not None:
         # A locally generated copy has no registry version, so dataset_ref
         # does not apply.
-        if config.dataset_ref:
+        if dataset_ref:
             logger.warning(
                 "Ignoring dataset_ref %r for %s: running the local copy at %s",
-                config.dataset_ref,
-                config.dataset,
-                config.dataset_path,
+                dataset_ref,
+                dataset,
+                dataset_path,
             )
-        dataset_config: dict[str, Any] = {"path": str(config.dataset_path)}
-        task_names = [local_task_pattern(config.dataset, p) for p in task_names]
+        dataset_config: dict[str, Any] = {"path": str(dataset_path)}
+        task_names = [local_task_pattern(dataset, p) for p in task_names]
         exclude_task_names = [
-            local_task_pattern(config.dataset, p) for p in exclude_task_names
+            local_task_pattern(dataset, p) for p in exclude_task_names
         ]
     else:
-        dataset_config = {"name": config.dataset}
-        if config.dataset_ref:
-            dataset_config["ref"] = config.dataset_ref
-    if config.n_tasks is not None:
-        dataset_config["n_tasks"] = config.n_tasks
+        dataset_config = {"name": dataset}
+        if dataset_ref:
+            dataset_config["ref"] = dataset_ref
+    if n_tasks is not None:
+        dataset_config["n_tasks"] = n_tasks
     if task_names:
         dataset_config["task_names"] = task_names
     if exclude_task_names:
         dataset_config["exclude_task_names"] = exclude_task_names
+    return dataset_config
+
+
+def _write_harbor_config(config: HarborRunConfig) -> Path:
+    config_path = config.jobs_dir / f"{config.task_name}_harbor_config.json"
+    config.jobs_dir.mkdir(parents=True, exist_ok=True)
+
+    dataset_config = harbor_dataset_config(
+        config.dataset,
+        dataset_ref=config.dataset_ref,
+        dataset_path=config.dataset_path,
+        task_names=config.task_names,
+        exclude_task_names=config.exclude_task_names,
+        n_tasks=config.n_tasks,
+    )
 
     environment_config: dict[str, Any] = {"type": config.environment_type}
     if config.override_cpus is not None:

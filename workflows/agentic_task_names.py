@@ -10,14 +10,17 @@ Kept dependency-free: run.py validates the value before any venv exists, and
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import List
 
 
 def parse_task_names(value: str) -> List[str]:
-    """``a,b,c`` or ``@file`` (one name per line) -> the task names, in order.
+    """``a,b,c`` or ``@file`` -> the task names, in order.
 
-    Blank lines and ``#`` comments in a file are skipped. Raises ValueError on
+    The file holds one name per line (blank lines and ``#`` comments are
+    skipped) or a JSON list of names, as ``report_module.list_agentic_tasks``
+    writes. Raises ValueError on
     an empty list, an empty comma-separated entry, or a repeated name (a task
     listed twice would run twice and be scored twice).
     """
@@ -29,11 +32,20 @@ def parse_task_names(value: str) -> List[str]:
             text = path.read_text(encoding="utf-8")
         except OSError as exc:
             raise ValueError(f"cannot read task name file {path}: {exc}") from exc
-        names = [
-            line.strip()
-            for line in text.splitlines()
-            if line.strip() and not line.strip().startswith("#")
-        ]
+        if text.lstrip().startswith("["):
+            try:
+                names = json.loads(text)
+            except ValueError as exc:
+                raise ValueError(f"{path}: not a JSON list: {exc}") from exc
+            if not all(isinstance(name, str) and name.strip() for name in names):
+                raise ValueError(f"{path}: expected a JSON list of task names")
+            names = [name.strip() for name in names]
+        else:
+            names = [
+                line.strip()
+                for line in text.splitlines()
+                if line.strip() and not line.strip().startswith("#")
+            ]
     else:
         names = [name.strip() for name in value.split(",")]
         if not all(names):

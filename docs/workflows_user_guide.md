@@ -362,6 +362,24 @@ job dir,
 `reports_output/agentic/<model>_<device>_agentic/eval_<model>/agentic/<task>_<stamp>/`,
 holding the job's `result.json` and one dir per trial.
 
+To get the names to split, list the full run's task set first:
+
+```bash
+python3 -m report_module.list_agentic_tasks --model <hf_repo> \
+    --task terminal_bench_2_1 --out all.json
+```
+
+It writes a JSON list of the task names Harbor selects for a full run (the
+configured dataset, `task_names`, `exclude_task_names` and `n_tasks`; limit
+modes are ignored). It needs Harbor: run from the host Python `run.py` uses, it
+sets up the `EVALS_AGENTIC` venv (`.workflow_venvs/.venv_evals_agentic`) and
+re-runs itself there. Registry datasets (Terminal-Bench) are read from Harbor's
+registry over the network; locally generated ones (tau3-bench, DeepSWE) are
+cloned on first use and cached in that venv, and are listed by their local
+directory names. Either form is accepted by `--agentic-task-names` and
+`--expected-tasks`, and both take the JSON list file as `@all.json` (or a
+slice of it).
+
 ```bash
 python3 run.py --model <hf_repo> --tt-device <device> --workflow agentic \
     --agentic-benchmark tb2.1 --agentic-task-names @slice0.txt
