@@ -296,6 +296,33 @@ templates:
       default_impl: true
   status: FUNCTIONAL
 
+# Served through the generations API (POST /v1/generations/qwen/qwen-image-edit-2511).
+# Disk: the weights twice under --host-volume (the setup's download and the server's HF cache),
+# plus the tt_dit weight cache.
+- weights:
+    - Qwen/Qwen-Image-Edit-2511
+  impl: tt_transformers
+  min_disk_gb: 170
+  min_ram_gb: 64
+  model_type: IMAGE
+  inference_engine: MEDIA
+  env_vars:
+    TT_DIT_CACHE_DIR: /home/container_app_user/cache_root/tt_dit_cache
+  device_model_specs:
+    - device: P300X2
+      max_concurrency: 1
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+    - device: P150X8
+      max_concurrency: 1
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+    - device: BLACKHOLE_GALAXY
+      max_concurrency: 1
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+  status: FUNCTIONAL
+
 - weights:
     - Tongyi-MAI/Z-Image-Turbo
   impl: tt_transformers

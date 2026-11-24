@@ -29,6 +29,7 @@ from domain.generation_request import MEDIA_MAX_BYTES
 from domain.ltx23_distilled_request import Ltx23DistilledRequest
 from domain.generation_models import GENERATION_MODELS
 from domain.minimax_h3_request import MiniMaxH3FL2VARequest, MiniMaxH3Ref2VARequest
+from domain.qwen_image_edit_2511_request import QwenImageEdit2511Request
 from domain.wan22_i2v_a14b_request import WAN_NEGATIVE_PROMPT, Wan22i2vA14bRequest
 from fastapi import FastAPI
 from PIL import Image
@@ -223,9 +224,9 @@ def test_other_services_jobs_are_404(monkeypatch, job_type):
 
 
 class _FakeDevice:
-    """Stands in for the scheduler and device: each request yields a video
-    after ``delay`` seconds. ``video``, if set, makes its result instead. A
-    job stays queued for ``queued`` seconds."""
+    """Stands in for the scheduler and device: each request yields an image,
+    or a video for a video model, after ``delay`` seconds. ``video``, if set,
+    makes a video's result instead. A job stays queued for ``queued`` seconds."""
 
     def __init__(self, delay: float = 0.0):
         self.delay = delay
@@ -245,13 +246,17 @@ class _FakeDevice:
         await asyncio.sleep(self.delay)
         if self.error is not None:
             raise self.error
-        if self.video is not None:
+        if request.OUTPUT_TYPE == "video" and self.video is not None:
             return self.video(request)
-        # The runner encodes its MP4 and returns the path.
-        return VideoManager().export_to_mp4(
-            np.zeros((request.frames, request._height, request._width, 3), np.uint8),
-            fps=request.fps,
-        )
+        if request.OUTPUT_TYPE == "video":
+            # The runner encodes its MP4 and returns the path.
+            return VideoManager().export_to_mp4(
+                np.zeros(
+                    (request.frames, request._height, request._width, 3), np.uint8
+                ),
+                fps=request.fps,
+            )
+        return Image.new("RGB", (request._width, request._height), "blue")
 
 
 @pytest.fixture
@@ -651,6 +656,24 @@ async def test_a_bad_data_uri_payload_is_422(generations_app, payload):
     (detail,) = response.json()["detail"]
     assert detail["loc"] == ["body", "first_frame"]
     assert device.requests == []
+
+
+@pytest.mark.parametrize(
+    "output_format, options",
+    [("jpeg", {"quality": 95, "subsampling": 0}), ("webp", {"quality": 90})],
+)
+def test_lossy_outputs_are_saved_at_high_quality(tmp_path, output_format, options):
+    from model_services.generation_service import GenerationService
+
+    pixels = np.random.default_rng(0).integers(0, 256, (64, 64, 3), dtype=np.uint8)
+    image = Image.fromarray(pixels)
+    request = SimpleNamespace(
+        OUTPUT_TYPE="image", format=output_format, _seed=0, _prompt="x"
+    )
+    output = GenerationService._write_output(tmp_path, 0, request, image)
+    expected = BytesIO()
+    image.save(expected, format=output_format.upper(), **options)
+    assert (tmp_path / output["file"]).read_bytes() == expected.getvalue()
 
 
 async def test_full_queue_is_429_before_media_is_fetched(generations_app, monkeypatch):
@@ -1220,7 +1243,85 @@ async def test_outputs_of_a_job_cancelled_while_writing_go_with_the_job(
     assert not (tmp_path / job["id"]).exists()
 
 
-# --- MiniMax-H3 ------------------------------------------------------------------
+# --- Qwen-Image-Edit-2511 --------------------------------------------------------
+
+
+def test_qwen_size_follows_last_image():
+    request = QwenImageEdit2511Request(
+        prompt="add a hat", images=["https://x/a.png", "https://x/b.png"]
+    )
+    assert request.negative_prompt == " "
+    _with_image_sizes(request, images=[(1000, 1000), (1600, 900)])
+    assert request.output_size() == (1376, 768)
+    request.aspect_ratio = "3:4"
+    assert request.output_size() == (896, 1184)
+
+
+@pytest.mark.parametrize(
+    "fields", [{"images": ["https://x/a.png"] * 4}, {"count": 2}, {"size": "1K"}]
+)
+def test_qwen_rejects(fields):
+    with pytest.raises(ValidationError):
+        QwenImageEdit2511Request(
+            prompt="x", **{"images": ["https://x/a.png"], **fields}
+        )
+
+
+async def test_image_job(generations_app):
+    client, device = generations_app("tt-qwen-image-edit-2511")
+    response = await client.post(
+        "/v1/generations/qwen/qwen-image-edit-2511",
+        json={
+            "prompt": "add a hat",
+            "images": [_data_uri(1600, 900)],
+            "seed": 7,
+            "format": "jpeg",
+        },
+    )
+    assert response.status_code == 202, response.text
+    job = await _wait_final(client, response.json()["id"])
+    assert job["status"] == "completed"
+    (request,) = device.requests
+    assert request.negative_prompt == " "
+
+    (output,) = job["outputs"]
+    assert output == {
+        "type": "image",
+        "url": f"v1/jobs/{job['id']}/content/0",
+        "content_type": "image/jpeg",
+        "seed": 7,
+        "prompt": "add a hat",
+        "width": 1376,
+        "height": 768,
+    }
+    content = await client.get(output["url"])
+    assert content.headers["content-type"] == "image/jpeg"
+    assert Image.open(BytesIO(content.content)).size == (1376, 768)
+
+
+async def test_qwen_keeps_only_the_upright_image_sizes(generations_app):
+    client, device = generations_app("tt-qwen-image-edit-2511")
+    # Stored landscape, shown portrait: EXIF orientation 6 is "rotate 90° CW".
+    exif = Image.Exif()
+    exif[0x0112] = 6
+    buffer = BytesIO()
+    Image.new("RGB", (800, 600)).save(buffer, format="JPEG", exif=exif)
+    rotated = "data:image/jpeg;base64," + base64.b64encode(buffer.getvalue()).decode()
+    response = await client.post(
+        "/v1/generations/qwen/qwen-image-edit-2511",
+        json={"prompt": "add a hat", "images": [_data_uri(1600, 900), rotated]},
+    )
+    assert response.status_code == 202, response.text
+    await _wait_final(client, response.json()["id"])
+    (request,) = device.requests
+    # The runner decodes the images: only their files and sizes go to the device.
+    assert request._images == {}
+    assert request._image_sizes == {"images": [(1600, 900), (600, 800)]}
+    assert len(request._files["images"]) == 2
+    assert (request._width, request._height) == (896, 1184)
+
+
+# --- MiniMax-H3------------------------------------------------------------------
 
 
 def _clip_data_uri(seconds: float, video: bool = True, channels: int = 2) -> str:

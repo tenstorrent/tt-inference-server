@@ -21,6 +21,7 @@ from domain.minimax_h3_request import (
     MiniMaxH3FL2VARequest,
     MiniMaxH3Ref2VARequest,
 )
+from domain.qwen_image_edit_2511_request import QwenImageEdit2511Request
 from domain.wan22_i2v_a14b_request import (
     WAN_NEGATIVE_PROMPT,
     WAN_SIZES,
@@ -131,6 +132,7 @@ def _runner(class_name: str, warming_up: bool = False):
     runner = cls.__new__(cls)
     runner.device_id = "0"
     runner._warming_up = warming_up
+    runner._image_stage_recorder = lambda: None
     runner._video_stage_recorder = lambda resolution: None
     runner.logger = Mock()
     runner.settings = SimpleNamespace(model_runner="tt-wan2.2-i2v")
@@ -362,6 +364,65 @@ def test_ltx_does_not_bring_back_a_deleted_jobs_directory(ltx_remuxes, tmp_path)
         runner.run([request])
     assert list(tmp_path.iterdir()) == []
     assert ltx_remuxes == []
+
+
+def test_qwen_passes_the_input_images():
+    runner = _runner("TTQwenImageEdit2511Runner")
+    request = _resolved(
+        QwenImageEdit2511Request(
+            prompt="add a hat", negative_prompt="blurry", images=["https://x/a.png"] * 2
+        ),
+        1376,
+        768,
+        {"images": [_png(8, 16), _png(24, 12)]},
+    )
+    runner.run([request])
+    (call,) = runner.pipeline.calls
+    assert [image.size for image in call["image"]] == [(8, 16), (24, 12)]
+    assert (call["width"], call["height"], call["cfg_scale"]) == (1376, 768, 4.0)
+    assert call["negative_prompts"] == ["blurry"]
+    assert call["num_inference_steps"] == 40
+
+
+def test_qwen_records_the_stages_of_a_failed_edit():
+    runner = _runner("TTQwenImageEdit2511Runner")
+    recorder = Mock()
+    runner._image_stage_recorder = lambda: recorder
+    runner.pipeline = Mock(side_effect=RuntimeError("device error"))
+    request = _resolved(
+        QwenImageEdit2511Request(prompt="add a hat", images=["https://x/a.png"]),
+        1376,
+        768,
+        {"images": [_png(8, 8)]},
+    )
+    with pytest.raises(RuntimeError):
+        runner.run([request])
+    recorder.flush.assert_called_once_with(None)
+
+
+def test_qwen_pipeline_warms_itself_up():
+    assert _runner("TTQwenImageEdit2511Runner").warmup_requests() == []
+
+
+def test_qwen_pipeline_runs_with_dbcache(monkeypatch):
+    module = Mock()
+    monkeypatch.setitem(
+        sys.modules, "models.tt_dit.pipelines.qwenimage.pipeline_qwenimage", module
+    )
+    runner = _runner("TTQwenImageEdit2511Runner")
+    runner.ttnn_device = SimpleNamespace(shape=(4, 8))
+    runner.settings = SimpleNamespace(model_weights_path="Qwen/Qwen-Image-Edit-2511")
+    assert runner.create_pipeline() is module.QwenImagePipeline.return_value
+    kwargs = module.QwenImagePipelineConfig.default.call_args.kwargs
+    assert kwargs == {
+        "mesh_shape": (4, 8),
+        "checkpoint_name": "Qwen/Qwen-Image-Edit-2511",
+        "dbcache": module.DEFAULT_DBCACHE,
+    }
+    module.QwenImagePipeline.assert_called_once_with(
+        device=runner.ttnn_device,
+        config=module.QwenImagePipelineConfig.default.return_value,
+    )
 
 
 class _H3Pipeline:

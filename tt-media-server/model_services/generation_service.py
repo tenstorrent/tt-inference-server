@@ -26,6 +26,7 @@ from fastapi import HTTPException
 from fastapi.exceptions import RequestValidationError
 from model_services.base_job_service import BaseJobService
 from PIL import UnidentifiedImageError
+from telemetry.image_request_metrics import observe_generation_image_request
 from telemetry.telemetry_client import (
     VIDEO_REQUEST_TYPE_I2V,
     VIDEO_REQUEST_TYPE_T2V,
@@ -53,6 +54,19 @@ from utils.video_manager import probe_video
 
 # The file in a job's directory listing its outputs.
 MANIFEST = "outputs.json"
+
+IMAGE_FORMATS = {
+    "png": ("PNG", "image/png"),
+    "jpeg": ("JPEG", "image/jpeg"),
+    "webp": ("WEBP", "image/webp"),
+}
+# PIL's defaults, JPEG at quality 75 and lossy WebP at 80, are noticeably lossy
+# for a generated image. JPEG also keeps full-resolution color (4:4:4), which
+# keeps colored edges and small text sharp.
+IMAGE_SAVE_OPTIONS = {
+    "JPEG": {"quality": 95, "subsampling": 0},
+    "WEBP": {"quality": 90},
+}
 
 
 def _too_large(kind: str, max_bytes: int) -> HTTPException:
@@ -144,8 +158,8 @@ def read_manifest(result_path: str) -> list[dict]:
     return json.loads((Path(result_path) / MANIFEST).read_text())
 
 
-# Serves the generations API: one job per submitted request, producing a video,
-# written to the job's own directory.
+# Serves the generations API: one job per submitted request, producing an image
+# or a video, written to the job's own directory.
 class GenerationService(BaseJobService):
     # The pipelines load their own weights.
     DOWNLOADS_WEIGHTS = False
@@ -326,13 +340,15 @@ class GenerationService(BaseJobService):
                 setattr(request, name, _without_data(value))
 
     async def process_request(self, input_request: GenerationRequest) -> str:
-        """Run one job; a video job is reported to the video metric family, as
-        VideoService does on /v1/videos.
+        """Run one job. An image job records its request shape, as ImageService
+        does on /v1/images. A video job is reported to the video metric family,
+        as VideoService does on /v1/videos.
 
         Timing uses ``monotonic``: the wall clock can step during a generation
         that runs for minutes.
         """
         if input_request.OUTPUT_TYPE != "video":
+            observe_generation_image_request(input_request, settings.model_runner)
             return await super().process_request(input_request)
         model_type = settings.model_runner
         request_type = _video_request_type(input_request)
@@ -429,7 +445,8 @@ class GenerationService(BaseJobService):
     async def post_process(self, result, input_request: GenerationRequest) -> str:
         """Write the output to the job's directory; returns the directory.
 
-        A job has one output.
+        ``count`` is 1, so a job has one output. More will come from one
+        batched pipeline call, not from one request per output.
         """
         writing = asyncio.ensure_future(
             asyncio.to_thread(self._write_outputs, input_request, [result])
@@ -468,6 +485,20 @@ class GenerationService(BaseJobService):
             "seed": request._seed,
             "prompt": request._prompt,
         }
+        if request.OUTPUT_TYPE == "image":
+            pil_format, content_type = IMAGE_FORMATS[request.format]
+            path = directory / f"{index}.{request.format}"
+            image = result.convert("RGB") if pil_format == "JPEG" else result
+            options = IMAGE_SAVE_OPTIONS.get(pil_format, {})
+            image.save(path, format=pil_format, **options)
+            return {
+                **output,
+                "file": path.name,
+                "content_type": content_type,
+                "width": image.width,
+                "height": image.height,
+            }
+
         path = directory / f"{index}.mp4"
         _write_video(result, path)
         probe = probe_video(str(path))

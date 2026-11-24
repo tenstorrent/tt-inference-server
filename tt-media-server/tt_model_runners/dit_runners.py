@@ -98,6 +98,7 @@ dit_runner_log_map = {
     ModelRunners.TT_MINIMAX_H3_REF2VA_LIGHTX2V.value: "MiniMaxH3-Ref2VA-LightX2V",
     ModelRunners.TT_QWEN_IMAGE.value: "Qwen-Image",
     ModelRunners.TT_QWEN_IMAGE_2512.value: "Qwen-Image-2512",
+    ModelRunners.TT_QWEN_IMAGE_EDIT_2511.value: "Qwen-Image-Edit-2511",
 }
 
 DIT_WEIGHTS_DISTRIBUTION_TIMEOUT_SECONDS = 6000
