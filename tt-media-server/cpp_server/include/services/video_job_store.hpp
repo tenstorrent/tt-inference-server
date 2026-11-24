@@ -66,9 +66,9 @@ class VideoJobStore {
   /**
    * Registers a new QUEUED job. The limits are checked under the same lock that
    * inserts the job, so concurrent requests cannot all pass a check made before
-   * any of them is stored. Same order as Python: more than `maxActive` jobs that
-   * are not finished throws ActiveJobLimitException (0 = no limit), then a full
-   * table throws MaxJobsReachedException.
+   * any of them is stored. Same order as Python: more than `maxActive` jobs
+   * that are not finished throws ActiveJobLimitException (0 = no limit), then a
+   * full table throws MaxJobsReachedException.
    */
   Json::Value create(uint32_t taskId, std::string model,
                      Json::Value requestParameters, size_t maxActive = 0) {

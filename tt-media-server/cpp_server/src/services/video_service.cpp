@@ -173,7 +173,8 @@ Json::Value VideoService::createJob(domain::VideoGenerateRequest request) {
   // create(), under the store lock, so two requests cannot both pass the check.
   Json::Value metadata;
   try {
-    metadata = jobs.create(taskId, servedModelName(), request.toJson(), maxQueueSize);
+    metadata =
+        jobs.create(taskId, servedModelName(), request.toJson(), maxQueueSize);
   } catch (const ActiveJobLimitException&) {
     throw QueueFullException{};
   }

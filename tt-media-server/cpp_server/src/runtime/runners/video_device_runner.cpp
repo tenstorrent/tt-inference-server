@@ -279,9 +279,9 @@ bool VideoDeviceRunner::warmup() {
     warmupFailed = true;
   }
   // initialize_interpreter() leaves the GIL held by this thread. Release it on
-  // the failure path too: the worker then calls stop(), which takes the GIL from
-  // another thread, and with the GIL still held here the process never exits
-  // (the service would not notice the dead worker).
+  // the failure path too: the worker then calls stop(), which takes the GIL
+  // from another thread, and with the GIL still held here the process never
+  // exits (the service would not notice the dead worker).
   if (ownsInterpreter) {
     PyEval_SaveThread();
   }

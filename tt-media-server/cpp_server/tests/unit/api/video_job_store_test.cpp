@@ -269,8 +269,7 @@ TEST(VideoJobStoreTest, ActiveLimitCountsOnlyJobsThatAreNotFinished) {
   // 0 = no limit; the active check comes before the table size check
   VideoJobStore full(1, 0);
   full.create(1, "m", params("one"));
-  EXPECT_THROW(full.create(2, "m", params("two"), 1),
-               ActiveJobLimitException);
+  EXPECT_THROW(full.create(2, "m", params("two"), 1), ActiveJobLimitException);
   EXPECT_THROW(full.create(2, "m", params("two")), MaxJobsReachedException);
 }
 
@@ -287,8 +286,7 @@ TEST(VideoJobStoreTest, ConcurrentCreatesNeverExceedTheActiveLimit) {
     threads.emplace_back([&, i] {
       while (!go.load()) std::this_thread::yield();
       try {
-        store.create(static_cast<uint32_t>(i), "m", params("p"),
-                     kLimit);
+        store.create(static_cast<uint32_t>(i), "m", params("p"), kLimit);
         ++accepted;
       } catch (const ActiveJobLimitException&) {
         ++rejected;
@@ -875,7 +873,8 @@ TEST(HttpRange, UnsatisfiableIgnoredAndMultiRange) {
   EXPECT_EQ(parseByteRange("bytes=5", 1000).kind, ByteRange::Kind::None);
 }
 
-// ---- The result file ----------------------------------------------------------
+// ---- The result file
+// ----------------------------------------------------------
 
 TEST(VideoJobStoreResult, RemoveNeverDeletesADirectory) {
   namespace fs = std::filesystem;

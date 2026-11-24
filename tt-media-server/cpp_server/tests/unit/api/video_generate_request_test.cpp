@@ -208,7 +208,8 @@ TEST(VideoResponseJsonTest, OmitsGenerationTimeUnlessPositive) {
   EXPECT_DOUBLE_EQ(json["generation_time"].asDouble(), 0.02);
 }
 
-TEST(VideoJobJson, RequestParametersHaveEveryPythonFieldWithNullsAndDefaultSteps) {
+TEST(VideoJobJson,
+     RequestParametersHaveEveryPythonFieldWithNullsAndDefaultSteps) {
   using tt::domain::video::JobStatus;
   using tt::domain::video::VideoJob;
 
@@ -236,8 +237,8 @@ TEST(VideoJobJson, RequestParametersHaveEveryPythonFieldWithNullsAndDefaultSteps
   EXPECT_EQ(params["num_frames"].asInt(), 81);
   EXPECT_EQ(params["num_inference_steps"].asInt(),
             tt::domain::kDefaultVideoInferenceSteps);
-  for (const char* unset : {"negative_prompt", "aspect_ratio", "height", "width",
-                            "fps", "duration"}) {
+  for (const char* unset : {"negative_prompt", "aspect_ratio", "height",
+                            "width", "fps", "duration"}) {
     ASSERT_TRUE(params.isMember(unset)) << unset;
     EXPECT_TRUE(params[unset].isNull()) << unset;
   }
@@ -260,4 +261,3 @@ TEST(VideoModeTest, EnvDefaultsToAsyncAndRequestOverrides) {
   EXPECT_TRUE(tt::domain::video::videoRequestIsAsync("true", body));
   ::unsetenv("USE_ASYNC_VIDEO");
 }
-

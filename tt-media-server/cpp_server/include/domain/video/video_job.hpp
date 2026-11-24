@@ -55,7 +55,7 @@ inline bool isTerminal(JobStatus status) {
 /** One async video job. The job id is the decimal task id. */
 struct VideoJob {
   uint32_t taskId = 0;
-  std::string uuid;   // public id; empty = use the decimal task id
+  std::string uuid;  // public id; empty = use the decimal task id
   std::string model;
   Json::Value requestParameters;
   JobStatus status = JobStatus::QUEUED;
@@ -80,10 +80,16 @@ struct VideoJob {
    *  default is applied here as well for a job that was built without it. Keys
    *  this server adds on top of the Python schema are kept. */
   Json::Value publicRequestParameters() const {
-    static const char* const kFields[] = {
-        "prompt",   "negative_prompt", "num_inference_steps", "seed",
-        "aspect_ratio", "height",      "width",               "fps",
-        "duration", "num_frames"};
+    static const char* const kFields[] = {"prompt",
+                                          "negative_prompt",
+                                          "num_inference_steps",
+                                          "seed",
+                                          "aspect_ratio",
+                                          "height",
+                                          "width",
+                                          "fps",
+                                          "duration",
+                                          "num_frames"};
     Json::Value out(Json::objectValue);
     for (const char* key : kFields) {
       const bool set = requestParameters.isObject() &&
