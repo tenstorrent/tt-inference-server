@@ -55,6 +55,13 @@ DEFAULT_TRACE_REGION_SIZE = 50_000_000
 FIRST_MEMBER_ENV = ("MODEL_WEIGHTS_DIR", "TT_CACHE_PATH")
 
 
+# Members whose on-device sampling does not survive the other members' steps between their
+# own decode steps: with it, Llama-3.1-8B-Instruct next to Qwen3-32B (P300x2) answered garbage
+# once their steps interleaved, then the device timed out; with host sampling every answer
+# matched the model's answer alone. These members sample on the host in a group.
+HOST_SAMPLING_IMPLS = ("tt_transformers",)
+
+
 def load_group(path) -> dict:
     group = json.loads(Path(path).read_text())
     version = group.get("cohost_group_version")
@@ -153,6 +160,31 @@ def split_vllm_argv(server, argv: list) -> tuple:
     return model, args, tt_config
 
 
+def sample_on_host(server, argv: list) -> tuple:
+    """``(argv, mode)``: ``argv`` without the plugin's ``sample_on_device_mode``, which was ``mode``."""
+    argv, mode = list(argv), None
+    for index, token in enumerate(argv):
+        if (
+            not token.startswith("--")
+            or server._normalize_vllm_arg_name(token) != "additional_config"
+        ):
+            continue
+        inline = "=" in token
+        if not inline and index + 1 >= len(argv):
+            continue
+        raw = token.split("=", 1)[1] if inline else argv[index + 1]
+        extra = json.loads(raw) if raw else {}
+        found = (extra.get("tt") or {}).pop("sample_on_device_mode", None)
+        if found is None:
+            continue
+        mode, value = found, json.dumps(extra)
+        if inline:
+            argv[index] = f"{token.split('=', 1)[0]}={value}"
+        else:
+            argv[index + 1] = value
+    return argv, mode
+
+
 def group_tt_config(tt_configs: dict) -> dict:
     """The tt config the group's one mesh is opened with, from each member's own."""
     merged, owner = {}, {}
@@ -195,6 +227,15 @@ def build_cohost_config(server, group: dict, *, no_auth: bool = False) -> tuple:
             no_auth=no_auth,
             first=index == 0,
         )
+        impl_id = member["runtime_model_spec"].get("impl", {}).get("impl_id")
+        if impl_id in HOST_SAMPLING_IMPLS:
+            argv, mode = sample_on_host(server, argv)
+            if mode is not None:
+                logger.warning(
+                    f"{name}: samples on the host in this group (sample_on_device_mode "
+                    f"{mode!r} dropped). Co-hosted {impl_id} models lose their on-device "
+                    "sampling state when another model's step runs between theirs."
+                )
         model, args, tt_configs[name] = split_vllm_argv(server, argv)
         members.append(
             {

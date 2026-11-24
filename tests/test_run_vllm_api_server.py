@@ -1794,6 +1794,66 @@ def test_cohost_config_gives_each_member_its_own_setup(
     assert "--additional_config" in qwen["args"]
 
 
+def test_cohost_tt_transformers_members_sample_on_the_host(
+    cohost_server, cohost_group_module, caplog
+):
+    server, _ = cohost_server
+    group = _cohost_group(
+        _cohost_spec("Qwen3-32B"),
+        _cohost_spec(
+            "Llama-3.1-8B-Instruct",
+            tt={"sample_on_device_mode": "decode_only", "trace_region_size": 7},
+        ),
+        _cohost_spec(
+            "gpt-oss-20b", impl_id="gpt_oss", tt={"sample_on_device_mode": "all"}
+        ),
+    )
+    with caplog.at_level("WARNING"):
+        config, _ = cohost_group_module.build_cohost_config(server, group)
+
+    def tt(member):
+        args = member["args"]
+        return json.loads(args[args.index("--additional_config") + 1])["tt"]
+
+    qwen, llama, gpt_oss = config["members"]
+    assert "sample_on_device_mode" not in tt(qwen)
+    assert tt(llama) == {"fabric_config": "FABRIC_1D_RING", "trace_region_size": 7}
+    # Measured correct with on-device sampling next to other models: left as it is.
+    assert tt(gpt_oss)["sample_on_device_mode"] == "all"
+    assert "Llama-3.1-8B-Instruct: samples on the host" in caplog.text
+    assert "gpt-oss-20b" not in caplog.text and "Qwen3-32B:" not in caplog.text
+
+
+@pytest.mark.parametrize(
+    "argv, expected, mode",
+    [
+        (
+            ["--additional-config", '{"tt": {"sample_on_device_mode": "all", "x": 1}}'],
+            ["--additional-config", '{"tt": {"x": 1}}'],
+            "all",
+        ),
+        (
+            ['--additional_config={"tt": {"sample_on_device_mode": "decode_only"}}'],
+            ['--additional_config={"tt": {}}'],
+            "decode_only",
+        ),
+        (
+            ["--additional_config", '{"tt": {"x": 1}}'],
+            ["--additional_config", '{"tt": {"x": 1}}'],
+            None,
+        ),
+        (["--seed", "1"], ["--seed", "1"], None),
+    ],
+)
+def test_cohost_sample_on_host_rewrites_only_the_sampling_mode(
+    run_vllm_api_server_module, cohost_group_module, argv, expected, mode
+):
+    assert cohost_group_module.sample_on_host(run_vllm_api_server_module, argv) == (
+        expected,
+        mode,
+    )
+
+
 def test_cohost_host_weights_belong_to_the_first_member(
     monkeypatch, cohost_server, cohost_group_module
 ):
