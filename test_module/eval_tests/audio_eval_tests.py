@@ -387,7 +387,33 @@ def _run_whisper_lmms_eval(ctx: MediaContext) -> Block:
             list(results.keys()),
         )
         return _audio_eval_fail_block(ctx, task, "WER not found in lmms-eval results")
+    return _wer_block(ctx, task, wer)
 
+
+def _is_vllm(ctx: MediaContext) -> bool:
+    engine = getattr(ctx.model_spec, "inference_engine", None)
+    return getattr(engine, "value", engine) == "vLLM"
+
+
+def _run_openai_wer_eval(ctx: MediaContext) -> Block:
+    """LibriSpeech WER through the server's OpenAI transcriptions endpoint."""
+    from .openai_asr_wer import librispeech_wer
+
+    task = ctx.all_params.tasks[0]
+    concurrency = (
+        task.max_concurrent or ctx.model_spec.device_model_spec.max_concurrency
+    )
+    try:
+        wer = librispeech_wer(
+            ctx.base_url, ctx.model_spec.hf_model_repo, task.task_name, concurrency
+        )
+    except Exception as e:
+        logger.exception("WER eval through /v1/audio/transcriptions failed")
+        return _audio_eval_fail_block(ctx, task, str(e))
+    return _wer_block(ctx, task, wer)
+
+
+def _wer_block(ctx: MediaContext, task, wer: float) -> Block:
     score = 100.0 - wer
     published = task.score.published_score
     reference = getattr(task.score, "gpu_reference_score", None) or published
@@ -403,7 +429,7 @@ def _run_whisper_lmms_eval(ctx: MediaContext) -> Block:
         accuracy_check = ReportCheckTypes.NA
 
     logger.info(
-        "WhisperEvalTest WER=%.4f score=%.4f published=%s tolerance=%s check=%s",
+        "Audio eval WER=%.4f score=%.4f published=%s tolerance=%s check=%s",
         wer,
         score,
         published,
@@ -443,6 +469,8 @@ def run_audio_eval(ctx: MediaContext) -> Block:
 
     if _is_whisper(ctx):
         return _run_whisper_lmms_eval(ctx)
+    if _is_vllm(ctx):
+        return _run_openai_wer_eval(ctx)
 
     try:
         num_calls = get_num_calls(ctx)

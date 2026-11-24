@@ -10584,6 +10584,31 @@ _eval_config_list = [
         ],
     ),
     EvalConfig(
+        hf_model_repo="Qwen/Qwen3-ASR-1.7B",
+        tasks=[
+            EvalTask(
+                task_name="librispeech_test_other",
+                eval_class="openai_transcriptions",
+                batch_size=1,
+                # Stage 0 serves 8 requests at once (max_num_seqs in the deploy config).
+                max_concurrent=8,
+                apply_chat_template=False,
+                workflow_venv_type=WorkflowVenvType.EVALS_AUDIO,
+                score=EvalTaskScore(
+                    published_score=(100 - 3.38),
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3-ASR-1.7B",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "wer,none",
+                        ],
+                        "unit": "WER",
+                    },
+                ),
+            )
+        ],
+    ),
+    EvalConfig(
         hf_model_repo="distil-whisper/distil-large-v3",
         tasks=[
             EvalTask(
