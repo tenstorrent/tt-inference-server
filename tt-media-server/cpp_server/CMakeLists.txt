@@ -1718,12 +1718,14 @@ target_include_directories(apply_delta_prompt_test PRIVATE
 )
 add_test(NAME ApplyDeltaPrompt COMMAND apply_delta_prompt_test)
 
-# Cancellation E2E test (starts mock server, runs Python tests, stops server)
-add_test(NAME CancellationE2E
-    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/e2e/scripts/run_e2e_with_server.sh
-    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-)
-set_tests_properties(CancellationE2E PROPERTIES TIMEOUT 120)
+if(ENABLE_BLAZE)
+    # Cancellation E2E test (starts Blaze mock server, runs Python tests, stops server)
+    add_test(NAME CancellationE2E
+        COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/e2e/scripts/run_e2e_with_server.sh
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    )
+    set_tests_properties(CancellationE2E PROPERTIES TIMEOUT 120)
+endif()
 
 # Prefix cache E2E test (requires external Dynamo server)
 add_executable(prefix_cache_e2e_test tests/e2e/prefix_cache_e2e_test.cpp)
