@@ -283,7 +283,8 @@ if(ENABLE_BLAZE)
             "(find_package failed) nor present in source tree at "
             "${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine. "
             "Either ensure the prebuilt image's /opt/tt-llm-engine is on "
-            "CMAKE_PREFIX_PATH, or initialize the tt-llm-engine submodule.")
+            "CMAKE_PREFIX_PATH, or set TT_LLM_ENGINE_SOURCE_DIR to an "
+            "external source checkout.")
     endif()
 else()
     message(STATUS "tt-llm-engine: DISABLED (use -DENABLE_BLAZE=ON to enable)")

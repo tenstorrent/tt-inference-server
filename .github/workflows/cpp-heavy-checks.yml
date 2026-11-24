@@ -48,13 +48,10 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
-        with:
-          token: ${{ secrets.TT_LLM_ENGINE }}
 
       - name: Set up C++ CI dependencies
         uses: ./.github/actions/setup-cpp-ci
         with:
-          token: ${{ secrets.TT_LLM_ENGINE }}
           ccache-key-suffix: server
 
       - name: Restore cached tokenizer files
@@ -68,7 +65,7 @@ jobs:
       - name: Build C++ server
         run: |
           cd cpp_server
-          ./build.sh --blaze
+          ./build.sh
           cd ..
 
       - name: Archive C++ build
@@ -84,6 +81,7 @@ jobs:
           retention-days: 1
 
   cpp-server-mock-pipeline-bench:
+    if: ${{ false }} # Legacy Blaze backend; remove with the backend source.
     name: C++ Server Mock Pipeline Benchmark
     # The mock_pipeline backend's tt-llm-engine decode_scheduler pins 3 CPU
     # cores; on a 4-core GitHub runner that starves the rest of the process
@@ -109,13 +107,10 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
-        with:
-          token: ${{ secrets.TT_LLM_ENGINE }}
 
       - name: Set up C++ CI dependencies
         uses: ./.github/actions/setup-cpp-ci
         with:
-          token: ${{ secrets.TT_LLM_ENGINE }}
           ccache-key-suffix: server
 
       - name: Build C++ server
@@ -422,6 +417,7 @@ jobs:
           fi
 
   cpp-server-prefill-decode-split:
+    if: ${{ false }} # Legacy Blaze backend; remove with the backend source.
     name: C++ Server Prefill/Decode Split Test
     # Self-hosted: this job launches 2-4 cpp_server processes (each -t 4)
     # concurrently. On a 4-core GitHub runner that oversubscribes the CPU and
@@ -446,13 +442,10 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
-        with:
-          token: ${{ secrets.TT_LLM_ENGINE }}
 
       - name: Set up C++ CI dependencies
         uses: ./.github/actions/setup-cpp-ci
         with:
-          token: ${{ secrets.TT_LLM_ENGINE }}
           ccache-key-suffix: server
 
       - name: Build C++ server
@@ -616,6 +609,7 @@ jobs:
           fi
 
   cpp-server-gateway-split:
+    if: ${{ false }} # Legacy Blaze backend; remove with the backend source.
     name: C++ Server Gateway Split Test
     # Self-hosted: this job launches a PrefillGateway plus 3-4 cpp_server
     # processes (each -t 4) concurrently. On a 4-core GitHub runner that
@@ -640,13 +634,10 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
-        with:
-          token: ${{ secrets.TT_LLM_ENGINE }}
 
       - name: Set up C++ CI dependencies
         uses: ./.github/actions/setup-cpp-ci
         with:
-          token: ${{ secrets.TT_LLM_ENGINE }}
           ccache-key-suffix: server
 
       - name: Build C++ server
@@ -886,6 +877,7 @@ jobs:
 
 
   cpp-server-prefill-decode-smoke:
+    if: ${{ false }} # Legacy Blaze backend; remove with the backend source.
     name: C++ Server Prefill/Decode Smoke Tests
     # Brings the disaggregated MOCK stack up (Dynamo frontend + decode/prefill
     # cpp_server workers on the mock_scheduler backend + a local etcd) via
@@ -919,13 +911,10 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
-        with:
-          token: ${{ secrets.TT_LLM_ENGINE }}
 
       - name: Set up C++ CI dependencies
         uses: ./.github/actions/setup-cpp-ci
         with:
-          token: ${{ secrets.TT_LLM_ENGINE }}
           ccache-key-suffix: server
 
       - name: Build C++ server
@@ -1028,6 +1017,7 @@ jobs:
           if-no-files-found: warn
 
   dynamo-frontend-integration:
+    if: ${{ false }} # Legacy Blaze backend; remove with the backend source.
     needs: cpp-build
     name: C++ Server + Dynamo Frontend Integration
     # Runs on ubuntu-latest, the same image as cpp-build, so the downloaded
@@ -1378,6 +1368,7 @@ jobs:
           if-no-files-found: warn
 
   dynamo-prefix-cache-e2e:
+    if: ${{ false }} # Legacy Blaze backend; remove with the backend source.
     needs: cpp-build
     name: Dynamo Frontend Prefix Cache E2E
     runs-on: ubuntu-24.04
@@ -1559,7 +1550,7 @@ jobs:
           if-no-files-found: warn
 
   dynamo-routing-e2e:
-    if: ${{ inputs.run_dynamo_routing_tests }}
+    if: ${{ false }} # Legacy Blaze backend; remove with the backend source.
     needs: cpp-build
     name: DYNAMO_ROUTING=1 E2E
     # ubuntu-latest matches cpp-build's runner image so the downloaded artifact
@@ -1808,6 +1799,7 @@ jobs:
           if-no-files-found: warn
 
   cpp-tsan:
+    if: ${{ false }} # Legacy Blaze backend; remove with the backend source.
     name: C++ ThreadSanitizer
     runs-on: ubuntu-24.04
     timeout-minutes: 60
@@ -1828,13 +1820,10 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
-        with:
-          token: ${{ secrets.TT_LLM_ENGINE }}
 
       - name: Set up C++ CI dependencies
         uses: ./.github/actions/setup-cpp-ci
         with:
-          token: ${{ secrets.TT_LLM_ENGINE }}
           ccache-key-suffix: server
 
       - name: Restore cached tokenizer files
@@ -1993,7 +1982,6 @@ jobs:
       - name: Set up C++ CI dependencies
         uses: ./.github/actions/setup-cpp-ci
         with:
-          init-private-submodule: "false"
           ccache-key-suffix: gateway
 
       - name: Configure prefill_gateway with ThreadSanitizer
