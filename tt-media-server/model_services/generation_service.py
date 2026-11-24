@@ -16,6 +16,7 @@ from typing import Any, Optional
 
 from config.constants import JobTypes, generation_job_dir
 from config.settings import settings
+from domain.generation_models import GENERATION_MODELS
 from domain.generation_request import (
     MAX_INLINE_MEDIA_CHARS,
     MAX_SEED,
@@ -49,6 +50,12 @@ from utils.media_probe import (
     decode_image,
     media_format_error,
     probe_reference_media,
+)
+from utils.prompt_enhancer import (
+    UNAVAILABLE,
+    UNUSABLE,
+    PromptEnhancementError,
+    get_prompt_enhancer,
 )
 from utils.video_manager import probe_video
 
@@ -124,6 +131,10 @@ def _video_request_type(request: GenerationRequest) -> str:
     return VIDEO_REQUEST_TYPE_T2V
 
 
+# Captions asked of the prompt enhancer before an unusable one fails the job.
+_ENHANCER_CAPTION_ATTEMPTS = 2
+
+
 def _cancel_requested(request: GenerationRequest) -> bool:
     """Whether the job was cancelled; False when that can't be told, so a
     metrics check never fails a job."""
@@ -164,6 +175,14 @@ class GenerationService(BaseJobService):
     # The pipelines load their own weights.
     DOWNLOADS_WEIGHTS = False
 
+    def __init__(self):
+        # Before the workers start: a model whose prompt enhancer is on but has
+        # no API key fails at startup rather than on its first request.
+        model = GENERATION_MODELS.get(settings.model_runner)
+        if model is not None and model.request.PROMPT_ENHANCER is not None:
+            get_prompt_enhancer(model.request.PROMPT_ENHANCER)
+        super().__init__()
+
     async def submit(self, request: GenerationRequest, model_id: str) -> dict:
         """Validate what the request schema can't, fetch its media, and queue it
         as a job of the model `model_id`.
@@ -188,6 +207,22 @@ class GenerationService(BaseJobService):
                     f"Inline media totals {total} characters, over the "
                     f"{MAX_INLINE_MEDIA_CHARS}-character cap; send large assets by URL"
                 ),
+            )
+        if (
+            request.needs_prompt_enhancement()
+            and get_prompt_enhancer(request.PROMPT_ENHANCER) is None
+        ):
+            raise RequestValidationError(
+                [
+                    {
+                        "loc": ("body", "prompt"),
+                        "msg": (
+                            "This deployment doesn't run the prompt enhancer; "
+                            "send structured_prompt instead"
+                        ),
+                        "type": "value_error",
+                    }
+                ]
             )
         await self._load_media(request)
         request._width, request._height = request.output_size()
@@ -439,8 +474,39 @@ class GenerationService(BaseJobService):
             self.logger.warning(f"Failed to record video generation telemetry: {e}")
 
     async def pre_process(self, request: GenerationRequest) -> GenerationRequest:
-        request._prompt = request.model_prompt()
+        # The job is still queued here and no worker can claim it yet, so the
+        # prompt enhancer's call never holds a device.
+        if request.needs_prompt_enhancement():
+            request._prompt = await self._enhanced_prompt(request)
+        else:
+            request._prompt = request.model_prompt()
         return request
+
+    async def _enhanced_prompt(self, request: GenerationRequest) -> str:
+        """The model's prompt from the prompt enhancer. A caption that fails
+        the request's check is asked for again, up to
+        _ENHANCER_CAPTION_ATTEMPTS in all."""
+        enhancer = get_prompt_enhancer(request.PROMPT_ENHANCER)
+        if enhancer is None:
+            raise PromptEnhancementError(UNAVAILABLE)
+        prompt, aspect_ratio = request.enhancer_arguments()
+        start = time.monotonic()
+        for attempt in range(1, _ENHANCER_CAPTION_ATTEMPTS + 1):
+            caption = await enhancer.enhance(prompt, aspect_ratio)
+            try:
+                model_prompt = request.prompt_from_enhancer(caption)
+            except ValueError as e:
+                self.logger.warning(
+                    f"Job {request._task_id}: unusable prompt enhancer caption "
+                    f"(attempt {attempt}): {e}"
+                )
+                continue
+            self.logger.info(
+                f"Job {request._task_id}: prompt enhanced in "
+                f"{time.monotonic() - start:.1f} s"
+            )
+            return model_prompt
+        raise PromptEnhancementError(UNUSABLE)
 
     async def post_process(self, result, input_request: GenerationRequest) -> str:
         """Write the output to the job's directory; returns the directory.

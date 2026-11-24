@@ -32,7 +32,7 @@ except ImportError:
 # Only then import pytest
 import pytest
 
-# tt-metal's Wan and MiniMax-H3 policies, for real where tt-metal is
+# tt-metal's Wan, MiniMax-H3 and Ideogram 4 policies, for real where tt-metal is
 # importable. They load before the mocks below; the torch, ttnn and `models`
 # modules they import are then dropped again, so the other tests see the same
 # mocks as without tt-metal.
@@ -41,9 +41,11 @@ _TT_METAL_POLICY_MODULES = (
     "models.tt_dit.pipelines.minimax_h3.policy",
     "models.tt_dit.pipelines.minimax_h3.packing",
     "models.tt_dit.pipelines.minimax_h3.packing_ref2va",
+    "models.tt_dit.pipelines.ideogram4.policy",
 )
 _modules_before_tt_metal = set(sys.modules)
 try:
+    import models.tt_dit.pipelines.ideogram4.policy  # noqa: F401
     import models.tt_dit.pipelines.minimax_h3.policy  # noqa: F401
     import models.tt_dit.pipelines.wan.policy  # noqa: F401
 
@@ -811,7 +813,7 @@ forge_runners_module.ForgeVitRunner = create_mock_runner_class("ForgeVitRunner")
 def pytest_configure(config):
     config.addinivalue_line(
         "markers",
-        "requires_tt_metal_policy: needs tt-metal's Wan/H3 policy; skipped "
+        "requires_tt_metal_policy: needs tt-metal's Wan/H3/Ideogram 4 policy; skipped "
         "where only the placeholder loads",
     )
 
@@ -819,7 +821,7 @@ def pytest_configure(config):
 def pytest_collection_modifyitems(config, items):
     if TT_METAL_POLICY_IS_REAL:
         return
-    skip = pytest.mark.skip(reason="needs tt-metal's Wan/H3 policy")
+    skip = pytest.mark.skip(reason="needs tt-metal's Wan/H3/Ideogram 4 policy")
     for item in items:
         if "requires_tt_metal_policy" in item.keywords:
             item.add_marker(skip)

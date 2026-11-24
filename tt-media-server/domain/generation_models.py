@@ -68,5 +68,9 @@ GENERATION_MODELS: Mapping[str, GenerationModel] = _GenerationModels(
             "domain.minimax_h3_request",
             "MINIMAX_H3_REF2VA_LIGHTX2V",
         ),
+        ModelRunners.TT_IDEOGRAM_4.value: (
+            "domain.ideogram4_request",
+            "IDEOGRAM_4",
+        ),
     }
 )

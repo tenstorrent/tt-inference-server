@@ -39,11 +39,13 @@ from config.constants import (
 from config.settings import get_settings
 from domain.flux2_klein_4b_request import KLEIN_STEPS, Flux2klein4bRequest
 from domain.generation_request import GenerationRequest
+from domain.ideogram4_request import IDEOGRAM_PRESETS, Ideogram4Request
 from domain.ltx23_distilled_request import Ltx23DistilledRequest
 from domain.minimax_h3_request import _MiniMaxH3Request
 from domain.qwen_image_edit_2511_request import QwenImageEdit2511Request
 from domain.wan22_i2v_a14b_request import Wan22i2vA14bRequest
 from models.common.utility_functions import is_blackhole
+from models.tt_dit.pipelines.ideogram4.policy import validate_prompt
 from models.tt_dit.pipelines.minimax_h3.pipeline_minimax_h3 import (
     MiniMaxH3Pipeline,
     resolve_mesh_preset,
@@ -778,3 +780,67 @@ class TTMiniMaxH3TurboRef2VARunner(_MiniMaxH3TurboMixin, TTMiniMaxH3Ref2VARunner
 
     video_shift = 12.0
     audio_shift = 3.0
+
+
+class TTIdeogram4Runner(_GenerationRunner):
+    def create_pipeline(self):
+        from models.tt_dit.pipelines.ideogram4.pipeline_ideogram4 import (
+            Ideogram4Pipeline,
+        )
+
+        try:
+            return Ideogram4Pipeline.create_pipeline(
+                mesh_device=self.ttnn_device,
+                weights_dir=self.settings.model_weights_path,
+            )
+        except Exception as e:
+            log_exception_chain(
+                self.logger, self.device_id, "Ideogram 4 pipeline creation failed", e
+            )
+            raise
+
+    def get_pipeline_device_params(self):
+        # The pipeline's 4x8 preset runs ring CCLs, its 2x4 preset linear ones.
+        # The pipeline keeps one step trace per warmed 2K size. 128 MB is
+        # tt-metal's required_trace_region_size((4, 8))
+        # (tenstorrent/tt-metal#63894); the four traces allocate ~87 MB.
+        fabric = ttnn.FabricConfig.FABRIC_1D
+        if tuple(self.settings.device_mesh_shape) == (4, 8):
+            fabric = ttnn.FabricConfig.FABRIC_1D_RING
+        return {
+            "fabric_config": fabric,
+            "l1_small_size": 32768,
+            "trace_region_size": 128_000_000,
+        }
+
+    def warmup_requests(self) -> list[GenerationRequest]:
+        # The pipeline warms its sizes at load, compiling every program and
+        # keeping one step trace per size; these requests replay those kept
+        # traces. The presets differ only in step count and the per-step
+        # guidance weight, an input of the same step program, so the fastest
+        # preset covers all three; it fixes its step count, so warmup can't
+        # shorten it.
+        return [
+            _warmup_request(
+                Ideogram4Request.model_construct(rendering_speed="turbo"), width, height
+            )
+            for width, height in Ideogram4Request.warmup_sizes()
+        ]
+
+    @_inference_timer
+    def run(self, requests: list[Ideogram4Request]):
+        request = requests[0]
+        validate_prompt(request._prompt, self.pipeline.count_text_tokens)
+        recorder = self._image_stage_recorder()
+        images = self.pipeline(
+            prompts=[request._prompt],
+            preset=IDEOGRAM_PRESETS[request.rendering_speed],
+            seed=request._seed,
+            width=request._width,
+            height=request._height,
+            traced=True,
+            on_event=recorder,
+        )
+        if recorder is not None:
+            recorder.flush(images)
+        return images
