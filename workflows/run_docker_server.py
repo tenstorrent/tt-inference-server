@@ -629,11 +629,8 @@ def generate_docker_run_command(
         "--mount", "type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G",
     ]
 
-    if model_spec.inference_engine in (
-        InferenceEngine.MEDIA.value,
-        InferenceEngine.FORGE.value,
-    ):
-        # media/forge containers (run_uvicorn.sh and cpp_server) bind 8000.
+    if model_spec.inference_engine in InferenceEngine.media_server_values():
+        # media-server containers (run_uvicorn.sh and cpp_server) bind 8000.
         docker_command += [
             "--publish",
             f"{runtime_config.bind_host}:{runtime_config.service_port}:8000",
@@ -716,10 +713,7 @@ def generate_docker_run_command(
         if runtime_config.ci_mode:
             docker_env_vars["TT_TRIAGE_LOGS_PATH"] = f"{setup_config.cache_root}/logs"
 
-    if (
-        model_spec.inference_engine == InferenceEngine.FORGE.value
-        or model_spec.inference_engine == InferenceEngine.MEDIA.value
-    ):
+    if model_spec.inference_engine in InferenceEngine.media_server_values():
         # Propagate ModelSpec.env_vars (defaults + template + device-specific)
         # to the container so per-model declarations like MAX_NUM_SEQS take
         # effect. Runtime-derived values below override these.

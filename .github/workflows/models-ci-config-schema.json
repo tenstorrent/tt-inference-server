@@ -80,13 +80,8 @@
               "properties": {
                 "inference_engine": {
                   "type": "string",
-                  "enum": ["vLLM", "MEDIA", "FORGE"],
+                  "enum": ["vLLM", "MEDIA", "FORGE", "TRAINING"],
                   "description": "The inference engine to use for this model"
-                },
-                "model_type": {
-                  "type": "string",
-                  "enum": ["TRAINING"],
-                  "description": "Optional. Marks a non-inference workload. Absent = regular inference model."
                 },
                 "impl": {
                   "type": "string",
@@ -129,13 +124,8 @@
                     "properties": {
                       "inference_engine": {
                         "type": "string",
-                        "enum": ["vLLM", "MEDIA", "FORGE"],
+                        "enum": ["vLLM", "MEDIA", "FORGE", "TRAINING"],
                         "description": "The inference engine for this implementation"
-                      },
-                      "model_type": {
-                        "type": "string",
-                        "enum": ["TRAINING"],
-                        "description": "Optional. Marks a non-inference workload. Absent = regular inference model."
                       },
                       "impl": {
                         "type": "string",

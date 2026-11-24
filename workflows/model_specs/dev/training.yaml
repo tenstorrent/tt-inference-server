@@ -7,13 +7,13 @@ templates:
 # =============================================================================
 # Training templates
 # =============================================================================
-# ttml (tt-metal's tt-train) runs on the tt-metal media server image, which
-# carries ttml only when built with --build-arg BUILD_TT_TRAIN=true.
+# ttml (tt-metal's tt-train) runs on the training image: the tt-media-server
+# image built with --build-arg BUILD_TT_TRAIN=true.
 - weights:
     - meta-llama/Llama-3.1-8B-Instruct
   impl: ttml_training_lora
   model_type: TRAINING
-  inference_engine: MEDIA
+  inference_engine: TRAINING
   status: EXPERIMENTAL
   uses_tensor_model_cache: false
   env_vars:

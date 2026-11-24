@@ -8,6 +8,7 @@ import re
 
 import pytest
 
+from workflows.utils import get_repo_root_path
 from workflows.model_spec import (
     MODEL_SPECS,
     MODEL_SPECS_SCHEMA_VERSION,
@@ -20,7 +21,9 @@ from workflows.model_spec import (
     ProdModelSpecTemplate,
     VersionRequirement,
     export_model_specs_json,
+    generate_default_docker_link,
     get_model_spec_map,
+    load_templates_from_yaml,
     resolve_model_spec,
     spec_templates,
     SystemRequirements,
@@ -1402,6 +1405,32 @@ class TestKnownIssue:
             json.dump(spec_payload, f)
         with pytest.raises(ValueError):
             ModelSpec.from_json(spec_json)
+
+
+class TestTrainingInferenceEngine:
+    def test_default_docker_link_uses_training_repo(self):
+        link = generate_default_docker_link(
+            "0.1.0", "abc1234", None, inference_engine="training"
+        )
+        assert link.startswith("ghcr.io/tenstorrent/tt-media-inference-server-training:")
+
+    def test_training_is_a_media_server_engine(self):
+        assert InferenceEngine.TRAINING.value in InferenceEngine.media_server_values()
+        assert InferenceEngine.VLLM.value not in InferenceEngine.media_server_values()
+
+    def test_dev_ttml_training_spec_uses_training_engine(self):
+        templates = load_templates_from_yaml(
+            get_repo_root_path() / "workflows/model_specs/dev/training.yaml"
+        )
+        specs = [
+            s
+            for s in get_model_spec_map(templates).values()
+            if s.impl.impl_id == "ttml_training_lora"
+        ]
+        assert specs
+        for spec in specs:
+            assert spec.inference_engine == InferenceEngine.TRAINING.value
+            assert "TORCHDYNAMO_DISABLE" not in spec.env_vars
 
 
 if __name__ == "__main__":

@@ -54,8 +54,7 @@
                     }
                 },
                 {
-                    "inference_engine": "MEDIA",
-                    "model_type": "TRAINING",
+                    "inference_engine": "TRAINING",
                     "impl": "ttml-training-lora",
                     "ci": {
                         "nightly": {

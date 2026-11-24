@@ -74,6 +74,8 @@ def generate_default_docker_link(
             _default_docker_repo = "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64"
     elif inference_engine == "forge":
         _default_docker_repo = "ghcr.io/tenstorrent/tt-media-inference-server-forge"
+    elif inference_engine == "training":
+        _default_docker_repo = "ghcr.io/tenstorrent/tt-media-inference-server-training"
     else:
         _default_docker_repo = "ghcr.io/tenstorrent/tt-media-inference-server"
     return f"{_default_docker_repo}:{_default_docker_tag}"
@@ -713,11 +715,8 @@ class ModelSpec:
     cli_args: Dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self):
-        # Skipped for forge/media: Forge vLLM relies on torch.compile/dynamo for its compilation pipeline; TORCHDYNAMO_DISABLE=1 breaks warmup.
-        if self.inference_engine in (
-            InferenceEngine.FORGE.value,
-            InferenceEngine.MEDIA.value,
-        ):
+        # Skipped for media-server engines: Forge vLLM relies on torch.compile/dynamo for its compilation pipeline; TORCHDYNAMO_DISABLE=1 breaks warmup.
+        if self.inference_engine in InferenceEngine.media_server_values():
             default_env_vars = {}
         else:
             default_env_vars = {
@@ -1308,7 +1307,7 @@ class ProdModelSpecTemplate(ModelSpecTemplate):
 
     ``version`` and ``tt_metal_commit`` are required (a prod YAML missing either
     fails to construct); ``vllm_commit`` and ``docker_image`` are optional
-    (FORGE/MEDIA specs have no vllm_commit; most specs synthesize their image).
+    (FORGE/MEDIA/TRAINING specs have no vllm_commit; most specs synthesize their image).
     Construction enforces the prod contract directly — no separate field check.
     """
 
