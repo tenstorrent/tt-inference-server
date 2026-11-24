@@ -55,10 +55,11 @@ DEFAULT_TRACE_REGION_SIZE = 50_000_000
 FIRST_MEMBER_ENV = ("MODEL_WEIGHTS_DIR", "TT_CACHE_PATH")
 
 
-# Members whose on-device sampling does not survive the other members' steps between their
-# own decode steps: with it, Llama-3.1-8B-Instruct next to Qwen3-32B (P300x2) answered garbage
-# once their steps interleaved, then the device timed out; with host sampling every answer
-# matched the model's answer alone. These members sample on the host in a group.
+# Members that sample on the host in a group. Measured on the 0.17.0 release image: with
+# on-device sampling, Llama-3.1-8B-Instruct next to Qwen3-32B (P300x2) answered garbage once
+# their steps interleaved, then the device timed out; with host sampling every answer matched
+# the model's answer alone. Not reproduced on newer stacks (vLLM 0.32, tt-metal v0.82.0:
+# Llama-3.1-8B next to Mistral-7B or Qwen3-8B, one chip), so revisit when the image moves on.
 HOST_SAMPLING_IMPLS = ("tt_transformers",)
 
 
@@ -233,8 +234,9 @@ def build_cohost_config(server, group: dict, *, no_auth: bool = False) -> tuple:
             if mode is not None:
                 logger.warning(
                     f"{name}: samples on the host in this group (sample_on_device_mode "
-                    f"{mode!r} dropped). Co-hosted {impl_id} models lose their on-device "
-                    "sampling state when another model's step runs between theirs."
+                    f"{mode!r} dropped). On this image, Llama-3.1-8B-Instruct next to "
+                    "Qwen3-32B (P300x2) gave wrong tokens with on-device sampling once the "
+                    "models' steps interleaved."
                 )
         model, args, tt_configs[name] = split_vllm_argv(server, argv)
         members.append(
