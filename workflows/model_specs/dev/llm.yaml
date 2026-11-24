@@ -7393,7 +7393,7 @@ templates:
     - device: BLACKHOLE_GALAXY
       # One 8-chip group of the Galaxy, one context.
       max_concurrency: 1
-      max_context: 131072  # 128 * 1024
+      max_context: 262144  # 256 * 1024, the build's context
       default_impl: true
       docker_stop_timeout: 30  # TODO: measure on a Galaxy
       docker_host_state_dir: /var/lib/tenstorrent
@@ -7406,7 +7406,7 @@ templates:
     QWEN_TT_VOCAB: Qwen3.8-27B-vocab.gguf
     QWEN_TT_DFLASH2: dflash2/Qwen3.8-27B-DFlash2-bfp4.ttq
     QWEN_TT_VISION: Qwen3.8-27B-vision-bf16.ttq
-    QWEN_TT_MAX_TOKENS: "131072"
+    QWEN_TT_MAX_TOKENS: "262144"  # as vLLM: a turn still stops at the context
     QWEN_TT_EXTRA_ARGS: --fetch-image-urls
   metadata:
     Qwen/Qwen3.8-27B:
