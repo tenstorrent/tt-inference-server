@@ -267,10 +267,18 @@ COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
 # Fix venv symlinks after copy and install additional app requirements.
 # The venv loads its stdlib from pyvenv.cfg's home, so python3 must be that
 # interpreter: on 24.04 it is uv's Python, whose stdlib lacks the C modules
-# that /usr/bin/python3 expects to find there.
+# that /usr/bin/python3 expects to find there. uv points home at a
+# minor-version link (cpython-3.12-...) that it may create only while making
+# the venv in the builder, so link it to the installed patch release here.
 RUN cd ${PYTHON_ENV_DIR}/bin \
     && python_home=$(sed -n 's/^home = //p' ${PYTHON_ENV_DIR}/pyvenv.cfg) \
-    && test -x "${python_home}/python3" \
+    && minor_dir=$(dirname "${python_home}") \
+    && if [ ! -e "${minor_dir}" ]; then \
+         patch_dir=$(ls -d ${minor_dir/-linux/.[0-9]*-linux} 2>/dev/null | sort -V | tail -n 1) || true; \
+         if [ -n "${patch_dir}" ]; then ln -s "${patch_dir}" "${minor_dir}"; fi; \
+       fi \
+    && { test -x "${python_home}/python3" \
+         || { echo "ERROR: venv home ${python_home} has no python3" >&2; exit 1; }; } \
     && rm -f python python3 \
     && ln -s "${python_home}/python3" python3 \
     && ln -s python3 python \
