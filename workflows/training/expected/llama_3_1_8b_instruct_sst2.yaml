@@ -7,9 +7,9 @@
 # tt-train SFTTrainer) on P150, P300 and P300X2, all single-chip (see
 # workflows/training/registry.py).
 #
-# expected_losses is empty until a P150 run on an image built with
-# BUILD_TT_TRAIN=true records the trajectory; until then the gate grades only
-# the checks below. Regenerate whenever the tt-metal commit of the image moves.
+# expected_losses was recorded on P300X2 (one chip) with the image built with
+# BUILD_TT_TRAIN=true at tt-metal 158d41fa4c44 (2026-11-24); repeated runs gave
+# identical values. Regenerate whenever the tt-metal commit of the image moves.
 
 # Hyperparameters forwarded verbatim into the TrainingRequest POST body, laid
 # out as tt-metal's experimental trainer recipes are. Kept small so a nightly P150
@@ -32,6 +32,7 @@ request:
   dtype: bfloat16
   max_length: 64
   batch_size: 8
+  seed: 0
   stopping_criteria:
     type: step
     limit: 15
@@ -58,5 +59,13 @@ checks:
   final_train_loss_max: 5.0
 
 # Per-checkpoint expectations (steps must line up with metrics.train.frequency /
-# metrics.validation.frequency).
-expected_losses: []
+# metrics.validation.frequency). val_loss at step 0 is the validation pass
+# before the first optimizer step; train_loss is the mean over its window.
+expected_losses:
+  - {global_step: 0,  metric_name: val_loss,   value: 6.393922}
+  - {global_step: 5,  metric_name: train_loss, value: 6.031250}
+  - {global_step: 5,  metric_name: val_loss,   value: 4.330275}
+  - {global_step: 10, metric_name: train_loss, value: 3.468750}
+  - {global_step: 10, metric_name: val_loss,   value: 2.197033}
+  - {global_step: 15, metric_name: train_loss, value: 1.530469}
+  - {global_step: 15, metric_name: val_loss,   value: 0.835830}
