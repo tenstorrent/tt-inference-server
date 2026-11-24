@@ -12,8 +12,8 @@ namespace tt::api {
  * Browser console for the video service: `GET /` and `GET /ui` return one
  * static HTML page that calls the video API from the browser. Both paths are
  * registered as always-exempt from the bearer check only when MODEL_SERVICE is
- * video (registerVideo()); the page itself holds no data, the API calls it makes
- * still need the key.
+ * video (registerVideo()); the page itself holds no data, the API calls it
+ * makes still need the key.
  */
 class VideoUiController : public drogon::HttpController<VideoUiController> {
  public:

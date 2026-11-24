@@ -198,17 +198,15 @@ Json::Value VideoService::createJob(domain::VideoGenerateRequest request) {
     jobTasks_.insert(taskId);
   }
   try {
-    submitRequestAsync(std::move(request),
-                       [this, taskId](domain::video::VideoResponse&& r) {
-                         // Counted by what the job ended as: a cancelled or
-                         // stale job's discarded result is not an "ok" task.
-                         if (const auto ok =
-                                 jobs.complete(taskId, r.videoPath, r.error)) {
-                           tt::metrics::ServerMetrics::instance()
-                               .onVideoTaskDone(*ok, r.generationTimeSeconds,
-                                                r.e2eSeconds);
-                         }
-                       });
+    submitRequestAsync(
+        std::move(request), [this, taskId](domain::video::VideoResponse&& r) {
+          // Counted by what the job ended as: a cancelled or
+          // stale job's discarded result is not an "ok" task.
+          if (const auto ok = jobs.complete(taskId, r.videoPath, r.error)) {
+            tt::metrics::ServerMetrics::instance().onVideoTaskDone(
+                *ok, r.generationTimeSeconds, r.e2eSeconds);
+          }
+        });
   } catch (...) {
     {
       std::lock_guard<std::mutex> lock(submitMutex_);
@@ -370,7 +368,8 @@ domain::video::VideoResponse VideoService::buildResponse(
   response.e2eSeconds = e2eSeconds;
   // A job's outcome is only known once jobs.complete() has applied the final
   // status (a cancelled or stale job's result is discarded), so a job records
-  // its outcome in createJob(). A request without a job (sync mode) is done now.
+  // its outcome in createJob(). A request without a job (sync mode) is done
+  // now.
   bool belongsToJob = false;
   {
     std::lock_guard<std::mutex> lock(submitMutex_);

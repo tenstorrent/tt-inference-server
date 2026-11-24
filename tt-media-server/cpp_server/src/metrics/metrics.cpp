@@ -254,12 +254,12 @@ ServerMetrics::ServerMetrics() {
   // A video runs tens of seconds to minutes, so the default buckets (which
   // stop at 10 s) would put everything into +Inf.
   static const prometheus::Histogram::BucketBoundaries kVideoSeconds{
-      0.1, 0.5, 1,  2,   5,   10,  20,  30,  45,  60,
-      90,  120, 180, 300, 600, 1200, 1800};
+      0.1, 0.5, 1,   2,   5,   10,  20,   30,  45,
+      60,  90,  120, 180, 300, 600, 1200, 1800};
   // Server-side overhead is in microseconds to milliseconds.
   static const prometheus::Histogram::BucketBoundaries kOverheadSeconds{
-      0.00005, 0.0001, 0.00025, 0.0005, 0.001, 0.0025,
-      0.005,   0.01,   0.025,   0.05,   0.1,   0.5, 1};
+      0.00005, 0.0001, 0.00025, 0.0005, 0.001, 0.0025, 0.005,
+      0.01,    0.025,  0.05,    0.1,    0.5,   1};
   video_queue_wait_seconds_ =
       &prometheus::BuildHistogram()
            .Name("tt_video_queue_wait_seconds")
@@ -275,8 +275,9 @@ ServerMetrics::ServerMetrics() {
   auto* videoE2e =
       &prometheus::BuildHistogram()
            .Name("tt_video_e2e_seconds")
-           .Help("Video task time from submit until its result reached the "
-                 "server, by outcome")
+           .Help(
+               "Video task time from submit until its result reached the "
+               "server, by outcome")
            .Register(*registry_);
   video_e2e_ok_seconds_ = &videoE2e->Add({{"outcome", "ok"}}, kVideoSeconds);
   video_e2e_error_seconds_ =
@@ -290,8 +291,9 @@ ServerMetrics::ServerMetrics() {
   auto* videoOverhead =
       &prometheus::BuildHistogram()
            .Name("tt_video_server_overhead_seconds")
-           .Help("Server-side cost around the device run, by phase "
-                 "(request_write, shm_enqueue, response_handling)")
+           .Help(
+               "Server-side cost around the device run, by phase "
+               "(request_write, shm_enqueue, response_handling)")
            .Register(*registry_);
   static const char* kOverheadPhases[] = {"request_write", "shm_enqueue",
                                           "response_handling"};
@@ -303,15 +305,16 @@ ServerMetrics::ServerMetrics() {
                          .Name("tt_video_jobs")
                          .Help("Video jobs in the store, by status")
                          .Register(*registry_);
-  static const char* kJobStatuses[] = {"queued",    "in_progress", "completed",
-                                       "failed",    "cancelled",   "cancelling"};
+  static const char* kJobStatuses[] = {"queued", "in_progress", "completed",
+                                       "failed", "cancelled",   "cancelling"};
   for (size_t i = 0; i < video_jobs_.size(); ++i) {
     video_jobs_[i] = &videoJobs->Add({{"status", kJobStatuses[i]}});
   }
   auto* videoSweep = &prometheus::BuildCounter()
                           .Name("tt_video_job_cleanup_total")
-                          .Help("Jobs removed or failed by the background "
-                                "cleaner (evicted = expired, stuck = stale_job)")
+                          .Help(
+                              "Jobs removed or failed by the background "
+                              "cleaner (evicted = expired, stuck = stale_job)")
                           .Register(*registry_);
   video_sweep_evicted_ = &videoSweep->Add({{"kind", "evicted"}});
   video_sweep_stuck_ = &videoSweep->Add({{"kind", "stuck"}});
@@ -451,7 +454,8 @@ void ServerMetrics::setVideoJobs(const std::array<size_t, 6>& byStatus) {
 
 void ServerMetrics::onVideoSweep(size_t evicted, size_t stuck) {
   if (video_sweep_evicted_ == nullptr) return;
-  if (evicted != 0) video_sweep_evicted_->Increment(static_cast<double>(evicted));
+  if (evicted != 0)
+    video_sweep_evicted_->Increment(static_cast<double>(evicted));
   if (stuck != 0) video_sweep_stuck_->Increment(static_cast<double>(stuck));
 }
 

@@ -45,9 +45,8 @@ inline std::string checkDirWritable(const std::filesystem::path& dir) {
   fs::create_directories(dir, ec);
   if (ec) return "cannot create '" + dir.string() + "': " + ec.message();
   static std::atomic<uint64_t> counter{0};
-  const fs::path probe =
-      dir / (".write-check-" + std::to_string(::getpid()) + "-" +
-             std::to_string(counter.fetch_add(1)));
+  const fs::path probe = dir / (".write-check-" + std::to_string(::getpid()) +
+                                "-" + std::to_string(counter.fetch_add(1)));
   errno = 0;
   {
     std::ofstream out(probe, std::ios::binary);

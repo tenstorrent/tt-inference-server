@@ -13,7 +13,6 @@
 #include <fstream>
 #include <iterator>
 #include <set>
-#include <thread>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -101,7 +100,7 @@ TEST(VideoJobStoreTest, CountByStatusFollowsTheLifecycle) {
   store.markInProgress(2);
   EXPECT_EQ(store.countByStatus(), (std::array<size_t, 6>{1, 2, 0, 0, 0, 0}));
   EXPECT_EQ(store.complete(1, "", "boom"),
-            std::optional<bool>(false));  // worker error -> failed
+            std::optional<bool>(false));     // worker error -> failed
   ASSERT_TRUE(store.cancel(3).has_value());  // queued -> cancelled
   ASSERT_TRUE(store.cancel(2).has_value());  // running -> cancelling
   EXPECT_EQ(store.countByStatus(), (std::array<size_t, 6>{0, 0, 0, 1, 1, 1}));

@@ -9,7 +9,8 @@ namespace tt::api {
  * Single-page console for the video service, served at `/` and `/ui` when
  * MODEL_SERVICE=video. Plain HTML/CSS/JS, no external resources, so it works on
  * a machine without internet access. It calls the same-origin API from the
- * browser (the API key is typed into the page and kept in sessionStorage, so it is gone when the tab is closed).
+ * browser (the API key is typed into the page and kept in sessionStorage, so it
+ * is gone when the tab is closed).
  */
 inline constexpr const char* kVideoUiHtml = R"VUI(<!doctype html>
 <html lang="en">

@@ -160,9 +160,9 @@ class ServerMetrics {
    * i.e. what a request pays on top of the generation itself.
    */
   enum class VideoOverheadPhase : size_t {
-    RequestWrite = 0,     // request-<id>.json written to the payload dir
-    ShmEnqueue,           // push into the shm task queue
-    ResponseHandling,     // response json read + callback + cleanup
+    RequestWrite = 0,  // request-<id>.json written to the payload dir
+    ShmEnqueue,        // push into the shm task queue
+    ResponseHandling,  // response json read + callback + cleanup
     Count
   };
   /** Task taken by a worker; `queueWaitSeconds` = submit -> claim. */
