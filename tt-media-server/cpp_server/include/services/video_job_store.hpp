@@ -221,6 +221,16 @@ class VideoJobStore {
     removeResultLocked(orphanFile);
   }
 
+  /**
+   * Whether a result file a runner reported may be served: the rule complete()
+   * applies to a job, for a request that has no job (sync mode). Inside the
+   * output root (when one is set); `mock://` results are not files.
+   */
+  bool isResultPathAllowed(const std::string& path) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return resultPathAllowed(path);
+  }
+
   std::optional<Json::Value> get(uint32_t taskId) const {
     std::lock_guard<std::mutex> lock(mutex_);
     auto it = jobs_.find(taskId);

@@ -61,7 +61,11 @@ struct VideoJob {
   JobStatus status = JobStatus::QUEUED;
   int64_t createdAt = 0;
   int64_t completedAt = 0;  // 0 = not finished
-  int64_t progressAt = 0;   // last time the worker claimed it; 0 = never
+  // Last time the worker claimed it; 0 = never. It is not refreshed while the
+  // model runs, so a healthy generation longer than JOB_MAX_STUCK_TIME_SECONDS
+  // (3 h by default) is swept as stale_job. A runner heartbeat would fix that
+  // (follow-up).
+  int64_t progressAt = 0;
   std::string resultPath;
   std::string errorCode;
   std::string errorMessage;

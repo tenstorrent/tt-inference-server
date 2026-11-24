@@ -491,6 +491,28 @@ TEST(VideoGenerateRequestGaps, RemainingTypesAndSparseJson) {
   EXPECT_EQ(stored["num_inference_steps"].asInt(), 20);  // defaulted
 }
 
+TEST(VideoFaststart, RemuxesARealMp4WithoutAShell) {
+  namespace fs = std::filesystem;
+  const fs::path dir = "/tmp/tt-faststart-real";
+  fs::remove_all(dir);
+  fs::create_directories(dir);
+  const std::string in = (dir / "in.mp4").string();
+  const std::string out = (dir / "out.mp4").string();
+  const std::string make =
+      "ffmpeg -loglevel error -y -f lavfi -i "
+      "testsrc=duration=1:size=64x64:rate=5 -pix_fmt yuv420p " +
+      in + " >/dev/null 2>&1";
+  if (std::system(make.c_str()) != 0) GTEST_SKIP() << "ffmpeg is not installed";
+  ASSERT_TRUE(tt::utils::ensureFaststart(in, out));
+  EXPECT_EQ(tt::utils::isFaststart(out), std::optional<bool>(true));
+  // a path with spaces and shell characters is one argument, not a command
+  const std::string odd = (dir / "a b; touch pwned.mp4").string();
+  fs::copy_file(in, odd);
+  EXPECT_TRUE(tt::utils::ensureFaststart(odd, (dir / "odd out.mp4").string()));
+  EXPECT_FALSE(fs::exists(dir / "pwned.mp4"));
+  fs::remove_all(dir);
+}
+
 TEST(VideoFaststart, MissingInputFailsAndLeavesNoOutput) {
   const std::string out = "/tmp/tt-faststart-test-missing.mp4";
   std::filesystem::remove(out);
@@ -615,6 +637,25 @@ TEST(VideoOutputDir, StoreRefusesToDeleteOutsideRoot) {
   EXPECT_FALSE(fs::exists(inside));
   EXPECT_TRUE(fs::exists(outside));  // not deleted: outside the output dir
   fs::remove(outside);
+  fs::remove_all(root);
+}
+
+TEST(VideoOutputDir, TheSyncPathUsesTheSameRuleAsAJobsResult) {
+  namespace fs = std::filesystem;
+  const fs::path root = "/tmp/tt-outdir-sync";
+  fs::remove_all(root);
+  fs::create_directories(root);
+  VideoJobStore store(10, 0);
+  // no root set: nothing is restricted (unit tests, mock runner)
+  EXPECT_TRUE(store.isResultPathAllowed("/etc/passwd"));
+  store.setOutputRoot(root);
+  EXPECT_TRUE(store.isResultPathAllowed((root / "video_1.mp4").string()));
+  EXPECT_FALSE(store.isResultPathAllowed("/etc/passwd"));
+  EXPECT_FALSE(store.isResultPathAllowed("/tmp/tt-outdir-sync-other/a.mp4"));
+  EXPECT_FALSE(store.isResultPathAllowed((root / ".." / "x.mp4").string()));
+  EXPECT_FALSE(store.isResultPathAllowed(root.string()));
+  // mock results are not files
+  EXPECT_TRUE(store.isResultPathAllowed("mock://video-1"));
   fs::remove_all(root);
 }
 

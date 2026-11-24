@@ -54,6 +54,12 @@ class VideoService
   std::optional<Json::Value> getJob(uint32_t jobId) const;
   Json::Value listJobs() const;
   std::optional<std::string> jobResultPath(uint32_t jobId) const;
+  /** Whether a result file the runner reported may be served: the same rule a
+   *  job's result goes through (inside the output directory). Used by the sync
+   *  path, which has no job. */
+  bool isResultPathAllowed(const std::string& path) const {
+    return jobs.isResultPathAllowed(path);
+  }
   /** nullopt = unknown or already terminal. */
   std::optional<Json::Value> cancelJob(uint32_t jobId);
   /** false = unknown; throws JobStillActiveException if not terminal. */
