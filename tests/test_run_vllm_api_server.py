@@ -1657,7 +1657,7 @@ def test_quetzal_metadata_without_vendored_registry_is_unchanged(
     assert all(kwargs["trust_remote_code"] is False for _, kwargs in calls)
 
 
-# --- submesh engines (DeviceModelSpec.submesh_engines) ---------------------------------------------------------------
+# --- submesh engines (vllm_args data_parallel_size + data_parallel_external_lb) --------------------------------------
 
 
 def test_submesh_engine_command_serves_its_own_port_on_loopback(
@@ -1687,10 +1687,13 @@ def test_submesh_engine_count_and_engine_configuration(
 ):
     module = run_vllm_api_server_module
     spec = {"device_model_spec": {"vllm_args": {"data_parallel_size": 4}}}
-    assert module.submesh_engine_count(spec) is None
-    spec["device_model_spec"]["submesh_engines"] = True
+    assert module.submesh_engine_count(spec) is None  # in-process DP
+    spec["device_model_spec"]["vllm_args"]["data_parallel_external_lb"] = True
     assert module.submesh_engine_count(spec) == 4
-    spec["device_model_spec"]["vllm_args"] = {"data-parallel-size": 1}
+    spec["device_model_spec"]["vllm_args"] = {
+        "data-parallel-size": 1,
+        "data-parallel-external-lb": True,
+    }
     with pytest.raises(ValueError, match="at least 2"):
         module.submesh_engine_count(spec)
 
@@ -1702,7 +1705,13 @@ def test_submesh_engine_count_and_engine_configuration(
     )  # the spec's whole-machine mesh, replaced per engine
     monkeypatch.delenv("OMP_NUM_THREADS", raising=False)
     monkeypatch.setenv("TT_VISIBLE_DEVICES", "")
-    args = {"data-parallel-size": 4, "data_parallel_size": 4, "max_num_seqs": 32}
+    args = {
+        "data-parallel-size": 4,
+        "data_parallel_size": 4,
+        "data_parallel_external_lb": True,
+        "data-parallel-external-lb": True,
+        "max_num_seqs": 32,
+    }
     module.configure_submesh_engine(4, args)
     assert args == {"data_parallel_size": 1, "max_num_seqs": 32}
     assert (
@@ -1758,29 +1767,74 @@ def test_stop_submesh_engines_kills_an_engine_that_ignores_sigterm(
         module.join_discovery_process_or_raise(child, join_s=5.0)
 
 
-def test_the_proxy_stops_when_an_engine_exits(run_vllm_api_server_module, monkeypatch):
+def test_vllm_router_starts_once_every_engine_is_healthy_and_stops_with_them(
+    run_vllm_api_server_module, monkeypatch
+):
     import asyncio
-    import socket
+    import subprocess
 
-    pytest.importorskip("aiohttp")
     module = run_vllm_api_server_module
-    monkeypatch.syspath_prepend(str(get_repo_root_path() / "vllm-tt-metal" / "src"))
+    backends = ["http://127.0.0.1:8072", "http://127.0.0.1:8073"]
+    monkeypatch.setenv(module.VLLM_ROUTER_ARGS_ENV, "--max-tree-size 67108864")
+    command = module.vllm_router_command(backends, "0.0.0.0", 8071)
+    assert command[:3] == [sys.executable, "-m", "vllm_router.launch_router"]
+    assert (
+        command[command.index("--worker-urls") + 1 : command.index("--policy")]
+        == backends
+    )
+    assert command[command.index("--policy") + 1] == "cache_aware"
+    assert not any(token.startswith("--balance") for token in command)  # defaults
+    assert command[-2:] == ["--max-tree-size", "67108864"]
+
+    # The router's own /health is 200 before its workers are up, so it starts only once both engines answer; an
+    # engine exit ends the serve loop with its code and stops the router.
+    healthy = {backends[0]: False, backends[1]: True}
+    monkeypatch.setattr(module, "engine_healthy", healthy.__getitem__)
+    monkeypatch.setattr(
+        module,
+        "vllm_router_command",
+        lambda *_: [sys.executable, "-c", "import time; time.sleep(60)"],
+    )
+    routers = []
+    popen = subprocess.Popen
+
+    def record_router(command, **kwargs):
+        routers.append(popen(command, **kwargs))
+        return routers[-1]
+
+    monkeypatch.setattr(subprocess, "Popen", record_router)
 
     class Engine:
         returncode, polls = None, 0
 
         def poll(self):
             self.polls += 1
-            if self.polls > 3:
+            if self.polls == 3:
+                assert not routers, "router started before every engine was healthy"
+                healthy[backends[0]] = True
+            if self.polls == 6:
+                assert routers and routers[0].poll() is None
                 self.returncode = 7
             return self.returncode
 
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        port = s.getsockname()[1]
     code = asyncio.run(
-        module.serve_engine_proxy(
-            [Engine()], ["http://127.0.0.1:1"], "127.0.0.1", port, poll_s=0.05
-        )
+        module.serve_vllm_router([Engine()], backends, "127.0.0.1", 8071, poll_s=0.01)
     )
     assert code == 7
+    assert len(routers) == 1 and routers[0].returncode == -15
+
+    # a router that exits ends the serve loop with its code (the launcher then stops the engines)
+    monkeypatch.setattr(
+        module, "vllm_router_command", lambda *_: [sys.executable, "-c", "exit(5)"]
+    )
+
+    class RunningEngine:
+        def poll(self):
+            return None
+
+    code = asyncio.run(
+        module.serve_vllm_router(
+            [RunningEngine()], backends, "127.0.0.1", 8071, poll_s=0.01
+        )
+    )
+    assert code == 5

@@ -574,14 +574,6 @@ class DeviceModelSpec:
     # TODO: address https://github.com/tenstorrent/tt-inference-server/issues/5388 (map this field into the
     # auto-generated Helm chart values)
     docker_shm_size: Optional[str] = None
-    # When true, the server runs its data parallelism as one vLLM engine per device group behind a prefix-cache aware
-    # proxy on the service port (vllm-tt-metal/src/run_vllm_api_server.py, engine_proxy.py), instead of one engine over
-    # the whole mesh. The launcher discovers the groups at startup, as vllm-tt-plugin's standard DP does: the machine's
-    # mesh (MESH_DEVICE) split into data_parallel_size submeshes, a Galaxy's 1 x 8 rows for 4. Chip ids depend on the
-    # machine, so the spec does not list them. Each engine runs --data-parallel-size 1 on its group, so one group
-    # prefills while the others decode. Clients see one endpoint; vllm_args keep the whole server's
-    # data_parallel_size (= the number of engines) and each engine's max_num_seqs.
-    submesh_engines: bool = False
     system_requirements: Optional[SystemRequirements] = None
     known_issues: List[KnownIssue] = field(default_factory=list)
     # When set, run_evals appends max_retries=<N> to lm-eval --model_args.
@@ -601,11 +593,16 @@ class DeviceModelSpec:
 
     def validate_data(self):
         """Validate that required specification is present."""
-        if self.submesh_engines:
+        # vllm_args.data_parallel_external_lb (vLLM's one server per DP rank behind an external load balancer): the
+        # launcher (vllm-tt-metal/src/run_vllm_api_server.py) runs data_parallel_size independent engines, one per
+        # device group it discovers as vllm-tt-plugin's standard DP does (a Galaxy's 1 x 8 rows for 4), behind
+        # vllm-router on the service port. vllm_args keep the whole server's data_parallel_size and each engine's
+        # max_num_seqs.
+        if self.vllm_args.get("data_parallel_external_lb"):
             data_parallel_size = self.vllm_args.get("data_parallel_size")
             assert isinstance(data_parallel_size, int) and data_parallel_size >= 2, (
-                "submesh_engines runs one engine per data-parallel rank: vllm_args.data_parallel_size must be at "
-                f"least 2 (got {data_parallel_size})"
+                "data_parallel_external_lb runs one engine per data-parallel rank: vllm_args.data_parallel_size "
+                f"must be at least 2 (got {data_parallel_size})"
             )
 
     def _infer_data(self):

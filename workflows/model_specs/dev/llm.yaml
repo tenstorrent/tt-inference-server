@@ -353,11 +353,9 @@ templates:
       max_context: 262144
       default_impl: true
       tensor_cache_timeout: 7200.0  # cold TT-cache conversion of the weights; the readiness backstop adds 30 min
-      submesh_engines: true  # one vLLM engine per (1, 8) row behind the prefix-aware engine_proxy: a long agentic prefill on one row no longer stalls the other three rows' decode, and a follow-up turn lands on the row that holds its prefix
       env_vars:
         GEMMA4_PREFILL_SDPA_SPLITK: "1"  # split-K global prefill SDPA (tt-metal #64930), taken from a 16K prefix where it pays on the chip; 16K continuation after a 64K prefix: 4922 -> 4068 ms per (1,8) row; AgentX c32 44,943 -> 50,046 total tok/s
         GEMMA4_KV_PAIR_SHARD: "1"  # pair-sharded global KV (tt-metal #64930): each chip of a KV-head pair keeps half of every global-layer block, so the TT KV pool grows 1,275,526 -> 1,832,159 tokens per engine; AgentX 2026-11-16: c32 47,424 -> 48,497 total tok/s (prefix hit 91.3 -> 93.8 %), c64 15,882 -> 44,382 (unsharded, 64 sessions thrash the prefix cache)
-        TT_PROXY_SLACK: "4"  # engine_proxy: route to the engine holding the prompt's prefix unless it has more than 4 requests in flight above the least-loaded one (MiMo-V2.6-Flash measured slack 2 spilling prefix holders into full re-prefills)
         GEMMA4_PREFILL_SDPA_NARROW: "wide"  # the sliding layers' prefill SDPA (4 Q heads per chip at TP8) on the whole grid at q = k = 128 instead of the op defaults: served 16K prefill chunk 3.87 -> 3.65 s at position 0 (AgentX c16, 2026-11-10); 2K prose gate on the 12B (same per-chip geometry) top-1 0.763 -> 0.772
         GEMMA4_SDPA_MAX_CORES_PER_HEAD: "32"  # stock decode SDPA core cap per (row, head): measured 2026-10-30/31 on the Galaxy finals vs the default 16: 12B 256K 36.0 vs 31.3 tok/s, 128K 39.0 vs 36.4; 31B 256K 20.9 vs 19.0, 128K 22.5 vs 21.3; short-context and multi-row points unchanged (the c128 spread was the host, present at cap 16 too)
         GEMMA4_PREFILL_PAD_BUCKETS: "256,512,1024"  # Gemma 4 prefill padding: 129-256-token prompts pad to 256 and 257-512 to 512 instead of 1024 (tt_transformers default). A chat-templated 128-token benchmark prompt is ~144 tokens; measured 2026-10-31 on the Galaxy DP=4 entry vs the knob off (same tree): 128/128 c1 TTFT 250 -> 134 ms, c8 365 -> 300 ms, c128 5.59 -> 3.05 s; 128K/256K TTFT and decode unchanged.
@@ -412,6 +410,7 @@ templates:
         # Default to the device sampler's top-k limit. Requests can override this value.
         override_generation_config: '{"top_k": 32}'
         data_parallel_size: 4
+        data_parallel_external_lb: true  # one vLLM engine per (1, 8) row behind vllm-router (cache_aware policy): a long agentic prefill on one row no longer stalls the other three rows' decode, and a follow-up turn lands on the row that holds its prefix
         max_num_seqs: 32  # per-engine; max_concurrency above is whole-box
         async_scheduling: true  # the MTP contract class declares supports_async_decode / supports_async_spec_decode; the measured tables above were taken with asynchronous scheduling on both sides
         # "model_owned_drafter" is the plugin's sentinel: the model proposes and verifies on device.
@@ -1282,12 +1281,9 @@ templates:
       max_context: 262144  # 256 * 1024 per engine (same budget as P150X8)
       default_impl: true
       tensor_cache_timeout: 5400.0  # cold TT-cache conversion of the weights; the readiness backstop adds 30 min
-      submesh_engines: true  # eight vLLM engines, one per (1, 4) half row (standard DP discovery at data_parallel_size 8), behind the prefix-aware engine_proxy: the global KV head sits on 4 chips per copy instead of 8 and twice the engines prefill and decode; per-engine settings from the 12B P300X2 entry (4-chip blocks)
       env_vars:
         GEMMA4_PREFILL_SDPA_SPLITK: "1"  # split-K global prefill SDPA (tt-metal #64930), taken from a 16K prefix where it pays on the chip; 16K continuation after a 64K prefix: 3141 -> 1918 ms per (1,8) row (measured on the previous (1,8) engine layout)
         GEMMA4_PREFILL_SDPA_NARROW: "wide"  # the sliding layers prefill SDPA (narrow chips) on the whole grid at q = k = 128 (2K prose gate neutral on the 12B): QB2 block prefill 4K..32K -7..-12 %, Galaxy row -1..-5 %
-        TT_PROXY_SLACK: "8"  # engine_proxy: route to the engine holding the prompt prefix unless it has more than 8 requests in flight above the least-loaded one; a spill re-prefills the whole context on an engine without it (AgentX 64 at slack 4: 84 spills, ~2 points of prefix hit)
-        TT_PROXY_INDEX_CHUNKS: "2097152"  # engine_proxy prefix index, 256-character chunk hashes (LRU): 8x the default 262144; at the default the index filled at AgentX 64 and forgot idle sessions, which went to the least-loaded engine and re-prefilled their whole context
         GEMMA4_SDPA_GROUP_SPLIT: "1"  # decode SDPA of the global layers split over the chips holding the KV head (12B: 4, 26B: 2; tt-metal #64930), merged by log-sum-exp: traced plain step at 86K context, 12B 8 / 16 rows 36.2 -> 26.5 / 52.4 -> 31.4 ms, 26B 35.3 -> 30.8 / 46.6 -> 38.1 ms; 64-position HF gate top-1 12B 52 -> 54 / 64, 26B 48 -> 48 / 64
         GEMMA4_PRECISION_LM_HEAD: "bfp8"  # the lm_head in bfloat8_b, as the 12B P300X2 entry
         GEMMA4_SDPA_MAX_CORES_PER_HEAD: "32"  # stock decode SDPA core cap per (row, head): measured 2026-10-30/31 on the Galaxy finals vs the default 16: 12B 256K 36.0 vs 31.3 tok/s, 128K 39.0 vs 36.4; 31B 256K 20.9 vs 19.0, 128K 22.5 vs 21.3; short-context and multi-row points unchanged (the c128 spread was the host, present at cap 16 too)
@@ -1339,6 +1335,7 @@ templates:
         # Default to the device sampler's top-k limit. Requests can override this value.
         override_generation_config: '{"top_k": 32}'
         data_parallel_size: 8
+        data_parallel_external_lb: true  # eight vLLM engines, one per (1, 4) half row (standard DP discovery at data_parallel_size 8), behind vllm-router (cache_aware policy): the global KV head sits on 4 chips per copy instead of 8 and twice the engines prefill and decode; per-engine settings from the 12B P300X2 entry (4-chip blocks)
         max_num_seqs: 32  # per-engine; max_concurrency above is whole-box
         async_scheduling: true  # the MTP contract class declares supports_async_decode / supports_async_spec_decode; the measured tables above were taken with asynchronous scheduling on both sides
         # "model_owned_drafter" is the plugin's sentinel: the model proposes and verifies on device.
@@ -3125,18 +3122,15 @@ templates:
         limit-mm-per-prompt: '{"image": 8, "video": 1}'  # MMMU-Pro items carry up to 7 images
         mm-processor-cache-gb: 0
     # BH Galaxy: eight engines of 4 chips (the 26B P300X2 entry's 4-chip serving, one engine per (1, 4) half row)
-    # behind the prefix-aware engine_proxy. Each engine is its own single-DP vLLM server, as on a QB2, so the
+    # behind vllm-router. Each engine is its own single-DP vLLM server, as on a QB2, so the
     # lane fold of the previous one-instance entry (MoE is rejected under multi-process DP in one server) is not needed.
     - device: BLACKHOLE_GALAXY
       max_concurrency: 64  # whole box: 8 users x 8 engines, the AgentX peak (2026-11-18: 64 users 109,774 tok/s; 96 users 80,056; 128 users 55,017, the KV pool thrashes)
       max_context: 262144  # the model's max_position_embeddings
       default_impl: true
       tensor_cache_timeout: 7200.0  # cold TT-cache conversion of the 4-chip weights; the readiness backstop adds 30 min
-      submesh_engines: true  # eight vLLM engines, one per (1, 4) half row (standard DP discovery at data_parallel_size 8), behind the prefix-aware engine_proxy, each with the 26B P300X2 entry's 4-chip settings: every engine prefills and decodes on its own (the fracture entry ran one 32-chip instance, one prefill at a time)
       env_vars:
         GEMMA4_PREFILL_SDPA_SPLITK: "1"  # split-K global prefill SDPA (tt-metal #64930), taken from a 16K prefix where it pays on the chip; 16K continuation after a 64K prefix: 7762 -> 7333 ms on a 1x4 block
-        TT_PROXY_SLACK: "8"  # engine_proxy: route to the engine holding the prompt prefix unless it has more than 8 requests in flight above the least-loaded one; a spill re-prefills the whole context on an engine without it (AgentX 64 at slack 4: 84 spills, ~2 points of prefix hit)
-        TT_PROXY_INDEX_CHUNKS: "2097152"  # engine_proxy prefix index, 256-character chunk hashes (LRU): 8x the default 262144; at the default the index filled at AgentX 64 and forgot idle sessions, which went to the least-loaded engine and re-prefilled their whole context
         GEMMA4_SDPA_GROUP_SPLIT: "1"  # decode SDPA of the global layers split over the chips holding the KV head (12B: 4, 26B: 2; tt-metal #64930), merged by log-sum-exp: traced plain step at 86K context, 12B 8 / 16 rows 36.2 -> 26.5 / 52.4 -> 31.4 ms, 26B 35.3 -> 30.8 / 46.6 -> 38.1 ms; 64-position HF gate top-1 12B 52 -> 54 / 64, 26B 48 -> 48 / 64
         GEMMA4_CCL_ONESHOT: "0"  # off (tt-metal #64930 default on every mesh; the 26B (4,1) build never takes it): no receiver-ready handshake on the per-call scratch
         GEMMA4_PACKED_KV_WRITE_OP: "1"  # the speculative records write their K/V rows through the model-local paged_update_rows op (one program per layer instead of the per-position loop); measured 2026-10-31 on this block vs the loop: prose c1 63.9 vs 56.4 tok/s (+13 %), every other point at parity, coherent at 256K/128K/short, record unit tests greedy-identical
@@ -3187,6 +3181,7 @@ templates:
         decode_interleave_prefill_steps: 1  # one decode-only step after every prefill step (see the Galaxy entry)
       vllm_args:
         data_parallel_size: 8  # the eight engines
+        data_parallel_external_lb: true  # eight vLLM engines, one per (1, 4) half row (standard DP discovery at data_parallel_size 8), behind vllm-router (cache_aware policy), each with the 26B P300X2 entry's 4-chip settings: every engine prefills and decodes on its own (the fracture entry ran one 32-chip instance, one prefill at a time)
         max_num_seqs: 32  # per engine; max_concurrency above is whole-box
         prefix_cache_retention_interval: 4096  # a sliding-window prefix checkpoint every 4096 tokens: at 1024 (<= the 1024 window) every cached prefix keeps all its sliding-window blocks (25 of 30 layers); at 4096 a quarter of them (MiMo-V2.6-Flash: 1.26M -> 2.7M prefix tokens per engine); prompt ends and shared-prefix junctions stay exact
         # 128-token blocks: prefix-cache hits land on the SDPA chunk alignment, so a continuation never
