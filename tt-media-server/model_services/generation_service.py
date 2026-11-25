@@ -549,7 +549,8 @@ class GenerationService(BaseJobService):
         output = {
             "type": request.OUTPUT_TYPE,
             "seed": request._seed,
-            "prompt": request._prompt,
+            # the caption, when the runner rewrote the prompt
+            "prompt": getattr(result, "info", {}).get("prompt", request._prompt),
         }
         if request.OUTPUT_TYPE == "image":
             pil_format, content_type = IMAGE_FORMATS[request.format]

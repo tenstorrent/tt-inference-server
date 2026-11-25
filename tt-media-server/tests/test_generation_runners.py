@@ -16,6 +16,7 @@ from unittest.mock import Mock
 
 import numpy as np
 import pytest
+from domain.flux3_image_klein_request import Flux3ImageKleinRequest
 from domain.flux2_klein_4b_request import Flux2klein4bRequest
 from domain.ltx23_distilled_request import Ltx23DistilledRequest
 from domain.ideogram4_request import Ideogram4Request
@@ -309,6 +310,244 @@ def test_wan_warmup_conditions_the_last_frame(monkeypatch):
         (call,) = runner.pipeline.calls
         frame_positions.add(tuple(pos for _, pos in call["image_prompt"]))
     assert frame_positions == {(0,), (0, 80)}
+
+
+class _Flux3Pipeline:
+    def __init__(self):
+        self.calls = []
+        self.warmed = 0
+
+    def warmup(self, sizes=None):
+        self.warmed += 1
+        self.warmed_sizes = sizes
+
+    def generate(self, request):
+        self.calls.append(request)
+        return SimpleNamespace(
+            image=Image.new("RGB", (request.width, request.height)),
+            prompt=f"a detailed caption of {request.prompt}",
+            timings={
+                "upsample": 1.0,
+                "encode": 0.5,
+                "encode_reference": 0.25,
+                "denoise": 2.0,
+                "decode": 0.5,
+                "to_host": 0.1,
+            },
+        )
+
+
+class _StageRecorder:
+    flushed = "never"
+
+    def flush(self, images=None, resolution=None):
+        self.flushed = images
+
+
+@pytest.fixture
+def flux3_runner(monkeypatch):
+    pipeline_module = ModuleType("pipeline_flux3_klein")
+    pipeline_module.Flux3KleinRequest = SimpleNamespace
+    monkeypatch.setitem(
+        sys.modules,
+        "models.tt_dit.pipelines.flux3_klein.pipeline_flux3_klein",
+        pipeline_module,
+    )
+    # the deployment's own settings do not reach the tests
+    monkeypatch.delenv("FLUX3_PROMPT_UPSAMPLER_FROZEN", raising=False)
+    monkeypatch.delenv("FLUX3_WARMUP_REFERENCE_SHAPES", raising=False)
+    runner = _runner("TTFlux3ImageKleinRunner")
+    runner.pipeline = _Flux3Pipeline()
+    return runner
+
+
+@pytest.mark.parametrize("with_image", [False, True])
+def test_flux3_passes_the_reference_as_it_is(flux3_runner, with_image):
+    request = _resolved(Flux3ImageKleinRequest(prompt="a cat"), 2048, 2048)
+    # The runner decodes FLUX.3's reference from its file, at its own size.
+    request._files = {"images": [_png(3000, 1000)]} if with_image else {}
+    (image,) = flux3_runner.run([request])
+    (call,) = flux3_runner.pipeline.calls
+    assert (call.prompt, call.width, call.height, call.seed) == ("a cat", 2048, 2048, 5)
+    assert call.steps == 16
+    assert [reference.size for reference in call.images] == (
+        [(3000, 1000)] if with_image else []
+    )
+    assert image.size == (2048, 2048)
+    assert image.info["prompt"] == "a detailed caption of a cat"
+
+
+def test_flux3_passes_a_transparent_reference_with_its_alpha(flux3_runner):
+    # The prompt upsampler composites it over white, not over its hidden pixels.
+    buffer = BytesIO()
+    Image.new("RGBA", (64, 64), (0, 0, 0, 0)).save(buffer, "PNG")
+    request = _resolved(Flux3ImageKleinRequest(prompt="a cat"), 1024, 1024)
+    request._files = {"images": [buffer.getvalue()]}
+    flux3_runner.run([request])
+    (call,) = flux3_runner.pipeline.calls
+    (reference,) = call.images
+    assert reference.mode == "RGBA"
+    assert reference.getpixel((0, 0)) == (0, 0, 0, 0)
+
+
+def test_flux3_records_the_pipeline_stage_times(flux3_runner):
+    recorder = _StageRecorder()
+    flux3_runner._image_stage_recorder = lambda: recorder
+    request = _resolved(Flux3ImageKleinRequest(prompt="a cat"), 1024, 1024)
+    (image,) = flux3_runner.run([request])
+    assert recorder.flushed == [image]
+    assert recorder.engine_seconds == pytest.approx(4.35)
+    assert (recorder.denoise_seconds, recorder.vae_seconds) == (2.0, 0.5)
+    assert recorder.conditioning_seconds == {"all": 1.75}
+
+
+def test_flux3_records_a_failed_run_too(flux3_runner):
+    recorder = _StageRecorder()
+    flux3_runner._image_stage_recorder = lambda: recorder
+    flux3_runner.pipeline.generate = Mock(side_effect=RuntimeError("device"))
+    request = _resolved(Flux3ImageKleinRequest(prompt="a cat"), 1024, 1024)
+    with pytest.raises(RuntimeError):
+        flux3_runner.run([request])
+    assert recorder.flushed is None
+
+
+def test_flux3_fails_the_job_not_the_worker_on_a_corrupt_reference(flux3_runner):
+    request = _resolved(Flux3ImageKleinRequest(prompt="a cat"), 1024, 1024)
+    request._files = {"images": [_png(64, 64)[:40]]}
+    with pytest.raises(ValueError, match="an input could not be decoded: "):
+        flux3_runner.run([request])
+    assert flux3_runner.pipeline.calls == []
+
+
+@pytest.mark.parametrize("frozen", [None, "0", "1"])
+def test_flux3_creates_the_pipeline_warmed_up_with_its_upsampler_unless_frozen(
+    flux3_runner, monkeypatch, frozen
+):
+    if frozen is not None:
+        monkeypatch.setenv("FLUX3_PROMPT_UPSAMPLER_FROZEN", frozen)
+    pipeline, built = _Flux3Pipeline(), {}
+
+    def create(device, **kwargs):
+        built.update(device=device, **kwargs)
+        return pipeline
+
+    monkeypatch.setattr(
+        sys.modules["models.tt_dit.pipelines.flux3_klein.pipeline_flux3_klein"],
+        "Flux3KleinPipeline",
+        create,
+        raising=False,
+    )
+    weights = ModuleType("weights_flux3_klein")
+    weights.resolve_weights_dir = lambda model: f"/weights/{model}"
+    monkeypatch.setitem(
+        sys.modules, "models.tt_dit.pipelines.flux3_klein.weights_flux3_klein", weights
+    )
+    flux3_runner.ttnn_device = "mesh"
+    flux3_runner.settings = SimpleNamespace(model_weights_path="not-a-dir")
+    assert flux3_runner.create_pipeline() is pipeline
+    assert built == {
+        "device": "mesh",
+        "snapshots": {"distilled": "/weights/distilled"},
+        "upsample": frozen != "1",
+    }
+    assert pipeline.warmed == 1
+    # resident, 4K is not served, so not warmed
+    assert pipeline.warmed_sizes == (
+        (1024, 2048, 4096) if frozen == "1" else (1024, 2048)
+    )
+
+
+def _flux3_upsampler_module(monkeypatch, shared_mesh_params):
+    module = ModuleType("upsampler_flux3_klein")
+    module.SHARED_MESH_PARAMS = shared_mesh_params
+    monkeypatch.setitem(
+        sys.modules, "models.tt_dit.pipelines.flux3_klein.upsampler_flux3_klein", module
+    )
+
+
+def test_flux3_opens_the_mesh_as_its_upsampler_needs(flux3_runner, monkeypatch):
+    shared = {"num_command_queues": 2, "trace_region_size": 7}
+    _flux3_upsampler_module(monkeypatch, shared)
+    params = flux3_runner.get_pipeline_device_params()
+    assert params["l1_small_size"] == 65536
+    assert {name: params[name] for name in shared} == shared
+    # frozen: the upsampler's command queue and trace region are not reserved
+    monkeypatch.setenv("FLUX3_PROMPT_UPSAMPLER_FROZEN", "true")
+    params = flux3_runner.get_pipeline_device_params()
+    assert params["l1_small_size"] == 65536
+    assert not shared.keys() & params.keys()
+    monkeypatch.setenv("FLUX3_PROMPT_UPSAMPLER_FROZEN", "maybe")
+    with pytest.raises(ValueError, match="FLUX3_PROMPT_UPSAMPLER_FROZEN"):
+        flux3_runner.get_pipeline_device_params()
+
+
+def test_flux3_frozen_prompt_is_rendered_and_reported_as_sent(
+    flux3_runner, monkeypatch
+):
+    """Without its upsampler the pipeline renders the prompt as sent and
+    reports it; the runner passes it through unchanged and reports what the
+    pipeline rendered from."""
+    monkeypatch.setenv("FLUX3_PROMPT_UPSAMPLER_FROZEN", "1")
+    caption = "A long caption, upsampled ahead of the deployment."
+    flux3_runner.pipeline.generate = lambda request: SimpleNamespace(
+        image=Image.new("RGB", (request.width, request.height)),
+        prompt=request.prompt,
+        timings={},
+    )
+    request = _resolved(Flux3ImageKleinRequest(prompt=caption), 1024, 1024)
+    (image,) = flux3_runner.run([request])
+    assert image.info["prompt"] == caption
+
+
+def test_flux3_warms_only_the_extra_reference_shapes_it_is_given(
+    flux3_runner, monkeypatch
+):
+    assert flux3_runner.warmup_requests() == []
+    monkeypatch.setenv("FLUX3_WARMUP_REFERENCE_SHAPES", "1600x912, 3000x2000")
+    flux3_runner._warming_up = True
+    for request in flux3_runner.warmup_requests():
+        flux3_runner.run([request])
+    assert [
+        (call.width, call.height, call.steps, [image.size for image in call.images])
+        for call in flux3_runner.pipeline.calls
+    ] == [(1024, 1024, 2, [(1600, 912)]), (1024, 1024, 2, [(3000, 2000)])]
+    monkeypatch.setenv("FLUX3_WARMUP_REFERENCE_SHAPES", "1600")
+    with pytest.raises(ValueError, match="FLUX3_WARMUP_REFERENCE_SHAPES"):
+        flux3_runner.warmup_requests()
+
+
+def test_flux3_deep_canary_is_the_smallest_size_at_warmup_steps(flux3_runner):
+    flux3_runner.run([flux3_runner._build_warmup_video_request()])
+    (call,) = flux3_runner.pipeline.calls
+    assert (call.width, call.height, call.steps, call.images) == (1024, 1024, 2, ())
+
+
+def test_flux3_serves_the_shapes_the_pipeline_warms(
+    tt_metal_flux3, flux3_runner, monkeypatch
+):
+    """The server's copies of tt-metal's constants, against tt-metal."""
+    pipeline = tt_metal_flux3[
+        "models.tt_dit.pipelines.flux3_klein.pipeline_flux3_klein"
+    ]
+    upsampler = tt_metal_flux3[
+        "models.tt_dit.pipelines.flux3_klein.upsampler_flux3_klein"
+    ]
+    # Every size the schema accepts is one the pipeline serves and warms; with
+    # the upsampler resident, all but the largest.
+    monkeypatch.setenv("FLUX3_PROMPT_UPSAMPLER_FROZEN", "1")
+    assert Flux3ImageKleinRequest.warmup_sizes() == [
+        (side, side) for side in pipeline.SIZES
+    ]
+    monkeypatch.setenv("FLUX3_PROMPT_UPSAMPLER_FROZEN", "0")
+    assert Flux3ImageKleinRequest.warmup_sizes() == [
+        (side, side) for side in pipeline.SIZES if side < max(pipeline.SIZES)
+    ]
+    assert runners.FLUX3_KLEIN_STEPS == pipeline.STEPS["distilled"]
+    _flux3_upsampler_module(monkeypatch, upsampler.SHARED_MESH_PARAMS)
+    params = flux3_runner.get_pipeline_device_params()
+    assert {
+        name: params[name] for name in upsampler.SHARED_MESH_PARAMS
+    } == upsampler.SHARED_MESH_PARAMS
 
 
 @pytest.mark.parametrize("with_images", [False, True])
@@ -621,7 +860,7 @@ def test_h3_ref2va_packs_images_then_videos_then_audio(monkeypatch):
         "videos": [b"v0", b"v1"],
         "audios": [b"a0"],
     }
-    (image, *clips) = runner._inputs(request)["references"]
+    image, *clips = runner._inputs(request)["references"]
     assert image["image"].size == (48, 64)
     assert clips == [
         {"video": b"v0"},

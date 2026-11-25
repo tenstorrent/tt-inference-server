@@ -37,6 +37,11 @@ from config.constants import (
     generation_job_dir,
 )
 from config.settings import get_settings
+from domain.flux3_image_klein_request import (
+    FLUX3_KLEIN_STEPS,
+    Flux3ImageKleinRequest,
+    upsampler_frozen,
+)
 from domain.flux2_klein_4b_request import KLEIN_STEPS, Flux2klein4bRequest
 from domain.generation_request import GenerationRequest
 from domain.ideogram4_request import IDEOGRAM_PRESETS, Ideogram4Request
@@ -156,9 +161,12 @@ class _GenerationRunner(TTDiTRunner):
         return request
 
     @staticmethod
-    def _images(request: GenerationRequest, name: str) -> list[Image.Image]:
-        """The images of the media field ``name``, decoded from their files."""
-        return [decode_image(data) for data in request._files.get(name, [])]
+    def _images(
+        request: GenerationRequest, name: str, *, rgb: bool = True
+    ) -> list[Image.Image]:
+        """The images of the media field ``name``, decoded from their files, in
+        RGB unless ``rgb`` is false."""
+        return [decode_image(data, rgb=rgb) for data in request._files.get(name, [])]
 
     def _image_stage_recorder(self) -> ImageStageRecorder | None:
         if self._warming_up:
@@ -430,6 +438,141 @@ MINIMAX_H3_L1_SMALL_SIZE_DEFAULT_BH_GALAXY = 65536
 MINIMAX_H3_L1_SMALL_SIZE_DEFAULT_WH_GALAXY = 32768
 MINIMAX_H3_MAX_PAYLOAD_BYTES_BH_GALAXY = 8192
 MINIMAX_H3_MAX_PAYLOAD_BYTES_WH_GALAXY = 4096
+
+
+FLUX3_WARMUP_REFERENCE_SHAPES = "FLUX3_WARMUP_REFERENCE_SHAPES"
+
+
+def _flux3_warmup_reference_shapes() -> list[tuple[int, int]]:
+    """Extra reference shapes to warm up (``WxH,WxH``); each compiles the VAE
+    encoder for its canvas."""
+    raw = os.environ.get(FLUX3_WARMUP_REFERENCE_SHAPES, "")
+    shapes = []
+    for item in filter(None, (item.strip() for item in raw.split(","))):
+        try:
+            width, height = (int(v) for v in item.lower().split("x"))
+        except ValueError:
+            raise ValueError(
+                f"{FLUX3_WARMUP_REFERENCE_SHAPES}={raw!r} must be WxH shapes "
+                "separated by commas"
+            ) from None
+        shapes.append((width, height))
+    return shapes
+
+
+class TTFlux3ImageKleinRunner(_GenerationRunner):
+    def create_pipeline(self):
+        from models.tt_dit.pipelines.flux3_klein.pipeline_flux3_klein import (
+            Flux3KleinPipeline,
+        )
+        from models.tt_dit.pipelines.flux3_klein.weights_flux3_klein import (
+            resolve_weights_dir,
+        )
+
+        weights = self.settings.model_weights_path
+        snapshot = (
+            Path(weights)
+            if os.path.isdir(weights)
+            else resolve_weights_dir("distilled")
+        )
+        try:
+            pipeline = Flux3KleinPipeline(
+                self.ttnn_device,
+                snapshots={"distilled": snapshot},
+                upsample=not upsampler_frozen(),
+            )
+            pipeline.warmup(
+                sizes=tuple(width for width, _ in Flux3ImageKleinRequest.warmup_sizes())
+            )
+            return pipeline
+        except Exception as e:
+            log_exception_chain(
+                self.logger, self.device_id, "FLUX.3 pipeline creation failed", e
+            )
+            raise
+
+    def get_pipeline_device_params(self):
+        from models.tt_dit.pipelines.flux3_klein.upsampler_flux3_klein import (
+            SHARED_MESH_PARAMS,
+        )
+
+        # as tt-metal's test_serving_flux3_klein; SHARED_MESH_PARAMS for the
+        # resident upsampler
+        router = ttnn.FabricRouterConfig()
+        router.max_packet_payload_size_bytes = 8192
+        return {
+            "fabric_config": ttnn.FabricConfig.FABRIC_1D_RING,
+            "fabric_router_config": router,
+            "l1_small_size": 65536,
+            **({} if upsampler_frozen() else SHARED_MESH_PARAMS),
+        }
+
+    def warmup_requests(self) -> list[GenerationRequest]:
+        # the pipeline warmed its own shapes; only extra reference shapes are left
+        return [
+            _warmup_request(
+                Flux3ImageKleinRequest.model_construct(prompt=_WARMUP_PROMPT),
+                1024,
+                1024,
+                {"images": [_png(width, height)]},
+            )
+            for width, height in _flux3_warmup_reference_shapes()
+        ]
+
+    def _build_warmup_video_request(self) -> GenerationRequest:
+        """A multi-host deep canary's request: the smallest text-to-image."""
+        request = _warmup_request(
+            Flux3ImageKleinRequest.model_construct(prompt=_WARMUP_PROMPT), 1024, 1024
+        )
+        request._task_id = CANARY_DEEP_TASK_ID
+        return request
+
+    @_inference_timer
+    def run(self, requests: list[Flux3ImageKleinRequest]):
+        from models.tt_dit.pipelines.flux3_klein.pipeline_flux3_klein import (
+            Flux3KleinRequest,
+        )
+
+        request = requests[0]
+        try:
+            # keep alpha: the upsampler composites it over white
+            images = tuple(self._images(request, "images", rgb=False))
+        except ValueError:
+            raise
+        except Exception as e:
+            # fail the job, not the worker
+            raise ValueError(f"an input could not be decoded: {e}") from e
+        recorder = self._image_stage_recorder()
+        output = None
+        try:
+            result = self.pipeline.generate(
+                Flux3KleinRequest(
+                    prompt=request._prompt,
+                    width=request._width,
+                    height=request._height,
+                    seed=request._seed,
+                    steps=self._steps(FLUX3_KLEIN_STEPS, request),
+                    images=images,
+                )
+            )
+            result.image.info["prompt"] = result.prompt
+            output = [result.image]
+            if recorder is not None:
+                timings = result.timings
+                recorder.engine_seconds = sum(timings.values())
+                recorder.denoise_seconds = timings.get("denoise")
+                recorder.vae_seconds = timings.get("decode")
+                recorder.conditioning_seconds = {
+                    "all": sum(
+                        timings.get(stage, 0.0)
+                        for stage in ("upsample", "encode", "encode_reference")
+                    )
+                }
+        finally:
+            # A failed run is recorded too, as a run with no output.
+            if recorder is not None:
+                recorder.flush(output)
+        return output
 
 
 class TTFlux2Klein4BRunner(_GenerationRunner):

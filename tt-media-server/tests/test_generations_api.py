@@ -26,6 +26,7 @@ import domain.wan22_i2v_a14b_request as wan_request
 import pytest
 import yaml
 from config.constants import JobTypes
+from domain.flux3_image_klein_request import Flux3ImageKleinRequest
 from domain.flux2_klein_4b_request import Flux2klein4bRequest
 from domain.generation_request import MEDIA_MAX_BYTES
 from domain.ideogram4_request import Ideogram4Request
@@ -1920,6 +1921,133 @@ def test_the_service_downloads_no_weights(monkeypatch):
     )
     base_service.BaseService.__init__(object.__new__(GenerationService))
     assert downloads == []
+
+
+# --- FLUX.3 Image klein ----------------------------------------------------------
+
+
+@pytest.fixture
+def flux3_upsampler(monkeypatch):
+    """Where FLUX.3's prompt upsampler runs: "resident" (the default) or
+    "ahead" of the deployment."""
+
+    def place(where: str):
+        monkeypatch.setenv(
+            "FLUX3_PROMPT_UPSAMPLER_FROZEN", {"resident": "0", "ahead": "1"}[where]
+        )
+
+    place("resident")
+    return place
+
+
+@pytest.mark.parametrize(
+    ("fields", "expected"),
+    [
+        ({}, (2048, 2048)),
+        ({"size": "1K"}, (1024, 1024)),
+        ({"size": "4K"}, (4096, 4096)),
+    ],
+)
+def test_flux3_output_size(flux3_upsampler, fields, expected):
+    flux3_upsampler("ahead")
+    assert Flux3ImageKleinRequest(prompt="a cat", **fields).output_size() == expected
+
+
+def test_flux3_serves_4k_only_with_the_upsampler_ahead(flux3_upsampler):
+    with pytest.raises(ValidationError, match="4K is served with the prompt upsampler"):
+        Flux3ImageKleinRequest(prompt="a cat", size="4K")
+    assert Flux3ImageKleinRequest.warmup_sizes() == [(1024, 1024), (2048, 2048)]
+    flux3_upsampler("ahead")
+    assert Flux3ImageKleinRequest(prompt="a cat", size="4K").output_size() == (
+        4096,
+        4096,
+    )
+    assert Flux3ImageKleinRequest.warmup_sizes() == [
+        (1024, 1024),
+        (2048, 2048),
+        (4096, 4096),
+    ]
+
+
+@pytest.mark.parametrize("with_image", [False, True])
+async def test_flux3_refuses_4k_at_submit_with_the_upsampler_resident(
+    generations_app, flux3_upsampler, with_image
+):
+    client, device = generations_app("tt-flux-3-image-klein")
+    body = {"prompt": "a cat", "size": "4K"}
+    if with_image:
+        body["images"] = [_data_uri(1600, 900)]
+    response = await client.post(
+        "/v1/generations/black-forest-labs/flux-3-image-klein", json=body
+    )
+    assert response.status_code == 422, response.text
+    assert "4K is served with the prompt upsampler ahead" in response.text
+    assert device.requests == []
+    response = await client.post(
+        "/v1/generations/black-forest-labs/flux-3-image-klein",
+        json={**body, "size": "2K"},
+    )
+    assert response.status_code == 202, response.text
+    job = await _wait_final(client, response.json()["id"])
+    assert job["status"] == "completed", job
+
+
+@pytest.mark.parametrize(
+    "fields", [{"aspect_ratio": "16:9"}, {"images": ["https://x/a.png"] * 2}]
+)
+def test_flux3_serves_one_square_shape_per_size(fields):
+    with pytest.raises(ValidationError):
+        Flux3ImageKleinRequest(prompt="a cat", **fields)
+
+
+def test_flux3_bounds_the_prompt():
+    assert Flux3ImageKleinRequest(prompt="a" * 20_000).prompt
+    with pytest.raises(ValidationError):
+        Flux3ImageKleinRequest(prompt="a" * 20_001)
+
+
+def test_flux3_has_3_sizes(flux3_upsampler):
+    flux3_upsampler("ahead")
+    assert Flux3ImageKleinRequest.warmup_sizes() == [
+        (1024, 1024),
+        (2048, 2048),
+        (4096, 4096),
+    ]
+
+
+async def test_flux3_keeps_only_the_image_sizes(generations_app):
+    client, device = generations_app("tt-flux-3-image-klein")
+    response = await client.post(
+        "/v1/generations/black-forest-labs/flux-3-image-klein",
+        json={"prompt": "make it night", "images": [_data_uri(1600, 900)]},
+    )
+    assert response.status_code == 202, response.text
+    job = await _wait_final(client, response.json()["id"])
+    assert job["status"] == "completed", job
+    (request,) = device.requests
+    assert request._images == {}
+    assert request._image_sizes == {"images": [(1600, 900)]}
+    assert Image.open(BytesIO(request._files["images"][0])).size == (1600, 900)
+
+
+async def test_flux3_reports_the_upsampled_caption(generations_app, monkeypatch):
+    process = _FakeDevice.process
+
+    async def upsampled(self, request):
+        image = await process(self, request)
+        image.info["prompt"] = "a detailed caption"
+        return image
+
+    monkeypatch.setattr(_FakeDevice, "process", upsampled)
+    client, device = generations_app("tt-flux-3-image-klein")
+    response = await client.post(
+        "/v1/generations/black-forest-labs/flux-3-image-klein",
+        json={"prompt": "a cat", "size": "1K"},
+    )
+    job = await _wait_final(client, response.json()["id"])
+    assert device.requests[0]._prompt == "a cat"
+    (output,) = job["outputs"]
+    assert output["prompt"] == "a detailed caption"
 
 
 # --- Ideogram 4 ------------------------------------------------------------------

@@ -1068,6 +1068,13 @@ These settings configure VLLM-based model runners and are grouped under `setting
 | `TT_VIDEO_EXPORT_CRF` | `"23"` | x264 CRF used when exporting MP4 (lower = higher quality) |
 | `TT_VIDEO_EXPORT_PRESET` | `"ultrafast"` | x264 preset used when exporting MP4 (e.g. `ultrafast`, `fast`, `medium`) |
 
+## Image Generation Settings
+
+| Environment Variable | Default Value | Description |
+|---------------------|---------------|-------------|
+| `FLUX3_PROMPT_UPSAMPLER_FROZEN` | `false` | FLUX.3 Image klein: `true` when prompts are upsampled before they reach the server; the pipeline is built without its upsampler and also serves `4K`. With the default (upsampler in the deployment), a `4K` request is refused with 422. `1`/`true` or `0`/`false` |
+| `FLUX3_WARMUP_REFERENCE_SHAPES` | _unset_ | FLUX.3 Image klein: extra reference image shapes to warm up, `WxH` separated by commas (e.g. `4032x3024,3024x4032`). A reference of an unwarmed shape compiles the VAE encoder the first time it is seen. |
+
 ## Operational TT Settings
 
 These environment variables are typically set automatically by the worker bootstrap (`utils/runner_utils.py`) but can be overridden when needed:
