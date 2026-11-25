@@ -829,9 +829,9 @@ def validate_inputs(ubuntu_version, container_app_uid):
             "Script must be run in a git repository. Could not determine git root directory."
         )
 
-    if ubuntu_version not in ["22.04", "20.04"]:
+    if ubuntu_version not in ["24.04", "22.04", "20.04"]:
         raise ValueError(
-            f"Unsupported UBUNTU_VERSION: {ubuntu_version}. Only 22.04 and 20.04 are supported."
+            f"Unsupported UBUNTU_VERSION: {ubuntu_version}. Only 24.04, 22.04 and 20.04 are supported."
         )
 
     if not (
@@ -1057,6 +1057,8 @@ def build_tt_metal_base_image(
         build_command = [
             "env",
             f"UBUNTU_VERSION={ubuntu_version}",
+            # tt-metal's bake file defaults PYTHON_VERSION to 3.10; it must match the OS.
+            f"PYTHON_VERSION={'3.12' if ubuntu_version == '24.04' else '3.10'}",
             "docker",
             "buildx",
             "bake",
