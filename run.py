@@ -1222,7 +1222,19 @@ def handle_maintenance_args(args):
             logger.info(f"{venvs_dir} does not exist. NOP.")
 
 
+def _make_bind_mounts_readable(repo_root):
+    """Stopgap: on CI runners whose umask is 007 the checkout and the files run.py
+    writes are unreadable to the container's UID 1000 app user, so the bind-mounted
+    source and the runtime model spec cannot be opened. Make them world-readable."""
+    os.umask(0o022)
+    for rel in ("vllm-tt-metal/src", "utils", "tests", "reference_config"):
+        path = repo_root / rel
+        if path.exists():
+            subprocess.run(["chmod", "-R", "a+rX", str(path)], check=False)
+
+
 def main():
+    _make_bind_mounts_readable(Path(__file__).resolve().parent)
     # step 00: handle maintenance args
     args = parse_arguments()
     if args.requirements_doc is not None:
