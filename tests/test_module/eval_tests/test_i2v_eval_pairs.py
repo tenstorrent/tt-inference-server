@@ -16,6 +16,7 @@ from test_module._test_common.video_generation_routing import (
     I2V_EVAL_MANIFEST,
     WAN22_NEGATIVE_PROMPT,
     build_video_generation_payload,
+    fixture_image_data_uri,
 )
 
 SHAPES = {(832, 480), (480, 832), (1280, 720), (720, 1280)}
@@ -230,8 +231,9 @@ def test_the_eval_sends_each_video_its_request_and_rejects_wrong_shapes(
     )
 
     assert [s["seed"] for s in sent] == [p["seed"] for p in pairs]
-    assert [s["image_prompts"][0]["image"] for s in sent] == [
-        p["image_b64"] for p in pairs
+    # The generations API takes the keyframe as a data URI.
+    assert [s["first_frame"] for s in sent] == [
+        fixture_image_data_uri(p["image_b64"]) for p in pairs
     ]
     assert {s["negative_prompt"] for s in sent} == {WAN22_NEGATIVE_PROMPT}
     assert [v["video_id"] for v in videos] == [
