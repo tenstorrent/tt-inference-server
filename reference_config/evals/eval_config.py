@@ -3248,6 +3248,47 @@ _eval_config_list = [
             #         EvalLimitMode.SMOKE_TEST: 5,
             #     },
             # ),
+            # Stopgap (agentic-models QB2 CI, impl qwen36-27b-qb2): the bring-up's GPQA Diamond
+            # setting (170/198 = 85.9 on config P, thinking on, card sampling, presence 0). The
+            # 131072-token budget is required: at 81,920 the misses are truncations (~80).
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    # CI bar: published (model card) x 0.95 (EvalTaskScore tolerance 0.05).
+                    published_score=87.8,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3.6-27B",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                thinking=True,
+                model_kwargs={
+                    "max_length": 262144,
+                    "timeout": 14400,
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 131072,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                    "top_k": 20,
+                },
+                # Dispatch with run-full-evals (no --ci-mode) for all 198 questions.
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
         ],
     ),
     # Quetzal (impl=quetzal) candidate on P300X2; task family and harness as Qwen/Qwen3.6-27B. Published score from
@@ -3311,6 +3352,49 @@ _eval_config_list = [
                 ),
                 limit_samples_map={
                     EvalLimitMode.SMOKE_TEST: 5,
+                },
+            ),
+            # Stopgap (agentic-models QB2 CI, impl qwen36-35b-a3b-qb2): the bring-up's GPQA Diamond
+            # setting (168/198 = 84.8, thinking on, card sampling incl. presence_penalty 1.5).
+            # max_gen_toks is the full 262144 context minus ~2K for the GPQA prompt and chat
+            # template (the server 400s when prompt + output exceed max_model_len).
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    # CI bar: published (model card) x 0.95 (EvalTaskScore tolerance 0.05).
+                    published_score=86.0,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3.6-35B-A3B",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                thinking=True,
+                model_kwargs={
+                    "max_length": 262144,
+                    "timeout": 28800,
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 254 * 1024,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                    "top_k": 20,
+                    "presence_penalty": 1.5,
+                },
+                # Dispatch with run-full-evals (no --ci-mode) for all 198 questions.
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
         ],
@@ -12635,6 +12719,273 @@ _eval_config_list = [
                     },
                 ),
                 limit_samples_map={EvalLimitMode.SMOKE_TEST: 5},
+            ),
+        ],
+    ),
+    # ornith-ai/Ornith-1.5-9B (stopgap impl ornith15-9b-qb2, QB2 P300X2), from the
+    # vkovacevic/ornith-1.5-9b-ci spec (d67d443f7) - mirrors the owner's local evals. GPQA:
+    # model-card general sampling (T 1.0, top_p 0.95, top_k 20, presence 1.5), thinking on,
+    # 131072-token generation cap (bring-up 87.5 mean; a 32K cap scores ~81, below the CI bar),
+    # all 198 in full mode. Agentic (informational): model-card coding
+    # sampling (T 0.6, top_p 0.95, top_k 20, presence 0), thinking on, exactly five tasks in
+    # every mode. The server defaults enable_thinking=false, so every task turns it on.
+    EvalConfig(
+        hf_model_repo="ornith-ai/Ornith-1.5-9B",
+        tasks=[
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                capture_reasoning=True,
+                score=EvalTaskScore(
+                    published_score=86.4,
+                    published_score_ref="https://huggingface.co/ornith-ai/Ornith-1.5-9B (GPQA Diamond, avg of 5 runs)",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["exact_match,none"],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                max_concurrent=32,
+                use_chat_api=True,
+                thinking=True,
+                model_kwargs={
+                    "max_length": 262144,
+                    "timeout": 14400,
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 131072,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                    "presence_penalty": 1.5,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 32,
+                    EvalLimitMode.SMOKE_TEST: 2,
+                },
+            ),
+            EvalTask(
+                task_name="terminal_bench_2_1",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref="Five-task subset; no comparable published score",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="terminal-bench/terminal-bench-2-1",
+                    agent="terminus-2",
+                    n_concurrent_trials=5,
+                    n_attempts=1,
+                    n_tasks=5,
+                    task_names=[
+                        "terminal-bench/openssl-selfsigned-cert",
+                        "terminal-bench/sqlite-db-truncate",
+                        "terminal-bench/fix-git",
+                        "terminal-bench/nginx-request-logging",
+                        "terminal-bench/overfull-hbox",
+                    ],
+                    agent_timeout_sec=2 * 60 * 60,
+                    agent_kwargs={
+                        "parser_name": "json",
+                        "temperature": 0.6,
+                        "model_info": {
+                            "max_input_tokens": 224 * 1024,
+                            "max_output_tokens": 32 * 1024,
+                        },
+                        "llm_kwargs": {
+                            "top_p": 0.95,
+                            "presence_penalty": 0.0,
+                            "max_tokens": 32 * 1024,
+                            "timeout": 60 * 60,
+                            "extra_body": {
+                                "top_k": 20,
+                                "chat_template_kwargs": {"enable_thinking": True},
+                            },
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "terminal-bench/openssl-selfsigned-cert",
+                            "terminal-bench/sqlite-db-truncate",
+                            "terminal-bench/fix-git",
+                            "terminal-bench/nginx-request-logging",
+                            "terminal-bench/overfull-hbox",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 2,
+                    EvalLimitMode.CI_NIGHTLY: 5,
+                },
+            ),
+            EvalTask(
+                task_name="swe_bench_verified",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref="Five-instance subset; no comparable published score",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=HarborEvalConfig(
+                    dataset="swebench-verified",
+                    agent="mini-swe-agent",
+                    n_concurrent_trials=5,
+                    n_attempts=1,
+                    n_tasks=5,
+                    task_names=[
+                        "django__django-11099",
+                        "astropy__astropy-14995",
+                        "pytest-dev__pytest-7432",
+                        "scikit-learn__scikit-learn-14141",
+                        "pydata__xarray-4629",
+                    ],
+                    agent_timeout_sec=3 * 60 * 60,
+                    llm_timeout_sec=60 * 60,
+                    agent_kwargs={
+                        "version": MINI_SWE_AGENT_VERSION,
+                        "max_tokens": 32 * 1024,
+                        "config": {
+                            "model": {
+                                "model_kwargs": {
+                                    "temperature": 0.6,
+                                    "top_p": 0.95,
+                                    "presence_penalty": 0.0,
+                                    "extra_body": {
+                                        "top_k": 20,
+                                        "chat_template_kwargs": {
+                                            "enable_thinking": True
+                                        },
+                                    },
+                                }
+                            }
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "django__django-11099",
+                            "astropy__astropy-14995",
+                            "pytest-dev__pytest-7432",
+                            "scikit-learn__scikit-learn-14141",
+                            "pydata__xarray-4629",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 2,
+                    EvalLimitMode.CI_NIGHTLY: 5,
+                },
+            ),
+        ],
+    ),
+    # ornith-ai/Ornith-1.5-35B-A3B (TP4/EP4, P300X2): GPQA Diamond only; the agentic subsets are
+    # not configured here yet.
+    EvalConfig(
+        hf_model_repo="ornith-ai/Ornith-1.5-35B-A3B",
+        tasks=[
+            # Stopgap (agentic-models QB2 CI, impl ornith15-35b-a3b-qb2): the bring-up's GPQA
+            # Diamond setting (186/198 = 93.9, thinking on, card sampling, 0 truncations; a 32K cap
+            # would truncate 26/198). Long answers (max 248,568 tokens) at ~12 tok/s/user: the full
+            # set takes ~8 h. max_gen_toks is the full 262144 context minus ~2K for the GPQA prompt
+            # and chat template (the server 400s when prompt + output exceed max_model_len).
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    # CI bar: published (model card) x 0.95 (EvalTaskScore tolerance 0.05).
+                    published_score=89.2,
+                    published_score_ref="https://huggingface.co/ornith-ai/Ornith-1.5-35B-A3B",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                thinking=True,
+                model_kwargs={
+                    "max_length": 262144,
+                    "timeout": 28800,
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 254 * 1024,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                    "top_k": 20,
+                },
+                # Dispatch with run-full-evals (no --ci-mode) for all 198 questions.
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
+    # nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16 (TP4, P300X2): GPQA Diamond only; the
+    # agentic subsets are not configured here yet.
+    EvalConfig(
+        hf_model_repo="nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16",
+        tasks=[
+            # Stopgap (agentic-models QB2 CI, impl nemotron35-lightning-qb2): the bring-up's GPQA
+            # Diamond setting (76.09 mean of 3 runs, thinking on, card sampling T 1.0 / top_p 0.95
+            # with top_k unset, 0 truncations, max answer 74.2K tokens). The server defaults
+            # enable_thinking=false; thinking=True turns it on. max_gen_toks is the full 262144
+            # context minus ~2K for the GPQA prompt and chat template (the server 400s when
+            # prompt + output exceed max_model_len).
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    # CI bar: published (model card) x 0.95 (EvalTaskScore tolerance 0.05).
+                    published_score=75.44,
+                    published_score_ref="https://huggingface.co/nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                thinking=True,
+                model_kwargs={
+                    "max_length": 262144,
+                    "timeout": 28800,
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 254 * 1024,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                },
+                # Dispatch with run-full-evals (no --ci-mode) for all 198 questions.
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
             ),
         ],
     ),

@@ -7490,6 +7490,252 @@
             }
         ]
     },
+    "Qwen/Qwen3.6-35B-A3B": {
+        "p300x2": [
+            {
+                "_comment": [
+                    "PLACEHOLDER (stopgap): bring-up reference measured at base tt-metal 8c48b4e4 with plugin 042a9486 and vLLM 0.31, NOT at the CI pins. Replace with the pin measurement (agentic-models integration plan section 5.1 step 6, decision D4) before relying on this gate.",
+                    "Source: m2 perf/PERF.md round-6 final (perf/bench/r6_final), vllm bench serve random greedy: TTFT mean 0.18 s, 47.2 t/s/u, 44.5 t/s."
+                ],
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "impl": "qwen36_35b_a3b_qb2",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 180,
+                        "tput_user": 47.2,
+                        "tput": 44.5,
+                        "tolerance": 0.2
+                    }
+                }
+            },
+            {
+                "_comment": [
+                    "PLACEHOLDER (stopgap): bring-up reference measured at base tt-metal 8c48b4e4 with plugin 042a9486 and vLLM 0.31, NOT at the CI pins. Replace with the pin measurement (agentic-models integration plan section 5.1 step 6, decision D4) before relying on this gate.",
+                    "Source: m2 round-6 final 1024/1024 x16: TTFT mean 3.08 s, 19.5 t/s/u, 294.0 t/s."
+                ],
+                "isl": 1024,
+                "osl": 1024,
+                "max_concurrency": 16,
+                "num_prompts": 32,
+                "task_type": "text",
+                "impl": "qwen36_35b_a3b_qb2",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 3080,
+                        "tput_user": 19.5,
+                        "tput": 294.0,
+                        "tolerance": 0.2
+                    }
+                }
+            }
+        ]
+    },
+    "ornith-ai/Ornith-1.5-9B": {
+        "p300x2": [
+            {
+                "_comment": [
+                    "PLACEHOLDER (stopgap): bring-up reference measured at base tt-metal 8c48b4e4 with plugin 042a9486 and vLLM 0.31, NOT at the CI pins. Replace with the pin measurement (agentic-models integration plan section 5.1 step 6, decision D4) before relying on this gate.",
+                    "Source: m3 perf/PERF.md 'Round 6 final' (tt-metal b43970c8d): TTFT mean 64 ms, 102.4 t/s/u, 98 t/s."
+                ],
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "impl": "ornith15_9b_qb2",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 64,
+                        "tput_user": 102.4,
+                        "tput": 98,
+                        "tolerance": 0.2
+                    }
+                }
+            },
+            {
+                "_comment": [
+                    "PLACEHOLDER (stopgap): bring-up reference measured at base tt-metal 8c48b4e4 with plugin 042a9486 and vLLM 0.31, NOT at the CI pins. Replace with the pin measurement (agentic-models integration plan section 5.1 step 6, decision D4) before relying on this gate.",
+                    "Source: m3 'Round 6 final' 1024/1024 x16: TTFT mean 1001 ms, 77.6 t/s/u, 1152 t/s."
+                ],
+                "isl": 1024,
+                "osl": 1024,
+                "max_concurrency": 16,
+                "num_prompts": 32,
+                "task_type": "text",
+                "impl": "ornith15_9b_qb2",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 1001,
+                        "tput_user": 77.6,
+                        "tput": 1152,
+                        "tolerance": 0.2
+                    }
+                }
+            }
+        ]
+    },
+    "Qwen/Qwen3.6-27B": {
+        "p300x2": [
+            {
+                "_comment": [
+                    "PLACEHOLDER (stopgap): bring-up reference measured at base tt-metal 8c48b4e4 with plugin 042a9486 and vLLM 0.31, NOT at the CI pins. Replace with the pin measurement (agentic-models integration plan section 5.1 step 6, decision D4) before relying on this gate.",
+                    "Source: m4 perf/PERF.md 'Round 6b and FINAL' (cold, greedy, MTP on): TTFT mean 137 ms, 58.6 t/s/u (no c1 total recorded)."
+                ],
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "impl": "qwen36_27b_qb2",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 137,
+                        "tput_user": 58.6,
+                        "tolerance": 0.2
+                    }
+                }
+            },
+            {
+                "_comment": [
+                    "PLACEHOLDER (stopgap): bring-up reference measured at base tt-metal 8c48b4e4 with plugin 042a9486 and vLLM 0.31, NOT at the CI pins. Replace with the pin measurement (agentic-models integration plan section 5.1 step 6, decision D4) before relying on this gate.",
+                    "Source: m4 FINAL 1024/1024 x16: 34.3 t/s/u, 506.5 t/s (no TTFT recorded)."
+                ],
+                "isl": 1024,
+                "osl": 1024,
+                "max_concurrency": 16,
+                "num_prompts": 32,
+                "task_type": "text",
+                "impl": "qwen36_27b_qb2",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "measured": {
+                        "tput_user": 34.3,
+                        "tput": 506.5,
+                        "tolerance": 0.2
+                    }
+                }
+            }
+        ]
+    },
+    "ornith-ai/Ornith-1.5-35B-A3B": {
+        "p300x2": [
+            {
+                "_comment": [
+                    "PLACEHOLDER (stopgap): bring-up reference measured at base tt-metal 8c48b4e4 with plugin 042a9486 and vLLM 0.31, NOT at the CI pins. Replace with the pin measurement (agentic-models integration plan section 5.1 step 6, decision D4) before relying on this gate.",
+                    "Source: m5 evals/RESULTS.md server A sweep: TTFT p50 94 ms, 15.0 t/s/u, 14.9 t/s (decode is a fixed 32-row trace)."
+                ],
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "impl": "ornith15_35b_a3b_qb2",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 94,
+                        "tput_user": 15.0,
+                        "tput": 14.9,
+                        "tolerance": 0.2
+                    }
+                }
+            },
+            {
+                "_comment": [
+                    "PLACEHOLDER (stopgap): bring-up reference measured at base tt-metal 8c48b4e4 with plugin 042a9486 and vLLM 0.31, NOT at the CI pins. Replace with the pin measurement (agentic-models integration plan section 5.1 step 6, decision D4) before relying on this gate.",
+                    "Source: m5 server A sweep 128/128 x32: TTFT p50 3025 ms, 11.9 t/s/u, 295 t/s."
+                ],
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 32,
+                "num_prompts": 64,
+                "task_type": "text",
+                "impl": "ornith15_35b_a3b_qb2",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 3025,
+                        "tput_user": 11.9,
+                        "tput": 295,
+                        "tolerance": 0.2
+                    }
+                }
+            }
+        ]
+    },
+    "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16": {
+        "p300x2": [
+            {
+                "_comment": [
+                    "PLACEHOLDER (stopgap): bring-up reference measured at base tt-metal 8c48b4e4 with plugin 042a9486 and vLLM 0.31, NOT at the CI pins. Replace with the pin measurement (agentic-models integration plan section 5.1 step 6, decision D4) before relying on this gate.",
+                    "Source: m6 perf/PERF.md 'Round 6 final' (H-13, f1dd78ee): TTFT mean 0.10 s, 70.3 t/s/u (no c1 total recorded)."
+                ],
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "impl": "nemotron35_lightning_qb2",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 100,
+                        "tput_user": 70.3,
+                        "tolerance": 0.2
+                    }
+                }
+            },
+            {
+                "_comment": [
+                    "PLACEHOLDER (stopgap): bring-up reference measured at base tt-metal 8c48b4e4 with plugin 042a9486 and vLLM 0.31, NOT at the CI pins. Replace with the pin measurement (agentic-models integration plan section 5.1 step 6, decision D4) before relying on this gate.",
+                    "Source: m6 R6 final 1024/1024 x16: 29.8 t/s/u, 444 t/s (no TTFT recorded)."
+                ],
+                "isl": 1024,
+                "osl": 1024,
+                "max_concurrency": 16,
+                "num_prompts": 32,
+                "task_type": "text",
+                "impl": "nemotron35_lightning_qb2",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "measured": {
+                        "tput_user": 29.8,
+                        "tput": 444,
+                        "tolerance": 0.2
+                    }
+                }
+            }
+        ]
+    },
     "meta-models/Muse-Glimmer-30B": {
         "p300x2": [
             {

@@ -497,6 +497,44 @@ k2_horizon_mova_qb2_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="agentic_models/models/k2_horizon_mova_36b_a4b/vllm",
 )
+# Five QB2 (P300X2, 1x4 mesh) tt-model-bringup ports served from agentic-models packages carried
+# on the tt-metal stopgap carrier at agentic_models/models/<package>/vllm (stopgap, not for
+# merge). They register through TT_MODEL_CLASS_OVERRIDES (dev/llm.yaml), not EXTRA_MODELS_DIR.
+# Qwen/Qwen3.6-35B-A3B
+qwen36_35b_a3b_qb2_impl = ImplSpec(
+    impl_id="qwen36_35b_a3b_qb2",
+    impl_name="qwen36-35b-a3b-qb2",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="agentic_models/models/qwen3_6_35b_a3b/vllm",
+)
+# ornith-ai/Ornith-1.5-9B
+ornith15_9b_qb2_impl = ImplSpec(
+    impl_id="ornith15_9b_qb2",
+    impl_name="ornith15-9b-qb2",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="agentic_models/models/ornith_1_5_9b/vllm",
+)
+# Qwen/Qwen3.6-27B
+qwen36_27b_qb2_impl = ImplSpec(
+    impl_id="qwen36_27b_qb2",
+    impl_name="qwen36-27b-qb2",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="agentic_models/models/qwen3_6_27b/vllm",
+)
+# ornith-ai/Ornith-1.5-35B-A3B
+ornith15_35b_a3b_qb2_impl = ImplSpec(
+    impl_id="ornith15_35b_a3b_qb2",
+    impl_name="ornith15-35b-a3b-qb2",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="agentic_models/models/ornith_1_5_35b_a3b/vllm",
+)
+# nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16
+nemotron35_lightning_qb2_impl = ImplSpec(
+    impl_id="nemotron35_lightning_qb2",
+    impl_name="nemotron35-lightning-qb2",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="agentic_models/models/nemotron_3_5_lightning_30b_a3b/vllm",
+)
 
 # meta-models/Muse-Glimmer-30B TP4 on QB2 under models/demos/muse_glimmer_30b_qb2,
 # produced by the tt-model-bringup pipeline.
@@ -519,6 +557,11 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "kolibri_1_qb2": kolibri_1_qb2_impl,
     "k2_horizon_7b_qb2": k2_horizon_7b_qb2_impl,
     "k2_horizon_mova_qb2": k2_horizon_mova_qb2_impl,
+    "qwen36_35b_a3b_qb2": qwen36_35b_a3b_qb2_impl,
+    "ornith15_9b_qb2": ornith15_9b_qb2_impl,
+    "qwen36_27b_qb2": qwen36_27b_qb2_impl,
+    "ornith15_35b_a3b_qb2": ornith15_35b_a3b_qb2_impl,
+    "nemotron35_lightning_qb2": nemotron35_lightning_qb2_impl,
     "muse_glimmer_30b_qb2": muse_glimmer_30b_qb2_impl,
     "llama3_70b_galaxy": llama3_70b_galaxy_impl,
     "llama31_8b_qb2": llama31_8b_qb2_impl,
