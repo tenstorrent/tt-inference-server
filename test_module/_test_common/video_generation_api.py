@@ -25,9 +25,8 @@ import zlib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlsplit
 
-from .generation_api import CONTENT_PATH, SEED_MAX, is_int
+from .generation_api import SEED_MAX, is_int, output_url_problem
 
 VIDEO_CONTENT_TYPE = "video/mp4"
 # The duration is a float the server computes; allow for its rounding.
@@ -292,12 +291,8 @@ def video_output_problems(
         if output.get(key) != value
     ]
 
-    url = output.get("url")
-    content_path = CONTENT_PATH.format(job_id=job.get("id"), index=0)
-    if not isinstance(url, str) or (
-        url != content_path and urlsplit(url).scheme not in ("http", "https")
-    ):
-        problems.append(f"url is {url!r}, expected {content_path!r}")
+    if problem := output_url_problem(output.get("url"), job.get("id")):
+        problems.append(problem)
 
     seed = output.get("seed")
     if "seed" in request:

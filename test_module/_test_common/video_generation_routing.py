@@ -39,6 +39,15 @@ FIXTURE_IMAGE_PATH = (
 DEFAULT_I2V_NEGATIVE_PROMPT = "blurry, low quality, distorted"
 DEFAULT_I2V_SEED = 42
 MINIMAX_H3_DURATION_SECONDS = 5
+# Wan2.2 I2V output shapes, as the generation API spec requests them
+# (tt-media-server docs/api/generation/models/wan-ai/wan2.2-i2v-a14b.yaml):
+# (width, height) -> (aspect_ratio, size).
+WAN22_I2V_SHAPES = {
+    (832, 480): ("16:9", "480p"),
+    (480, 832): ("9:16", "480p"),
+    (1280, 720): ("16:9", "720p"),
+    (720, 1280): ("9:16", "720p"),
+}
 # Every mesh serves Wan2.2's 480p 16:9; the tt_dit pipeline tests cover 720p.
 WAN_SIZE = "480p"
 WAN_ASPECT_RATIO = "16:9"
@@ -82,9 +91,11 @@ def build_video_generation_payload(
     num_inference_steps: int,
     model_name: str,
     image_b64: str | None = None,
+    seed: int | None = None,
 ) -> dict:
     """Build a T2V or I2V submit payload for ``model_name``. The generations
-    API takes no step count: it runs the model's reference default."""
+    API takes no step count: it runs the model's reference default. ``seed``
+    replaces LTX-2.3's default seed."""
     if is_minimax_h3_model(model_name):
         payload = {
             "prompt": prompt,

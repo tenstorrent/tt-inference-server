@@ -17,6 +17,7 @@ from types import SimpleNamespace
 import pytest
 
 from test_module._test_common import TestConfig as _TestConfig
+from test_module._test_common import generation_api
 from test_module._test_common import video_generation_api as api
 from test_module._test_common.video_generation_routing import (
     build_video_generation_payload,
@@ -129,6 +130,27 @@ def test_solid_png_and_tone_wav_are_what_they_say():
     with wave.open(io.BytesIO(api.tone_wav(2.5))) as wav:
         assert wav.getnframes() / wav.getframerate() == 2.5
         assert wav.getnchannels() == 1
+
+
+@pytest.mark.parametrize(
+    ("url", "ok"),
+    [
+        # As the server writes it, so a base URL with a path keeps that path.
+        ("v1/jobs/j1/content/0", True),
+        # As the design's example has it.
+        ("/v1/jobs/j1/content/0", True),
+        # If outputs ever move to storage.
+        ("https://storage.example.com/signed/j1.mp4", True),
+        ("v1/jobs/j1/content/1", False),
+        ("v1/jobs/another/content/0", False),
+        ("v1/videos/generations/j1/download", False),
+        ("", False),
+        (None, False),
+    ],
+)
+def test_an_output_url_is_the_jobs_content_path_or_absolute(url, ok):
+    problem = generation_api.output_url_problem(url, "j1")
+    assert (problem is None) == ok, problem
 
 
 # --- The create contract -----------------------------------------------------------
