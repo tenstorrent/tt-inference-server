@@ -230,6 +230,7 @@ templates:
         GEMMA4_PREFILL_PAD_BUCKETS: "256,512,1024"  # Gemma 4 prefill padding: 129-256-token prompts pad to 256 and 257-512 to 512 instead of 1024 (tt_transformers default). A chat-templated 128-token benchmark prompt is ~144 tokens; measured 2026-10-31 on the 4-chip block with the plain class (same prefill path) vs the knob off: c1 TTFT 260 -> 140 ms, c8 1.74 -> 1.05 s; 128K/256K TTFT and decode unchanged.
         GEMMA4_SPEC_K_BY_ROWS: "5:5,8:3"  # drafts per step by live decode rows (max_rows:K), measured 2026-10-29 on the QB2 block: K=5 up to 5 rows (code +20..+49 %, prose +0..+20 % over plain), K=3 at 6-8 rows (code +25 %, prose +8 %); a K=1 record at 16 rows cannot pay (2 tokens a step at 2.7x the plain step: the policy marks it hopeless), so above 8 rows the step is the plain decode
         GEMMA4_SPEC_SAMPLED_VERIFY: "1"  # the records draw the sampled rows' verify ids on the device sampler (tt-metal#64301 + vllm-tt-plugin#278): a request with a temperature above zero is speculated like a greedy one. Measured 2026-11-05 on the QB2 block, knob off -> on, fixed seeds: random 128/1K sampled c1 25.0 -> 35.6 tok/s/u, prose sampled c1 25.1 -> 37.2, prose sampled c8 176.9 -> 184.4 aggregate, greedy unchanged (57.9/61.7 -> 64.0/64.2); GPQA diamond ci-nightly subset 32/40 -> 35/40 (37/40 same per question), 0 engine errors
+        GEMMA4_SDPA_DECODE_SPLITFREE: "2"  # batch-invariant decode SDPA (custom_ops/sdpa_decode_splitfree) on every layer the pair / group split does not serve: a row's bits do not depend on the padded batch (tt-metal#59300)
         GEMMA4_SPEC_MAX_ISL: "16384"  # the verify-width ladder ends at the 16K rung: a decode position above it has no captured width and runs the plain step. Measured 2026-11-03 on the QB2 block (greedy c1, 128 out, fixed records vs plain steps): the record step is ~2x the plain step at 4K but 3.1-3.9x at 32K and 4.1-5.6x at 128K while acceptance stays 2.3-3.5 tokens per step, so records win through 16K and lose from 32K up on every QB2 entry (32K / 128K: 12B -36 / -52 %, 26B -12 / -36 %, 31B -42 / -47 %). The release proofs that kept records there (41376385063, 41350202054) landed below the plain baseline (the v0.25 comparison: 12B 32K / 64K / 128K -27 / -28 / -44 %); with the cap the 12B rows measure +4.6 / +3.8 / +6.5 % over v0.25 on the box tree. The release benchmark child passes acceptance with the cap on all three entries.
         GEMMA4_PACKED_KV_WRITE_OP: "1"  # loop-free packed-verify KV write (custom op, bit-identical to the per-position loop)
         GEMMA4_SPEC_SHARDED_VERIFY_ARGMAX: "1"  # verify ids from the lm_head TP shards: no 16 MiB vocab all-gather per speculative round
@@ -368,6 +369,7 @@ templates:
         # and plain decode is the fallback (rows above the cap, a declined step, or an unsupported request).
         GEMMA4_SPEC_K_BY_ROWS: "5:5,8:3"  # drafts per step by live decode rows PER ENGINE (max_rows:K), measured 2026-10-29 on the full Galaxy (DP4): K=5 up to 5 rows (conc 4-20: prose +25..+50 %, code +40..+55 % over the plain step), K=3 at 6-8 rows (conc 32: +3..+27 %); a K=1 record at 16 rows lands at plain, so above 8 rows per engine (conc > 32) the step is the plain decode
         GEMMA4_SPEC_SAMPLED_VERIFY: "1"  # the records draw the sampled rows' verify ids on the device sampler (tt-metal#64301 + vllm-tt-plugin#278): a request with a temperature above zero is speculated like a greedy one. Measured 2026-11-05 on this entry (DP4 of (1,8) engines), knob off -> on, fixed seeds: random 128/1K sampled c1 30.2 -> 46.9 tok/s/u, prose sampled c1 30.2 -> 37.8, prose c16 421.5 -> 444 aggregate (repeat 425.5 -> 417.2), prose c32 806 -> 776 (three-run repeat means 784.6 -> 786.1), greedy within the seed spread; GPQA diamond ci-nightly subset 31/40 -> 33/40, 0 engine errors, 0 refusals
+        GEMMA4_SDPA_DECODE_SPLITFREE: "2"  # batch-invariant decode SDPA (custom_ops/sdpa_decode_splitfree) on every layer the pair / group split does not serve: a row's bits do not depend on the padded batch (tt-metal#59300)
         GEMMA4_SPEC_EXTRA_SHAPES: "5:3"  # a (5,3) record beside the (5,5), as measured on the QB2 block (chosen most at 2-5 rows); 4 shapes x 4 rungs = 16 records, the count the trace region was sized for
         GEMMA4_SPEC_MAX_ROWS: "8"  # per engine: above 8 live rows the model proposes nothing and the step is the plain decode
         GEMMA4_SPEC_WIDTH_RUNGS: "4"  # keep the 4 largest verify-width rungs per record (default 5, x4 from 2048): 4 shapes x 4 rungs = 16 records in the 1.2 GB trace region (trace_region_size below)
@@ -387,9 +389,10 @@ templates:
         # made a seeded request reproduce bitwise across the graphs (tt-metal#59300) at the price
         # of a lone user's long-context decode (13.4 tok/s at 128K against 24.0 unpinned). Dropped
         # 2026-10-30; GEMMA4_SDPA_MAX_CORES_PER_HEAD above is the opposite knob, a cap of 32 that
-        # speeds the lone-row long-context step. A same-seed pair that decodes in different graphs
-        # may differ in its bits, which test_non_uniform_seeding records as a known issue below
-        # until the kernel gives sdpa_decode a reduction order independent of its core split.
+        # speeds the lone-row long-context step. GEMMA4_SDPA_DECODE_SPLITFREE above makes the sliding
+        # layers batch-invariant; the global layers run the pair split, so a same-seed pair that
+        # decodes in different graphs may still differ in its bits, which test_non_uniform_seeding
+        # records as a known issue below.
         GEMMA4_DECODE_WARMUP_BATCHES: "1,4,8,32"
         GEMMA4_ROPE_PERUSER_B1: "1"
         GEMMA4_VLLM_SINGLE_CHUNK: "0"
@@ -441,13 +444,13 @@ templates:
       - workflow_type: SPEC_TESTS
         task_name: test_non_uniform_seeding
         reason: 'Same-seed requests that decode in different batch graphs (1, 4, 8 or 32 residents per
-          engine) can differ: the decode SDPA op splits its cores per padded row and reduces a row in
-          a graph-dependent order (tt-metal#59300). The GEMMA4_SDPA_MAX_CORES_PER_HEAD=3 pin that held
-          the order identical cost a lone user 43% of its decode rate at 128K prompts (13.4 vs 24.0
-          tok/s on the 31B) and 29% at 64K, so it was dropped on 2026-10-30 together with the 12B
-          Galaxy entry. Seeds still give identical outputs within one graph and distinct outputs
-          across seeds; the test''s 32-way burst spans graphs while admission ramps. Closed by the
-          kernel follow-up: a reduction order fixed by the KV chunks, independent of the core split.'
+          engine) can differ on the global layers: their decode SDPA is the pair / group split
+          (custom_ops/sdpa_decode_lse, the stock flash-decode core split per padded row, merged across the
+          chips by LSE), which reduces a row in a graph-dependent order (tt-metal#59300). The sliding
+          layers run the batch-invariant GEMMA4_SDPA_DECODE_SPLITFREE op; on the global layers the split
+          takes precedence over it (the engine logs it once). Seeds still give identical outputs within one
+          graph and distinct outputs across seeds; the test''s 32-way burst spans graphs while admission
+          ramps. Closed when the split adopts the split-free op''s position-derived unit order.'
     # GPU (H100 NVL) bring-your-own vLLM server (see docs/gpu_workflows.md); used
     # to collect GPU reference eval scores for GPQA-Diamond, Terminal-Bench 2.0,
     # and SWE-Bench Verified. Dev-only; no tt_metal_commit/version pin needed
@@ -1202,6 +1205,7 @@ templates:
         # and plain decode is the fallback (rows above the cap, a declined step, or an unsupported request).
         GEMMA4_SPEC_K_BY_ROWS: "5:5,8:3"  # drafts per step by live decode rows (max_rows:K), measured 2026-10-29 on the QB2 block: the K=5 record is 1.8x the plain step and the drafter commits 2.2-3.3 tokens a step, so the policy serves plain unless the text accepts (+0..+8 % at 1-5 rows, +3..+8 % at 6-8 rows); a K=1 record at 16 rows cannot pay, so above 8 rows the step is the plain decode
         GEMMA4_SPEC_SAMPLED_VERIFY: "1"  # the records draw the sampled rows' verify ids on the device sampler (tt-metal#64301 + vllm-tt-plugin#278): a request with a temperature above zero is speculated like a greedy one. Measured 2026-11-04 on the QB2 block, knob off -> on, fixed seeds: random 128/1K sampled c1 48.0 -> 79.6 / 65.0 tok/s/u (two seeds), prose sampled c1 48.5 -> 55.3, prose c8 335 -> 334 aggregate, greedy unchanged per prompt; GPQA diamond ci-nightly subset 27/40 -> 27/40 (40/40 same per question, 31/40 byte-identical), 0 engine errors
+        GEMMA4_SDPA_DECODE_SPLITFREE: "2"  # batch-invariant decode SDPA (custom_ops/sdpa_decode_splitfree) on every layer the pair / group split does not serve: a row's bits do not depend on the padded batch (tt-metal#59300)
         GEMMA4_SPEC_MAX_ISL: "16384"  # the verify-width ladder ends at the 16K rung: a decode position above it has no captured width and runs the plain step. Measured 2026-11-03 on the QB2 block (greedy c1, 128 out, fixed records vs plain steps): the record step is ~2x the plain step at 4K but 3.1-3.9x at 32K and 4.1-5.6x at 128K while acceptance stays 2.3-3.5 tokens per step, so records win through 16K and lose from 32K up on every QB2 entry (32K / 128K: 12B -36 / -52 %, 26B -12 / -36 %, 31B -42 / -47 %). The release proofs that kept records there (41376385063, 41350202054) landed below the plain baseline (the v0.25 comparison: 12B 32K / 64K / 128K -27 / -28 / -44 %); with the cap the 12B rows measure +4.6 / +3.8 / +6.5 % over v0.25 on the box tree. The release benchmark child passes acceptance with the cap on all three entries.
         GEMMA4_PACKED_KV_WRITE_OP: "1"  # loop-free packed-verify KV write (custom op, bit-identical to the per-position loop)
         GEMMA4_SPEC_SHARDED_VERIFY_ARGMAX: "1"  # verify ids from the lm_head TP shards: no 16 MiB vocab all-gather per speculative round
@@ -1303,6 +1307,7 @@ templates:
         GEMMA4_SPEC_ONE_UPLOAD: "1"
         GEMMA4_CCL_ONESHOT: "0"  # off (tt-metal #64930 default on every mesh): the one-shot all-reduce writes into a per-call scratch on the peer chips with no receiver-ready handshake, so a lagging chip's live L1 can be overwritten
         GEMMA4_SPEC_SAMPLED_VERIFY: "1"  # the records draw the sampled rows' verify ids on the device sampler (tt-metal#64301 + vllm-tt-plugin#278): a request with a temperature above zero is speculated like a greedy one. Measured 2026-11-05 on this entry (DP4 of (1,8) engines), knob off -> on, fixed seeds: random 128/1K sampled c1 60.5 -> 89.4 tok/s/u, prose sampled c1 60.6 -> 58.7, prose c16 873 -> 877 aggregate, prose c32 1562 -> 1544, greedy within the seed spread; GPQA diamond ci-nightly subset 35/40 -> 33/40 (36/40 same per question), 0 engine errors, 0 refusals
+        GEMMA4_SDPA_DECODE_SPLITFREE: "2"  # batch-invariant decode SDPA (custom_ops/sdpa_decode_splitfree) on every layer the pair / group split does not serve: a row's bits do not depend on the padded batch (tt-metal#59300)
         GEMMA4_SPEC_EXTRA_SHAPES: "1:3,5:3"  # (1,3) and (5,3) records beside the table's, as measured on the QB2 block (the (1,3) at 1.56x the plain step is the record chosen most at one row); the trace budget is on trace_region_size below
         GEMMA4_SPEC_MAX_ROWS: "8"  # per engine: above 8 live rows the model proposes nothing and the step is the plain decode
         GEMMA4_DECODE_WARMUP_BATCHES: "1,4,8,16,32"  # as the 12B P300X2 entry
@@ -1363,13 +1368,13 @@ templates:
       - workflow_type: SPEC_TESTS
         task_name: test_non_uniform_seeding
         reason: 'Same-seed requests that decode in different batch graphs (1, 4, 8 or 32 residents per
-          engine) can differ: the decode SDPA op splits its cores per padded row and reduces a row in
-          a graph-dependent order (tt-metal#59300). The GEMMA4_SDPA_MAX_CORES_PER_HEAD=3 pin that held
-          the order identical cost a lone user 43% of its decode rate at 128K prompts (13.4 vs 24.0
-          tok/s on the 31B) and 29% at 64K, so it was dropped on 2026-10-30 as on the 31B Galaxy
-          entry. Seeds still give identical outputs within one graph and distinct outputs across
-          seeds; the test''s 32-way burst spans graphs while admission ramps. Closed by the kernel
-          follow-up: a reduction order fixed by the KV chunks, independent of the core split.'
+          engine) can differ on the global layers: their decode SDPA is the pair / group split
+          (custom_ops/sdpa_decode_lse, the stock flash-decode core split per padded row, merged across the
+          chips by LSE), which reduces a row in a graph-dependent order (tt-metal#59300). The sliding
+          layers run the batch-invariant GEMMA4_SDPA_DECODE_SPLITFREE op; on the global layers the split
+          takes precedence over it (the engine logs it once). Seeds still give identical outputs within one
+          graph and distinct outputs across seeds; the test''s 32-way burst spans graphs while admission
+          ramps. Closed when the split adopts the split-free op''s position-derived unit order.'
   status: COMPLETE
   supported_modalities:
     - text
@@ -3064,6 +3069,7 @@ templates:
         GEMMA4_PREFILL_PAD_BUCKETS: "256,512,1024"  # Gemma 4 prefill padding: 129-256-token prompts pad to 256 and 257-512 to 512 instead of 1024 (tt_transformers default). A chat-templated 128-token benchmark prompt is ~144 tokens; measured 2026-10-31 on the 4-chip block with the plain class (same prefill path) vs the knob off: c1 TTFT 189 -> 107 ms, c8 1.21 -> 0.77 s, c16 2.47 -> 1.53 s; 128K/256K TTFT and decode unchanged.
         GEMMA4_SPEC_K_BY_ROWS: "5:3,8:3"  # K=3 records in every band on this entry (fixed policy below): the (1,3) record at ~2x the plain step breaks even at 2 accepted tokens per step, so low-acceptance prompts stay above plain (box release benchmark 2026-11-04, greedy single user vs the v0.26 single-user profile: 128/128 62.7 vs 53.5, 1K 58.6, 2K 55.2, 4K 60.6, 8K/128 60.1, 16K 53.6, 128/1K 69.5, 10K/1K 64.1 tok/s; the K=5 records measured 58.0 / 63.7 / 57.4 / 60.2 / 41.1 / 50.4 / 77.3 / 82.9: higher peaks but a -20 % row where acceptance fell to 2.05). The 2026-10-29 K=5-to-5-rows table stays on the 12B / 31B entries.
         GEMMA4_SPEC_SAMPLED_VERIFY: "1"  # the records draw the sampled rows' verify ids on the device sampler (tt-metal#64301 + vllm-tt-plugin#278): a request with a temperature above zero is speculated like a greedy one. Measured 2026-11-05 on the QB2 block, knob off -> on, fixed seeds (the entry before this file's K=3 fixed records): random 128/1K sampled c1 49.2 -> 63.4 tok/s/u, prose sampled c1 49.1 -> 59.3, prose sampled c8 238.0 -> 262.0 aggregate, greedy unchanged (55.5/58.9 -> 52.0/58.3); GPQA diamond ci-nightly subset 36/40 -> 35/40 (37/40 same per question), 0 engine errors
+        GEMMA4_SDPA_DECODE_SPLITFREE: "2"  # batch-invariant decode SDPA (custom_ops/sdpa_decode_splitfree) on every layer the pair / group split does not serve: a row's bits do not depend on the padded batch (tt-metal#59300)
         GEMMA4_SPEC_DRAFT_LEN: "3"  # the records are captured at 3 drafts (the table above never asks for more)
         GEMMA4_SPEC_MAX_ISL: "16384"  # the verify-width ladder ends at the 16K rung: a decode position above it has no captured width and runs the plain step. Measured 2026-11-03 on the QB2 block (greedy c1, 128 out, fixed records vs plain steps): the record step is ~2x the plain step at 4K but 3.1-3.9x at 32K and 4.1-5.6x at 128K while acceptance stays 2.3-3.5 tokens per step, so records win through 16K and lose from 32K up on every QB2 entry (32K / 128K: 12B -36 / -52 %, 26B -12 / -36 %, 31B -42 / -47 %). The release proofs that kept records there (41376385063, 41350202054) landed below the plain baseline (the v0.25 comparison: 12B 32K / 64K / 128K -27 / -28 / -44 %); with the cap the 12B rows measure +4.6 / +3.8 / +6.5 % over v0.25 on the box tree. The release benchmark child passes acceptance with the cap on all three entries.
         GEMMA4_SPEC_ADAPTIVE: "0"  # fixed records through the 16K rung on this entry: the adaptive policy parks the single-user rows plain in some runs (box release benchmark 2026-11-04: 128/128 48.9 tok/s vs the v0.26 single-user profile's 53.5, 1K-16K 45-46 vs 51-52) while the fixed K=3 records above measure +5..+32 % on those rows. The fixed first step after prefill costs 10-18 ms TTFT, inside this entry's 40-74 % TTFT headroom over v0.26; not applied to the 12B / 31B entries, where it would cost +24 % TTFT at 128/128 vs v0.25.
@@ -3144,6 +3150,7 @@ templates:
         GEMMA4_PREFILL_PAD_BUCKETS: "256,512,1024"  # Gemma 4 prefill padding: 129-256-token prompts pad to 256 and 257-512 to 512 instead of 1024 (tt_transformers default). A chat-templated 128-token benchmark prompt is ~144 tokens; measured 2026-10-31 on the 4-chip block with the plain class (same prefill path) vs the knob off: c1 TTFT 189 -> 107 ms, c8 1.21 -> 0.77 s, c16 2.47 -> 1.53 s; 128K/256K TTFT and decode unchanged.
         GEMMA4_SPEC_K_BY_ROWS: "5:3,8:3"  # K=3 records in every band on this entry (fixed policy below): the (1,3) record at ~2x the plain step breaks even at 2 accepted tokens per step, so low-acceptance prompts stay above plain (box release benchmark 2026-11-04, greedy single user vs the v0.26 single-user profile: 128/128 62.7 vs 53.5, 1K 58.6, 2K 55.2, 4K 60.6, 8K/128 60.1, 16K 53.6, 128/1K 69.5, 10K/1K 64.1 tok/s; the K=5 records measured 58.0 / 63.7 / 57.4 / 60.2 / 41.1 / 50.4 / 77.3 / 82.9: higher peaks but a -20 % row where acceptance fell to 2.05). The 2026-10-29 K=5-to-5-rows table stays on the 12B / 31B entries.
         GEMMA4_SPEC_SAMPLED_VERIFY: "1"  # the records draw the sampled rows' verify ids on the device sampler (tt-metal#64301 + vllm-tt-plugin#278): a request with a temperature above zero is speculated like a greedy one. Measured 2026-11-05 on the QB2 block, knob off -> on, fixed seeds (the entry before this file's K=3 fixed records): random 128/1K sampled c1 49.2 -> 63.4 tok/s/u, prose sampled c1 49.1 -> 59.3, prose sampled c8 238.0 -> 262.0 aggregate, greedy unchanged (55.5/58.9 -> 52.0/58.3); GPQA diamond ci-nightly subset 36/40 -> 35/40 (37/40 same per question), 0 engine errors
+        GEMMA4_SDPA_DECODE_SPLITFREE: "2"  # batch-invariant decode SDPA (custom_ops/sdpa_decode_splitfree) on every layer the pair / group split does not serve: a row's bits do not depend on the padded batch (tt-metal#59300)
         GEMMA4_SPEC_DRAFT_LEN: "3"  # the records are captured at 3 drafts (the table above never asks for more)
         GEMMA4_SPEC_MAX_ISL: "16384"  # the verify-width ladder ends at the 16K rung: a decode position above it has no captured width and runs the plain step. Measured 2026-11-03 on the QB2 block (greedy c1, 128 out, fixed records vs plain steps): the record step is ~2x the plain step at 4K but 3.1-3.9x at 32K and 4.1-5.6x at 128K while acceptance stays 2.3-3.5 tokens per step, so records win through 16K and lose from 32K up on every QB2 entry (32K / 128K: 12B -36 / -52 %, 26B -12 / -36 %, 31B -42 / -47 %). The release proofs that kept records there (41376385063, 41350202054) landed below the plain baseline (the v0.25 comparison: 12B 32K / 64K / 128K -27 / -28 / -44 %); with the cap the 12B rows measure +4.6 / +3.8 / +6.5 % over v0.25 on the box tree. The release benchmark child passes acceptance with the cap on all three entries.
         GEMMA4_SPEC_ADAPTIVE: "0"  # fixed records through the 16K rung on this entry: the adaptive policy parks the single-user rows plain in some runs (box release benchmark 2026-11-04: 128/128 48.9 tok/s vs the v0.26 single-user profile's 53.5, 1K-16K 45-46 vs 51-52) while the fixed K=3 records above measure +5..+32 % on those rows. The fixed first step after prefill costs 10-18 ms TTFT, inside this entry's 40-74 % TTFT headroom over v0.26; not applied to the 12B / 31B entries, where it would cost +24 % TTFT at 128/128 vs v0.25.
