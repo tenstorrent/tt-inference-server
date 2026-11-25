@@ -181,8 +181,8 @@ if [[ "$repo_root" != *"$expected_suffix" ]]; then
     echo "⛔ Error: Script must be run tt-inference-server repo root, the found repo root is: '$repo_root'."
     exit 1
 fi
-if [[ "$UBUNTU_VERSION" != "22.04" && "$UBUNTU_VERSION" != "20.04" ]]; then
-    echo "⛔ Error: Unsupported UBUNTU_VERSION: $UBUNTU_VERSION. Only 22.04 and 20.04 are supported."
+if [[ "$UBUNTU_VERSION" != "24.04" && "$UBUNTU_VERSION" != "22.04" && "$UBUNTU_VERSION" != "20.04" ]]; then
+    echo "⛔ Error: Unsupported UBUNTU_VERSION: $UBUNTU_VERSION. Only 24.04, 22.04 and 20.04 are supported."
     exit 1
 fi
 if [[ "$CONTAINER_APP_UID" =~ ^[0-9]+$ ]] && (( $CONTAINER_APP_UID >= 1000 && $CONTAINER_APP_UID < 60000 )); then
@@ -302,7 +302,9 @@ if [ "$build" = true ]; then
         # tt-metal's Dockerfile uses Docker Buildx Bake — plain `docker build` is not
         # supported because the cmake/zstd/openmpi tool layers are FROM scratch stubs
         # that Bake overrides with pre-built images (see dockerfile/docker-bake.hcl).
-        UBUNTU_VERSION=${UBUNTU_VERSION} docker buildx bake \
+        # tt-metal's bake file defaults PYTHON_VERSION to 3.10; it must match the OS.
+        if [[ "$UBUNTU_VERSION" == "24.04" ]]; then BAKE_PYTHON_VERSION=3.12; else BAKE_PYTHON_VERSION=3.10; fi
+        UBUNTU_VERSION=${UBUNTU_VERSION} PYTHON_VERSION=${BAKE_PYTHON_VERSION} docker buildx bake \
             -f dockerfile/docker-bake.hcl \
             --set "ci-build.tags=local/tt-metal/tt-metalium/${OS_VERSION}:${TT_METAL_COMMIT_SHA_OR_TAG}" \
             --load \
