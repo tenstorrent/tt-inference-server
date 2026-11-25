@@ -97,3 +97,20 @@ def librispeech_wer(
     ]
     # lmms-eval's aggregation takes its task args second; the LibriSpeech one reads none.
     return float(aggregate_wer(results, None))
+
+
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--base-url", required=True)
+    parser.add_argument("--model", required=True)
+    parser.add_argument("--task", required=True)
+    parser.add_argument("--concurrency", type=int, required=True)
+    parser.add_argument("--limit", type=int)
+    opts = parser.parse_args()
+    logging.basicConfig(level=logging.INFO)
+    wer = librispeech_wer(
+        opts.base_url, opts.model, opts.task, opts.concurrency, opts.limit
+    )
+    print(f"WER {wer}")

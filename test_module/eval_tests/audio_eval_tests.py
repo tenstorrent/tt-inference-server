@@ -397,16 +397,27 @@ def _is_vllm(ctx: MediaContext) -> bool:
 
 def _run_openai_wer_eval(ctx: MediaContext) -> Block:
     """LibriSpeech WER through the server's OpenAI transcriptions endpoint."""
-    from .openai_asr_wer import librispeech_wer
+    import subprocess
+
+    from workflow_module.engine_types import WorkflowVenvType
+    from workflow_module.venv_provisioner import get_venv_provisioner
 
     task = ctx.all_params.tasks[0]
     concurrency = (
         task.max_concurrent or ctx.model_spec.device_model_spec.max_concurrency
     )
+    # lmms-eval, whose LibriSpeech scoring this uses, is only in the EVALS_AUDIO venv.
+    command = [
+        get_venv_provisioner().venv_python(WorkflowVenvType.EVALS_AUDIO),
+        str(Path(__file__).with_name("openai_asr_wer.py")),
+        "--base-url", ctx.base_url,
+        "--model", ctx.model_spec.hf_model_repo,
+        "--task", task.task_name,
+        "--concurrency", str(concurrency),
+    ]  # fmt: skip
     try:
-        wer = librispeech_wer(
-            ctx.base_url, ctx.model_spec.hf_model_repo, task.task_name, concurrency
-        )
+        out = subprocess.run(command, stdout=subprocess.PIPE, text=True, check=True)
+        wer = float(out.stdout.split()[-1])
     except Exception as e:
         logger.exception("WER eval through /v1/audio/transcriptions failed")
         return _audio_eval_fail_block(ctx, task, str(e))
