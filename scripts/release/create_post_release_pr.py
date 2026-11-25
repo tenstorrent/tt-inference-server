@@ -100,7 +100,7 @@ DEFAULT_PROD_DIR = REPO_ROOT / "workflows" / "model_specs" / "prod"
 DEFAULT_VERSION_FILE = REPO_ROOT / "VERSION"
 DEFAULT_REPO = "tenstorrent/tt-inference-server"
 DEFAULT_TT_SHIELD_REPO = "tenstorrent/tt-shield"
-TOKEN_ENV_VARS = ("TMP_VCANKOVIC_SHIELD_CRANE_PAT", "GH_PAT", "GITHUB_TOKEN")
+TOKEN_ENV_VARS = ("TT_SHIELD_TOKEN", "GH_PAT", "GITHUB_TOKEN")
 
 # Strips ANSI colour codes from fetched job logs before parsing.
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
@@ -689,7 +689,7 @@ def main() -> None:
     ap.add_argument(
         "--token",
         default=None,
-        help="Token for tt-shield reads (default: env TMP_VCANKOVIC_SHIELD_CRANE_PAT/GH_PAT/GITHUB_TOKEN)",
+        help="Token for tt-shield reads (default: env TT_SHIELD_TOKEN/GH_PAT/GITHUB_TOKEN)",
     )
     ap.add_argument(
         "--dry-run", action="store_true", help="Print the body; do not open a PR"
@@ -730,7 +730,7 @@ def main() -> None:
                 )
         else:
             print(
-                "WARNING: no token (TMP_VCANKOVIC_SHIELD_CRANE_PAT/GH_PAT/GITHUB_TOKEN); "
+                "WARNING: no token (TT_SHIELD_TOKEN/GH_PAT/GITHUB_TOKEN); "
                 "CI Job Link cells will be UNKNOWN.",
                 file=sys.stderr,
             )

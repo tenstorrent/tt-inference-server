@@ -20,7 +20,9 @@ run-name: ${{ inputs.version && format('Release automation v{0}', inputs.version
 #     re-run the 4 generators) and open a draft PR to main.
 # Suffixes (tag-suffix / post-release-suffix) mark testing artifacts; empty = real release.
 # dry-run runs every step but writes nothing outside this run: no git push,
-# tag, crane copy/append, PR or GitHub Release. It may run from any branch.
+# tag, crane copy/append, PR or GitHub Release. The branch guard lets it run
+# from any branch, but the tt-shield token (OSPO Vault) and the environment
+# release-automation accept only runs from 'stable'.
 # ---------------------------------------------------------------------------
 
 on:
@@ -58,10 +60,8 @@ on:
         default: false
         type: boolean
 
-# The pipeline commits generated files + a tag to the branch and opens a draft PR.
-permissions:
-  contents: write
-  pull-requests: write
+# The job sets its own permissions.
+permissions: {}
 
 concurrency:
   group: release-automation-${{ github.ref }}
@@ -77,6 +77,14 @@ jobs:
     name: Promote specs, regenerate docs & helm, then commit + tag
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # The short-lived tt-shield token (OSPO Vault) works only for runs from
+    # 'stable' in this environment.
+    environment: release-automation
+    permissions:
+      contents: write       # generated files, tag, branches, draft Release
+      pull-requests: write  # draft post-release PR
+      packages: write       # crane copy / append to the release images
+      id-token: write       # Vault login
     env:
       PYTHONPATH: ${{ github.workspace }}
       DRY_RUN: ${{ inputs.dry-run && 'true' || 'false' }}
@@ -190,9 +198,23 @@ jobs:
       #       actually built, BEFORE any promote/commit/tag/publish. Fails fast on
       #       a typo'd tt-metal-commit / vllm-commit (wrong pins + wrong image
       #       tags). Empty vllm-commit is ignored here (guarded above by #8). -----
+      # tt-shield is private: github.token of this repository cannot read it.
+      # Actions read and metadata read on tenstorrent/tt-shield only, from the
+      # OSPO Vault. Short-lived, revoked in the last step of the job. Only the
+      # steps that read the tt-shield run get it. If the job ever takes longer
+      # than the token lives (15 minutes), call the action again before the
+      # later tt-shield steps.
+      - name: Get a token to read the tt-shield release run
+        id: shield_token
+        timeout-minutes: 10
+        uses: tenstorrent/.github/actions/vault-secrets@vault-secrets-v1.1.0
+        with:
+          role: release-automation
+          github-token: shield-actions-read
+
       - name: "Validate input commits against the tt-shield run"
         env:
-          GH_TOKEN: ${{ secrets.TMP_VCANKOVIC_SHIELD_CRANE_PAT }}
+          GH_TOKEN: ${{ steps.shield_token.outputs.token }}
         run: |
           python3 scripts/release/resolve_release_source_images.py \
             --run-id "${TT_SHIELD_RUN_ID}" \
@@ -314,7 +336,7 @@ jobs:
 
       - name: "Build release artifacts zip (download from tt-shield)"
         env:
-          GH_TOKEN: ${{ secrets.TMP_VCANKOVIC_SHIELD_CRANE_PAT }}
+          GH_TOKEN: ${{ steps.shield_token.outputs.token }}
         run: |
           mkdir -p "${RUNNER_TEMP}/release_artifacts"
           python3 scripts/release/build_release_artifacts.py \
@@ -337,7 +359,7 @@ jobs:
       - name: "Resolve source docker images (vllm/media/forge)"
         id: source-images
         env:
-          GH_TOKEN: ${{ secrets.TMP_VCANKOVIC_SHIELD_CRANE_PAT }}
+          GH_TOKEN: ${{ steps.shield_token.outputs.token }}
         run: |
           python3 scripts/release/resolve_release_source_images.py \
             --run-id "${TT_SHIELD_RUN_ID}" --json > "${RUNNER_TEMP}/source_images.json"
@@ -420,22 +442,23 @@ jobs:
             | sudo tar -xzf - -C /usr/local/bin crane
           crane version
 
-      # ----- crane login to ghcr.io (README_MANUAL pattern), as vcankovicTT with
-      #       the TMP_VCANKOVIC_SHIELD_CRANE_PAT secret (read:packages for
-      #       tt-shield + write:packages for tt-inference-server). Verifies the
+      # ----- crane login to ghcr.io with github.token (job permission
+      #       packages: write). The tt-shield source packages give this
+      #       repository read access and the release packages give it write
+      #       access (package settings, "Manage Actions access"). Verifies the
       #       login and, if a source image resolved, that the token can PULL it
-      #       (needs read:packages) — an early diagnostic; the real crane copy
-      #       below hard-fails if auth is insufficient. -----
+      #       — an early diagnostic; the real crane copy below hard-fails if
+      #       auth is insufficient. -----
       - name: "crane login to ghcr.io (real) + verify"
         env:
-          CRANE_USER: vcankovicTT
-          CRANE_PAT: ${{ secrets.TMP_VCANKOVIC_SHIELD_CRANE_PAT }}
+          CRANE_USER: ${{ github.actor }}
+          CRANE_TOKEN: ${{ github.token }}
           SRC_VLLM: ${{ steps.image-mapping.outputs.vllm_source }}
           SRC_MEDIA: ${{ steps.image-mapping.outputs.media_source }}
           SRC_FORGE: ${{ steps.image-mapping.outputs.forge_source }}
         run: |
           # Password via stdin so the token is never in the process args.
-          printf '%s' "$CRANE_PAT" | crane auth login ghcr.io -u "$CRANE_USER" --password-stdin
+          printf '%s' "$CRANE_TOKEN" | crane auth login ghcr.io -u "$CRANE_USER" --password-stdin
           echo "✅ crane auth login ghcr.io succeeded as ${CRANE_USER}"
 
           # Prove the token can pull a real source image (needs read:packages).
@@ -444,7 +467,7 @@ jobs:
             if crane manifest "$src" >/dev/null 2>&1; then
               echo "✅ verified pull: $src"
             else
-              echo "::warning::crane could not pull '$src' — the PAT likely lacks read:packages; crane copy would fail."
+              echo "::warning::crane could not pull '$src' — the package likely gives this repository no read access; crane copy would fail."
             fi
             break
           done
@@ -738,8 +761,10 @@ jobs:
       #       (post-release branch -> main) in the PR #4398 format.
       - name: "Post-release: open draft PR -> main"
         env:
+          # github.token opens the PR in this repository; the Vault token
+          # reads the tt-shield jobs and job logs (CI job links, SW versions).
           GH_TOKEN: ${{ github.token }}
-          TMP_VCANKOVIC_SHIELD_CRANE_PAT: ${{ secrets.TMP_VCANKOVIC_SHIELD_CRANE_PAT }}
+          TT_SHIELD_TOKEN: ${{ steps.shield_token.outputs.token }}
           # Release-scoped publish list from the crane-plan step; rendered under
           # 'Images Promoted from Models CI' in the PR body.
           PROMOTED_IMAGES: ${{ steps.crane-plan.outputs.promoted_images }}
@@ -774,9 +799,9 @@ jobs:
       - name: "Create draft GitHub Release (v<version>)"
         if: env.DRY_RUN != 'true'
         env:
-          # Use the PAT (vcankovicTT) so the Release is created/owned by that user,
-          # not github-actions[bot] — matches publish-release.yml. Needs contents:write.
-          GH_TOKEN: ${{ secrets.TMP_VCANKOVIC_SHIELD_CRANE_PAT }}
+          # github.token: the Release is created by github-actions[bot] —
+          # matches publish-release.yml. Needs contents: write.
+          GH_TOKEN: ${{ github.token }}
         run: |
           TAG="v${RELEASE_VERSION}${TAG_SUFFIX}"
           if gh release view "${TAG}" --repo "${{ github.repository }}" >/dev/null 2>&1; then
@@ -800,8 +825,7 @@ jobs:
       - name: "Upload release-artifacts zip as a Release asset"
         if: env.DRY_RUN != 'true'
         env:
-          # PAT (vcankovicTT) so the asset upload is attributed to that user too.
-          GH_TOKEN: ${{ secrets.TMP_VCANKOVIC_SHIELD_CRANE_PAT }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           TAG="v${RELEASE_VERSION}${TAG_SUFFIX}"
           ASSET="${RUNNER_TEMP}/release_artifacts/v${RELEASE_VERSION}-release_artifacts.zip"
@@ -819,8 +843,10 @@ jobs:
       - name: "Upload release manifest as a Release asset"
         if: env.DRY_RUN != 'true'
         env:
-          GH_TOKEN: ${{ secrets.TMP_VCANKOVIC_SHIELD_CRANE_PAT }}
-          TMP_VCANKOVIC_SHIELD_CRANE_PAT: ${{ secrets.TMP_VCANKOVIC_SHIELD_CRANE_PAT }}
+          # github.token uploads the asset; the Vault token reads the
+          # tt-shield jobs and job logs (CI job links).
+          GH_TOKEN: ${{ github.token }}
+          TT_SHIELD_TOKEN: ${{ steps.shield_token.outputs.token }}
         run: |
           TAG="v${RELEASE_VERSION}${TAG_SUFFIX}"
           ASSET="${RUNNER_TEMP}/v${RELEASE_VERSION}-release-manifest.json"
@@ -836,3 +862,16 @@ jobs:
           fi
           gh release upload "${TAG}" "${ASSET}" --repo "${{ github.repository }}" --clobber
           echo "Uploaded v${RELEASE_VERSION}-release-manifest.json as an asset on Release '${TAG}'."
+
+      # The action does not revoke the token. Revoke it here so that it does
+      # not outlive the job. Keep this step last.
+      - name: Revoke the token
+        if: always() && steps.shield_token.outputs.token != ''
+        env:
+          GH_TOKEN: ${{ steps.shield_token.outputs.token }}
+        run: |
+          curl -fsS --max-time 30 -X DELETE \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/installation/token \
+            || echo "::warning::Token revoke failed; the token ends within 1 hour."

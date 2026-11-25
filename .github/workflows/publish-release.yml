@@ -37,10 +37,11 @@ jobs:
       github.event.pull_request.head.repo.full_name == github.repository &&
       startsWith(github.event.pull_request.head.ref, 'post-release-')
     env:
-      # Personal PAT (not github.token) so PUBLISHING cascades to any future
-      # `on: release: [published]` workflow (e.g. Update Release Zoo). Must have
-      # contents: write on this repo.
-      GH_TOKEN: ${{ secrets.TMP_VCANKOVIC_SHIELD_CRANE_PAT }}
+      # github.token with contents: write. A Release published with
+      # github.token does NOT start `on: release: [published]` workflows; a
+      # future workflow of that kind (e.g. Update Release Zoo) needs another
+      # trigger.
+      GH_TOKEN: ${{ github.token }}
       REPO: ${{ github.repository }}
       HEAD_REF: ${{ github.event.pull_request.head.ref }}
       PR_BODY: ${{ github.event.pull_request.body }}

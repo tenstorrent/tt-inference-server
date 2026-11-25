@@ -19,7 +19,7 @@ permissions requirement:
         - Write access to tt-inference-server packages
     - crane CLI (https://github.com/google/go-containerregistry/tree/main/cmd/crane)
 
-> With the automation these are the **pipeline's** requirements, not yours to run locally: the workflow installs `crane` and publishes the images itself, using the PAT stored as the `TMP_VCANKOVIC_SHIELD_CRANE_PAT` repo secret. You only need a local PAT / crane for the **manual fallback** in `README_MANUAL.md`.
+> With the automation these are the **pipeline's** requirements, not yours to run locally: the workflow installs `crane` and publishes the images itself. It reads the tt-shield run with a short-lived token from the OSPO Vault (Actions read on tt-shield only, runs from `stable` only) and copies the images with `github.token` (`packages: write`). No stored PAT is used. You only need a local PAT / crane for the **manual fallback** in `README_MANUAL.md`.
 
 ## Git Workflow Diagram
 
@@ -154,7 +154,7 @@ nothing else is attached — no manual publishing needed.
 
 Notes / caveats:
 - The trigger is filtered on the **`VERSION`** file, so it fires only when the merged PR changed `VERSION` (every real forward release does). It will **not** fire on a same-version re-release.
-- It publishes with the `TMP_VCANKOVIC_SHIELD_CRANE_PAT` PAT (needs `contents: write`), so the `release: published` event **cascades** — enabling a future auto "Update Release Zoo".
+- It publishes with `github.token` (`contents: write`). A Release published with `github.token` does **not** start `on: release: [published]` workflows, so a future auto "Update Release Zoo" needs another trigger.
 - If the draft Release is missing (e.g. the pipeline's create-Release step failed), it **fails loudly** rather than creating one.
 
 ## Step 8: Update Release Zoo  *(manual for now)*
@@ -163,4 +163,4 @@ From the `tt-shield` Actions tab, run the `"Update Release Zoo"` action so the p
 
 https://github.com/tenstorrent/tt-shield/actions/workflows/update-release-zoo.yml
 
-> Because Step 7 publishes with a PAT, the `release: published` event cascades — so this step could later be triggered automatically by a `on: release: [published]` workflow. It is manual for now.
+> Step 7 publishes with `github.token`, so the `release: published` event does not start other workflows. To automate this step later, use another trigger. It is manual for now.
