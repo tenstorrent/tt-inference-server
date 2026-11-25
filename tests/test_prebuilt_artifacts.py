@@ -850,6 +850,17 @@ def content_hash(files):
     return hashlib.sha256("".join(lines).encode()).hexdigest()
 
 
+def version_hash(files, manifest):
+    """sha256 over the content hash of the files and what the manifest lists, each list sorted."""
+    fields = ("cache_directories", "original_files", "original_folders")
+    lists = [
+        sorted(manifest[field], key=lambda item: json.dumps(item, sort_keys=True))
+        for field in fields
+    ]
+    listed = json.dumps(lists, sort_keys=True)
+    return hashlib.sha256(f"{content_hash(files)}\n{listed}".encode()).hexdigest()
+
+
 NEW_CONTENT = {
     "converted-file-of-the-same-size": (
         f"tt_dit_cache/{OWN_TENSOR}",
@@ -887,10 +898,12 @@ def test_upload_of_new_content_makes_a_version_and_moves_no_tag(
     output = capsys.readouterr().out
     tag = f"{VARIANT}_src-c0ffee12_mesh4x8_ttm-{tt_metal * 8}"
     if tag == FIRST_TAG:
-        tag += "_" + content_hash({**published(VARIANT), path: data})[:8]
+        files = {**published(VARIANT), path: data}
+        tag += "_" + version_hash(files, upload_out(cache_dir))[:8]
         taken = (
-            f"tag: {FIRST_TAG} holds other content: the same inputs gave other "
-            f"bytes; this version is tagged {tag}\n"
+            f"tag: {FIRST_TAG} holds another version: the same inputs gave other "
+            f"bytes or another list of files and folders; this version is tagged "
+            f"{tag}\n"
         )
         assert taken in output
     assert "unchanged" not in output and f"tag: {tag}\n" in output
@@ -941,6 +954,40 @@ def test_upload_of_published_files_under_another_list_makes_a_version(
     out = upload_out(cache_dir)
     assert (out["uploaded"], out["commit"], hub.sent) == (True, hub.head, [])
     assert out[field] == listed and len(hub.tags) == 2
+
+
+def test_upload_under_a_taken_tag_name_gets_a_suffix_for_each_list_of_folders(
+    hub, cache_dir, capsys
+):
+    """The published files stay as they are; the spec names another folder, twice."""
+    argv = upload_argv(cache_dir)
+    spec_file = cache_dir.parent / VARIANT / "spec.json"
+    spec = json.loads(spec_file.read_text())
+    described = spec["runtime_model_spec"]["metadata"]["prebuilt_artifacts"]
+    first, versions = (hub.tags[FIRST_TAG], dict(hub.files(FIRST_TAG))), {}
+    hub.sent.clear()
+
+    for folder in ("tokenizer", "adapters"):
+        described["original_folders"].append(folder)
+        spec_file.write_text(json.dumps(spec))
+        assert main(argv) == 0
+        out = upload_out(cache_dir)
+        tag = f"{FIRST_TAG}_{version_hash(published(VARIANT), out)[:8]}"
+        assert (out["tag"], out["commit"], out["uploaded"]) == (tag, hub.head, True)
+        versions[tag] = (hub.head, out["original_folders"])
+
+    assert len(versions) == 2 and hub.sent == []
+    commits = {tag: commit for tag, (commit, _) in versions.items()}
+    assert hub.tags == {FIRST_TAG: first[0], **commits}
+    assert hub.files(FIRST_TAG) == first[1]
+    for tag, (commit, folders) in versions.items():
+        described["original_folders"] = folders
+        spec_file.write_text(json.dumps(spec))
+        capsys.readouterr()
+        assert main(argv) == 0
+        assert f"holds this content as tag {tag} at commit {commit}" in (
+            capsys.readouterr().out
+        )
 
 
 def test_upload_finds_the_version_that_holds_the_content_among_several(hub, cache_dir):
@@ -1002,7 +1049,8 @@ def both_tag_names_taken(cache_dir, hub):
     write(OWN_TENSOR, b"XYZ")(cache_dir, hub)
     tag = f"{VARIANT}_src-c0ffee12_mesh4x8_ttm-cccccccc"
     content = {**published(VARIANT), f"tt_dit_cache/{OWN_TENSOR}": b"XYZ"}
-    hub.tags.update({tag: "0", f"{tag}_{content_hash(content)[:8]}": "0"})
+    suffix = version_hash(content, upload_out(cache_dir))[:8]
+    hub.tags.update({tag: "0", f"{tag}_{suffix}": "0"})
 
 
 UPLOADS_REFUSED = {
@@ -1065,6 +1113,23 @@ def test_upload_that_is_refused_does_not_change_the_hub(
     exit_code, output = upload_again(hub, cache_dir, capsys, "c", change)
 
     assert message in output
+    assert exit_code == 1
+
+
+def test_upload_refuses_an_absolute_path_in_the_log(hub, cache_dir, capsys):
+    """Two slashes after the container's cache folder leave an absolute path."""
+
+    def name_a_conversion_outside(cache_dir, hub):
+        files = {"a.tensorbin": b"a", "cache_dict.json": b""}
+        outside = write_files(cache_dir.parent / "outside/mesh4x8_bf16", files)
+        named = (f"{CONTAINER_CACHE}/{OWN[VARIANT]}", f"{CONTAINER_CACHE}/{outside}")
+        (cache_dir / LOG).write_text("".join(f"'{path}'\n" for path in named))
+
+    exit_code, output = upload_again(
+        hub, cache_dir, capsys, "c", name_a_conversion_outside
+    )
+
+    assert "outside/mesh4x8_bf16: outside" in output
     assert exit_code == 1
 
 
@@ -1675,6 +1740,67 @@ def test_download_moves_nothing_when_the_records_cannot_be_removed(
     assert (dest / shared).read_bytes() == hub.files(tag)[shared]
 
 
+@pytest.mark.parametrize(
+    "damaged, reported",
+    [
+        (
+            f"tt_dit_cache/{OWN_TENSOR}",
+            f"{OWN[VARIANT]}: not the files {WEIGHTS_REPO} holds",
+        ),
+        (
+            "original_subset/vae/diffusion_pytorch_model.safetensors",
+            "vae/diffusion_pytorch_model.safetensors: not the file the manifest lists",
+        ),
+    ],
+    ids=["converted", "original"],
+)
+def test_download_removes_a_staged_file_that_is_not_the_one_of_the_hub(
+    hub, tmp_path, capsys, damaged, reported
+):
+    """The Hub client keeps a file it staged for the commit; the first copy of one is damaged."""
+    intact = f"tt_dit_cache/{OWN[VARIANT]}/blocks.0.bias.tensorbin"
+    fetched = []
+
+    def snapshot_download(repo_id, revision, allow_patterns, local_dir):
+        for path, data in hub.files(revision).items():
+            if not matches(path, allow_patterns) or (Path(local_dir) / path).exists():
+                continue
+            if path == damaged and path not in fetched:
+                data = data[::-1]
+            fetched.append(path)
+            write_files(Path(local_dir), {path: data})
+
+    hub.snapshot_download = snapshot_download
+    dest = tmp_path / "deployment"
+    staging = dest / "tt_dit_cache/.tt_weights_download" / hub.head
+
+    assert download(dest) == 1
+
+    error = capsys.readouterr().err
+    assert "the download was not applied" in error and reported in error
+    assert not (staging / damaged).exists() and (staging / intact).is_file()
+    assert not list(dest.rglob("cache_dict.json")) and not (dest / "weights").exists()
+    first_run = len(fetched)
+
+    assert download(dest) == 0
+
+    assert fetched[first_run:] == [damaged]
+    applied = dest / damaged.replace("original_subset", "weights")
+    assert applied.read_bytes() == hub.files()[damaged]
+    assert not staging.exists()
+
+
+def test_download_takes_a_directory_the_hub_holds_a_marker_for(hub, tmp_path):
+    """The upload sends no marker; this one was put in the repo by hand."""
+    hub.files()[f"tt_dit_cache/{OWN[VARIANT]}/cache_dict.json"] = b""
+    dest = tmp_path / "deployment"
+
+    assert download(dest) == 0
+
+    tensor = f"tt_dit_cache/{OWN_TENSOR}"
+    assert (dest / tensor).read_bytes() == hub.files()[tensor]
+
+
 WEIGHTS = {"repo": WEIGHTS_REPO, "variant": VARIANT, "tag": "t", "commit": "1" * 40}
 RELEASE_OPTIONS = {
     "--image": BASE_IMAGE,
@@ -1727,6 +1853,26 @@ def test_release_file_refuses_another_tests_outcome(tmp_path, capsys):
     assert refused.value.code == 2
     assert "--tests-outcome: invalid choice: 'cancelled'" in capsys.readouterr().err
     assert not (tmp_path / "release.json").exists()
+
+
+def test_a_manifest_with_another_kernel_cache_path_is_refused(
+    docker, kernel_cache, tmp_path, capsys
+):
+    """The image holds the cache at one path; build-image and release-file read the manifest."""
+    manifest = {**KERNEL_MANIFEST, "kernel_cache_path": "/tmp/tt_metal_kernel_cache"}
+    build_image = build_image_argv(kernel_cache, tmp_path, manifest)
+    out = tmp_path / "release.json"
+    release = ["release-file", "--base-image", BASE_IMAGE, "--out", str(out)]
+    release += ["--kernel-manifest", build_image[build_image.index("--manifest") + 1]]
+    for name, value in RELEASE_OPTIONS.items():
+        release += [name, value]
+
+    for argv in (build_image, release):
+        assert main(argv) == 1
+        error = capsys.readouterr().err
+        assert "names the kernel cache path /tmp/tt_metal_kernel_cache" in error
+        assert KERNEL_CACHE_CONTAINER_DIR in error
+    assert docker.commands == [] and not out.exists()
 
 
 WATCHED = {**KERNEL_MANIFEST["build_key_env"], "TT_METAL_WATCHER": "10"}

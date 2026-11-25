@@ -342,14 +342,21 @@ def spec_extra_files(path: Path) -> list[str]:
 def read_kernel_manifest(path: Path, base_image: str) -> dict:
     """The kernel manifest at path; an error when it describes another base image.
 
-    build_key_env maps the variables the capture run recorded to their values,
-    None for an unset one.
+    Its kernel_cache_path has to be the path Dockerfile.kernel-cache puts the
+    cache at. build_key_env maps the variables the capture run recorded to
+    their values, None for an unset one.
     """
     manifest = manifest_fields(read_json(path), KERNEL_MANIFEST_FIELDS, path)
     if manifest["base_image"] != base_image:
         raise CliError(
             f"the kernel manifest {path} was made for base image "
             f"{manifest['base_image']}, not {base_image}"
+        )
+    if manifest["kernel_cache_path"] != KERNEL_CACHE_CONTAINER_DIR:
+        raise CliError(
+            f"the kernel manifest {path} names the kernel cache path "
+            f"{manifest['kernel_cache_path']}; the image holds the cache at "
+            f"{KERNEL_CACHE_CONTAINER_DIR}"
         )
     build_key_env = manifest["build_key_env"]
     if not isinstance(build_key_env, dict) or not all(
@@ -566,7 +573,8 @@ def variant_cache_directories(
     directories, problems = [], []
     for relative in named:
         directory = cache_dir / relative
-        if directory.resolve() != root / relative:
+        # An absolute path would replace cache_dir in both joins.
+        if not relative_path(relative) or directory.resolve() != root / relative:
             problems.append(
                 f"{relative}: outside {cache_dir} or behind a symbolic link"
             )
@@ -755,6 +763,12 @@ def manifest_lists(manifest: dict) -> list:
     return [sorted(manifest[field], key=key) for field in fields]
 
 
+def version_hash(digest: str, manifest: dict) -> str:
+    """One sha256 over a content hash and what the manifest lists: what published_version compares."""
+    listed = json.dumps(manifest_lists(manifest), sort_keys=True)
+    return hashlib.sha256(f"{digest}\n{listed}".encode("utf-8")).hexdigest()
+
+
 def published_version(
     api, repo, tags: dict, tag: str, manifest: dict, content: dict
 ) -> tuple | None:
@@ -908,8 +922,9 @@ def upload_tt_weights(args) -> None:
     The upload takes several commits, so this variant's manifest is removed
     first and written back last: a commit with the manifest is a finished
     upload. The tag is made only after the files at that commit have the content
-    of the local ones. Tags are not moved: when the tag name holds other
-    content, the new tag ends in the first 8 characters of the content hash.
+    of the local ones. Tags are not moved: when the tag name holds another
+    version, the new tag ends in the first 8 characters of a hash over the
+    content and what the manifest lists.
     """
     api = hugging_face_api()
     repo, variant, branch = args.repo, args.variant, WEIGHTS_BRANCH
@@ -941,10 +956,11 @@ def upload_tt_weights(args) -> None:
         )
     else:
         if tag in tags:
-            taken, tag = tag, f"{tag}_{digest[:8]}"
+            taken, tag = tag, f"{tag}_{version_hash(digest, manifest)[:8]}"
             step(
-                f"tag: {taken} holds other content: the same inputs gave other "
-                f"bytes; this version is tagged {tag}"
+                f"tag: {taken} holds another version: the same inputs gave other "
+                f"bytes or another list of files and folders; this version is "
+                f"tagged {tag}"
             )
         if tag in tags:
             raise CliError(
@@ -1266,8 +1282,9 @@ def build_parser() -> argparse.ArgumentParser:
         f"at a time. Only content that is not published yet is uploaded: when a "
         f"version of the variant holds the same bytes, whatever its tag, nothing "
         f"is sent and --manifest-out names that version. Tags are not moved; a "
-        f"tag name that holds other content gets the first 8 characters of the "
-        f"content hash appended. Needs huggingface_hub and the token in HF_TOKEN.",
+        f"tag name that holds another version gets the first 8 characters of a "
+        f"hash over the content and what the manifest lists appended. Needs "
+        f"huggingface_hub and the token in HF_TOKEN.",
     )
     upload.add_argument(
         "--cache-dir",

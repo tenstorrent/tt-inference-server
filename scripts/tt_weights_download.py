@@ -280,11 +280,13 @@ def download_tt_weights(
     fetched. The markers of the other cache directories are removed first, so a
     download that stops part way leaves none of them looking complete. The
     files are checked in a staging folder before any of them is moved into
-    place. A failed run keeps that folder, and the next run for the same commit
-    continues from it. A run that fetched a cache directory removes the records
-    of every variant before it moves the files into place: the other variants
-    are checked against the Hub on their next run. A completed run saves the
-    record that hub_reason reads.
+    place: the converted files against the names, sizes and hashes the Hub
+    lists, the original files against the manifest. A failed run keeps that
+    folder, without the files that failed the check, and the next run for the
+    same commit continues from it. A run that fetched a cache directory removes
+    the records of every variant before it moves the files into place: the
+    other variants are checked against the Hub on their next run. A completed
+    run saves the record that hub_reason reads.
     """
     commit = api.model_info(repo_id=repo, revision=revision).sha
     step(f"revision: {revision} is commit {commit}")
@@ -371,14 +373,33 @@ def download_tt_weights(
     staged = [staging / TT_WEIGHTS_FOLDER / entry["path"] for entry in directories]
     mismatches = []
     for entry, source in zip(directories, staged):
-        sizes = tensor_sizes(source)
+        sizes, held = tensor_sizes(source), remote[entry["path"]]
         if (len(sizes), sum(sizes.values())) != (entry["files"], entry["bytes"]):
             mismatches.append(
                 f"{entry['path']}: {len(sizes)} files, {sum(sizes.values())} bytes; "
                 f"the manifest says {entry['files']} files, {entry['bytes']} bytes"
             )
+        # The Hub client keeps a file it staged for this commit, so a staged
+        # file that is not the Hub's is removed: the next run fetches it again.
+        other = [
+            name
+            for name, size in sizes.items()
+            if not same_content(source / name, size, held.get(name))
+        ]
+        for name in other:
+            (source / name).unlink()
+        if other or sizes.keys() != held.keys() - {CACHE_MARKER}:
+            mismatches.append(
+                f"{entry['path']}: not the files {repo} holds; {len(other)} staged "
+                "file(s) with other content were removed and the next run fetches "
+                "them again"
+            )
     for entry in originals:
-        if not is_listed_file(staging / ORIGINAL_SUBSET_FOLDER / entry["path"], entry):
+        fetched = staging / ORIGINAL_SUBSET_FOLDER / entry["path"]
+        if not is_listed_file(fetched, entry):
+            # Removed like a converted file above: the next run fetches it again.
+            if fetched.is_file():
+                fetched.unlink()
             mismatches.append(f"{entry['path']}: not the file the manifest lists")
     if mismatches:
         raise CliError(
