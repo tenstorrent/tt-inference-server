@@ -27,8 +27,10 @@ title alone.
 ## Build
 
 ```bash
-./build.sh --blaze
+./build.sh
 ```
+
+The retired Blaze backend is not part of the default build or CI.
 
 ## Run
 

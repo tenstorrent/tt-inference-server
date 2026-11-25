@@ -419,11 +419,9 @@ components:
     Ideogram4Caption:
       properties:
         high_level_description:
-          anyOf:
-          - type: string
-          - type: 'null'
+          type: string
           title: High Level Description
-          description: One or two sentences summing up the image. Recommended.
+          description: One or two sentences summing up the image.
         style_description:
           anyOf:
           - $ref: '#/components/schemas/Ideogram4StyleDescription'
@@ -433,23 +431,30 @@ components:
       additionalProperties: false
       type: object
       required:
+      - high_level_description
       - compositional_deconstruction
       title: Ideogram4Caption
-      description: 'A structured caption in the format Ideogram 4 was trained on, sent to
+      description: 'A structured caption in the format Ideogram 4 was trained on. The server
 
-        the model as is. Key order does not matter: the server writes it out in
+        writes it out in the model''s key order, with colors in uppercase; key
 
-        the model''s order. Each output reports it as its `prompt`.
+        order in the request does not matter. Each output reports it as its
 
-
-        There is no plain-text prompt for now: Ideogram 4 needs a caption like
-
-        this, and turning plain text into one takes an LLM ("magic prompt"),
-
-        which this API doesn''t run yet.
+        `prompt`.
 
 
-        Format: `docs/prompting.md` in `ideogram-oss/ideogram4`.'
+        Use this to bypass the prompt enhancer, e.g. with a caption written by
+
+        your own LLM.
+
+
+        Schema: `V4JsonPrompt` of Ideogram''s hosted API, with two stricter rules:
+
+        unknown keys are rejected, and a `bbox` needs exactly four values with
+
+        `ymin <= ymax` and `xmin <= xmax`.
+
+        Prompting guide: `docs/prompting.md` in `ideogram-oss/ideogram4`.'
     Ideogram4CompositionalDeconstruction:
       properties:
         background:
@@ -478,7 +483,6 @@ components:
         type: string
         pattern: ^#[0-9A-Fa-f]{6}$
       type: array
-      maxItems: 5
       description: The element's colors as `#RRGGBB`, either case; sent to the model in uppercase.
     Ideogram4ObjectElement:
       properties:
@@ -508,12 +512,29 @@ components:
         type: string
         pattern: ^#[0-9A-Fa-f]{6}$
       type: array
-      maxItems: 16
       description: Dominant colors as `#RRGGBB`, either case; sent to the model in uppercase.
     Ideogram4Request:
+      oneOf:
+      - required:
+        - prompt
+      - required:
+        - structured_prompt
       properties:
+        prompt:
+          type: string
+          minLength: 1
+          title: Prompt
+          description: What to generate, in plain words. Ideogram 4 only works from a structured
+            caption, so the server first rewrites the prompt into one with a prompt enhancer
+            (an LLM), adding detail on composition, style, lighting and any text, for the
+            requested `aspect_ratio`. A deployment with the prompt enhancer off answers a
+            `prompt` with 422. Each output reports the caption the model received as its `prompt`.
+            The enhancer isn't seeded, so the same `prompt` and `seed` can give different
+            images; to reproduce one, send its reported caption as `structured_prompt`. To
+            skip the enhancer, send `structured_prompt` instead.
         structured_prompt:
           $ref: '#/components/schemas/Ideogram4Caption'
+          title: Structured Prompt
           description: At most 2048 tokens as the model reads it, chat template included;
             a longer caption fails the job.
         count:
@@ -574,18 +595,21 @@ components:
           default: default
       additionalProperties: false
       type: object
-      required:
-      - structured_prompt
       title: Ideogram4Request
+      description: Exactly one of `prompt` or `structured_prompt`.
     Ideogram4StyleDescription:
       properties:
         aesthetics:
-          type: string
+          anyOf:
+          - type: string
+          - type: 'null'
           title: Aesthetics
           examples:
           - moody, cinematic, desaturated
         lighting:
-          type: string
+          anyOf:
+          - type: string
+          - type: 'null'
           title: Lighting
           examples:
           - golden hour, rim light, dramatic shadows
@@ -598,7 +622,9 @@ components:
           examples:
           - 35mm, f/1.4, bokeh
         medium:
-          type: string
+          anyOf:
+          - type: string
+          - type: 'null'
           title: Medium
           examples:
           - photograph
@@ -620,14 +646,12 @@ components:
           - type: 'null'
       additionalProperties: false
       type: object
-      required:
-      - aesthetics
-      - lighting
-      - medium
       title: Ideogram4StyleDescription
-      description: 'Visual style. Exactly one of `photo` (photographs) or `art_style`
+      description: 'Visual style. Every field is optional. The open model''s prompting
 
-        (everything else).'
+        guide gives `aesthetics`, `lighting` and `medium`, with `photo` for
+
+        photographs or `art_style` for everything else.'
     Ideogram4TextElement:
       properties:
         type:
@@ -643,9 +667,7 @@ components:
           title: Text
           description: The literal text to render.
         desc:
-          anyOf:
-          - type: string
-          - type: 'null'
+          type: string
           title: Desc
         color_palette:
           anyOf:
@@ -656,6 +678,7 @@ components:
       required:
       - type
       - text
+      - desc
       title: Ideogram4TextElement
     ImageFormat:
       type: string
@@ -801,6 +824,7 @@ components:
             - processing_error
             - stale_job
             - server_restart
+            - prompt_enhancement_error
           - type: string
           title: Code
           description: 'Why the job failed. More codes may be added; treat an unknown one
@@ -814,7 +838,11 @@ components:
             An infrastructure failure: safe to resubmit, preferably to another runner.
 
             - `server_restart`: the server restarted while the job was queued or running.
-            Safe to resubmit.'
+            Safe to resubmit.
+
+            - `prompt_enhancement_error`: the prompt enhancer failed or returned an unusable
+            caption (models with an enhancer, e.g. Ideogram 4 with `prompt`). Usually safe
+            to resubmit.'
         message:
           type: string
           title: Message

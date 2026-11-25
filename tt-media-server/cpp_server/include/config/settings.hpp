@@ -33,6 +33,9 @@ bool isImageService();
 /** True when model_service() == TTS. */
 bool isTtsService();
 
+/** True when model_service() == VIDEO. */
+bool isVideoService();
+
 /** Get runner type string based on current model service configuration. */
 std::string runnerType();
 
@@ -444,6 +447,10 @@ BlazeConfig blazeConfig();
  * MODEL_RUNNER_TYPE, MAX_BATCH_SIZE, SDXL_IMAGE_RESOLUTION. Implemented in
  * src/config/settings.cpp. */
 ImageConfig imageEngineConfig();
+
+/** Build VideoConfig from environment variables. Reads MODEL_RUNNER_TYPE.
+ * The only accepted value in this slice is video_mock. */
+VideoConfig videoEngineConfig();
 
 /** Build TtsConfig from environment variables and runtime settings.
  * Implemented in src/config/settings.cpp. */

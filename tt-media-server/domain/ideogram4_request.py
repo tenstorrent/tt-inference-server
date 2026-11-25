@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 import json
-from typing import Annotated, Literal, Optional, Union
+from typing import Annotated, Any, Literal, Optional, Union
 
 from config.settings import get_settings
 from domain.generation_request import (
@@ -24,9 +24,11 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    ValidationError,
     field_validator,
     model_validator,
 )
+from pydantic.json_schema import SkipJsonSchema
 
 IdeogramRatio = Literal["1:1", "16:9", "9:16", "2:3"]
 IdeogramSize = Literal["2K"]
@@ -66,7 +68,6 @@ Bbox = Annotated[
 ]
 Palette = Annotated[
     list[Color],
-    Field(max_length=16),
     SchemaComponent(
         "Ideogram4Palette",
         "Dominant colors as `#RRGGBB`, either case; sent to the model in uppercase.",
@@ -74,7 +75,6 @@ Palette = Annotated[
 ]
 ElementPalette = Annotated[
     list[Color],
-    Field(max_length=5),
     SchemaComponent(
         "Ideogram4ElementPalette",
         "The element's colors as `#RRGGBB`, either case; sent to the model in "
@@ -88,24 +88,30 @@ class _Strict(BaseModel):
 
 
 class Ideogram4StyleDescription(_Strict):
-    """Visual style. Exactly one of `photo` (photographs) or `art_style`
-    (everything else)."""
+    """Visual style. Every field is optional. The open model's prompting
+    guide gives `aesthetics`, `lighting` and `medium`, with `photo` for
+    photographs or `art_style` for everything else."""
 
-    aesthetics: str = Field(examples=["moody, cinematic, desaturated"])
-    lighting: str = Field(examples=["golden hour, rim light, dramatic shadows"])
+    aesthetics: Optional[str] = Field(
+        default=None, examples=["moody, cinematic, desaturated"]
+    )
+    lighting: Optional[str] = Field(
+        default=None, examples=["golden hour, rim light, dramatic shadows"]
+    )
     photo: Optional[str] = Field(
         default=None,
         description="Camera and lens, for photographs.",
         examples=["35mm, f/1.4, bokeh"],
     )
-    medium: str = Field(
+    medium: Optional[str] = Field(
+        default=None,
         examples=[
             "photograph",
             "illustration",
             "3d_render",
             "painting",
             "graphic_design",
-        ]
+        ],
     )
     art_style: Optional[str] = Field(
         default=None,
@@ -113,12 +119,6 @@ class Ideogram4StyleDescription(_Strict):
         examples=["flat vector illustration, bold outlines"],
     )
     color_palette: Optional[Palette] = None
-
-    @model_validator(mode="after")
-    def _photo_or_art_style(self):
-        if (self.photo is None) == (self.art_style is None):
-            raise ValueError("exactly one of photo and art_style is required")
-        return self
 
 
 class _Element(_Strict):
@@ -142,7 +142,7 @@ class Ideogram4TextElement(_Element):
     type: Literal["text"]
     bbox: Optional[Bbox] = None
     text: str = Field(description="The literal text to render.")
-    desc: Optional[str] = None
+    desc: str
     color_palette: Optional[ElementPalette] = None
 
 
@@ -157,32 +157,138 @@ class Ideogram4CompositionalDeconstruction(_Strict):
 
 
 class Ideogram4Caption(_Strict):
-    """A structured caption in the format Ideogram 4 was trained on, sent to
-    the model as is. Key order does not matter: the server writes it out in
-    the model's order. Each output reports it as its `prompt`.
+    """A structured caption in the format Ideogram 4 was trained on. The server
+    writes it out in the model's key order, with colors in uppercase; key
+    order in the request does not matter. Each output reports it as its
+    `prompt`.
 
-    There is no plain-text prompt for now: Ideogram 4 needs a caption like
-    this, and turning plain text into one takes an LLM ("magic prompt"),
-    which this API doesn't run yet.
+    Use this to bypass the prompt enhancer, e.g. with a caption written by
+    your own LLM.
 
-    Format: `docs/prompting.md` in `ideogram-oss/ideogram4`."""
+    Schema: `V4JsonPrompt` of Ideogram's hosted API, with two stricter rules:
+    unknown keys are rejected, and a `bbox` needs exactly four values with
+    `ymin <= ymax` and `xmin <= xmax`.
+    Prompting guide: `docs/prompting.md` in `ideogram-oss/ideogram4`."""
 
-    high_level_description: Optional[str] = Field(
-        default=None,
-        description="One or two sentences summing up the image. Recommended.",
+    high_level_description: str = Field(
+        description="One or two sentences summing up the image."
     )
     style_description: Optional[Ideogram4StyleDescription] = None
     compositional_deconstruction: Ideogram4CompositionalDeconstruction
 
 
-class Ideogram4Request(GenerationRequest):
-    OUTPUT_TYPE = "image"
+# The prompt enhancer's caption is checked against the hosted API's published
+# schema (V4JsonPrompt, developer.ideogram.ai/openapi/ideogram-api-v1.json).
+# That schema allows keys it doesn't name; they are dropped. Fields are
+# declared in the model's key order, as above.
 
-    structured_prompt: Ideogram4Caption = Field(
+_EnhancedColor = Annotated[
+    str, Field(pattern=r"^#[0-9a-fA-F]{6}$"), AfterValidator(str.upper)
+]
+# Validated, then excluded from the model's caption: the reference magic-prompt
+# client (ideogram-oss/ideogram4) strips bboxes by default.
+_EnhancedBbox = Annotated[
+    Optional[list[Annotated[int, Field(ge=0, le=1000)]]],
+    Field(default=None, exclude=True),
+]
+
+
+class _EnhancedStyle(BaseModel):
+    aesthetics: Optional[str] = None
+    lighting: Optional[str] = None
+    photo: Optional[str] = None
+    medium: Optional[str] = None
+    art_style: Optional[str] = None
+    color_palette: Optional[list[_EnhancedColor]] = None
+
+
+class _EnhancedObject(BaseModel):
+    type: Literal["obj"]
+    bbox: _EnhancedBbox
+    desc: str
+    color_palette: Optional[list[_EnhancedColor]] = None
+
+
+class _EnhancedText(BaseModel):
+    type: Literal["text"]
+    bbox: _EnhancedBbox
+    text: str
+    desc: str
+    color_palette: Optional[list[_EnhancedColor]] = None
+
+
+class _EnhancedComposition(BaseModel):
+    background: str
+    elements: list[
+        Annotated[Union[_EnhancedObject, _EnhancedText], Field(discriminator="type")]
+    ]
+
+
+class _EnhancedCaption(BaseModel):
+    high_level_description: str
+    style_description: Optional[_EnhancedStyle] = None
+    compositional_deconstruction: _EnhancedComposition
+
+
+def serialize_caption(caption: BaseModel) -> str:
+    """Compact, in the model's key order, as the reference serializes it."""
+    return json.dumps(
+        caption.model_dump(exclude_none=True), ensure_ascii=False, separators=(",", ":")
+    )
+
+
+def caption_from_enhancer(caption: Any) -> str:
+    """The prompt enhancer's caption as the model gets it.
+
+    Checks the caption against the hosted API's schema, then drops the keys
+    that schema doesn't name and every element's bbox. Raises ValueError when
+    the caption breaks the schema.
+    """
+    if not isinstance(caption, dict):
+        raise ValueError("the prompt enhancer returned no caption")
+    try:
+        return serialize_caption(_EnhancedCaption.model_validate(caption))
+    except ValidationError as e:
+        # Where and what, without the caption's text.
+        issues = "; ".join(
+            f"{'.'.join(map(str, err['loc']))}: {err['msg']}" for err in e.errors()
+        )
+        raise ValueError(f"the prompt enhancer's caption is invalid: {issues}") from e
+
+
+class Ideogram4Request(GenerationRequest):
+    """Exactly one of `prompt` or `structured_prompt`."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "oneOf": [{"required": ["prompt"]}, {"required": ["structured_prompt"]}]
+        }
+    )
+
+    OUTPUT_TYPE = "image"
+    PROMPT_ENHANCER = "ideogram"
+
+    prompt: Union[Annotated[str, Field(min_length=1)], SkipJsonSchema[None]] = Field(
+        default=None,
+        description=(
+            "What to generate, in plain words. Ideogram 4 only works from a "
+            "structured caption, so the server first rewrites the prompt into one "
+            "with a prompt enhancer (an LLM), adding detail on composition, style, "
+            "lighting and any text, for the requested `aspect_ratio`. A deployment "
+            "with the prompt enhancer off answers a `prompt` with 422. Each output "
+            "reports the caption the model received as its `prompt`. The enhancer "
+            "isn't seeded, so the same `prompt` and `seed` can give different "
+            "images; to reproduce one, send its reported caption as "
+            "`structured_prompt`. To skip the enhancer, send `structured_prompt` "
+            "instead."
+        ),
+    )
+    structured_prompt: Union[Ideogram4Caption, SkipJsonSchema[None]] = Field(
+        default=None,
         description=(
             f"At most {IDEOGRAM4_MAX_TEXT_TOKENS} tokens as the model reads it, "
             "chat template included; a longer caption fails the job."
-        )
+        ),
     )
     count: Count = 1
     aspect_ratio: IdeogramRatio = Field(
@@ -215,6 +321,16 @@ class Ideogram4Request(GenerationRequest):
         ),
     )
 
+    @model_validator(mode="after")
+    def _one_prompt(self):
+        # An explicit null counts as sent, as in the schema's oneOf.
+        if (self.prompt is None) == (self.structured_prompt is None) or {
+            "prompt",
+            "structured_prompt",
+        } <= self.model_fields_set:
+            raise ValueError("exactly one of prompt and structured_prompt is required")
+        return self
+
     def output_size(self) -> tuple[int, int]:
         return IDEOGRAM_SIZES[self.size][self.aspect_ratio]
 
@@ -232,13 +348,22 @@ class Ideogram4Request(GenerationRequest):
     def warmup_sizes(cls) -> list[tuple[int, int]]:
         return [size for sizes in IDEOGRAM_SIZES.values() for size in sizes.values()]
 
+    def needs_prompt_enhancement(self) -> bool:
+        return self.prompt is not None
+
+    def enhancer_arguments(self) -> tuple[str, str]:
+        """(prompt, aspect ratio "W:H") for the prompt enhancer."""
+        return self.prompt, self.aspect_ratio
+
+    def prompt_from_enhancer(self, caption: Any) -> str:
+        return caption_from_enhancer(caption)
+
     def model_prompt(self) -> str:
-        # Compact, in the model's key order, as the reference serializes it.
-        return json.dumps(
-            self.structured_prompt.model_dump(exclude_none=True),
-            ensure_ascii=False,
-            separators=(",", ":"),
-        )
+        """The caption of a `structured_prompt` request. A `prompt` request's
+        comes from the prompt enhancer, through ``caption_from_enhancer``."""
+        if self.structured_prompt is None:
+            raise ValueError("a prompt request's caption comes from the enhancer")
+        return serialize_caption(self.structured_prompt)
 
 
 IDEOGRAM_4 = GenerationModel(

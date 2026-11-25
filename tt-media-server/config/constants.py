@@ -17,8 +17,8 @@ class SupportedModels(Enum):
     FLUX_1_DEV = "black-forest-labs/FLUX.1-dev"
     FLUX_1_SCHNELL = "black-forest-labs/FLUX.1-schnell"
     FLUX_1_KONTEXT_DEV = "black-forest-labs/FLUX.1-Kontext-dev"
-    FLUX_2_KLEIN_4B = "black-forest-labs/FLUX.2-klein-4B"
     FLUX_3_IMAGE_KLEIN = "black-forest-labs/flux-3-image-klein"
+    FLUX_2_KLEIN_4B = "black-forest-labs/FLUX.2-klein-4B"
     MOTIF_IMAGE_6B_PREVIEW = "Motif-Technologies/Motif-Image-6B-Preview"
     IDEOGRAM_4 = "ideogram-ai/ideogram-4-fp8"
     QWEN_IMAGE = "Qwen/Qwen-Image"
@@ -76,8 +76,8 @@ class ModelNames(Enum):
     FLUX_1_DEV = "FLUX.1-dev"
     FLUX_1_SCHNELL = "FLUX.1-schnell"
     FLUX_1_KONTEXT_DEV = "FLUX.1-Kontext-dev"
-    FLUX_2_KLEIN_4B = "FLUX.2-klein-4B"
     FLUX_3_IMAGE_KLEIN = "flux-3-image-klein"
+    FLUX_2_KLEIN_4B = "FLUX.2-klein-4B"
     MOTIF_IMAGE_6B_PREVIEW = "Motif-Image-6B-Preview"
     IDEOGRAM_4 = "ideogram-4"
     QWEN_IMAGE = "Qwen-Image"
@@ -137,8 +137,8 @@ class ModelRunners(Enum):
     TT_FLUX_1_DEV = "tt-flux.1-dev"
     TT_FLUX_1_SCHNELL = "tt-flux.1-schnell"
     TT_FLUX_1_KONTEXT_DEV = "tt-flux.1-kontext-dev"
-    TT_FLUX_2_KLEIN_4B = "tt-flux.2-klein-4b"
     TT_FLUX_3_IMAGE_KLEIN = "tt-flux-3-image-klein"
+    TT_FLUX_2_KLEIN_4B = "tt-flux.2-klein-4b"
     TT_MOTIF_IMAGE_6B_PREVIEW = "tt-motif-image-6b-preview"
     TT_IDEOGRAM_4 = "tt-ideogram-4"
     TT_QWEN_IMAGE = "tt-qwen-image"
@@ -210,8 +210,8 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.TT_LTX_2_3_DISTILLED,
         ModelRunners.TT_MINIMAX_H3_FL2VA,
         ModelRunners.TT_MINIMAX_H3_REF2VA,
-        ModelRunners.TT_FLUX_2_KLEIN_4B,
         ModelRunners.TT_FLUX_3_IMAGE_KLEIN,
+        ModelRunners.TT_FLUX_2_KLEIN_4B,
         ModelRunners.TT_MINIMAX_H3_FL2VA_LIGHTX2V,
         ModelRunners.TT_MINIMAX_H3_REF2VA_LIGHTX2V,
         ModelRunners.TT_IDEOGRAM_4,
@@ -360,8 +360,8 @@ INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.TT_FLUX_1_DEV: {ModelNames.FLUX_1_DEV},
     ModelRunners.TT_FLUX_1_SCHNELL: {ModelNames.FLUX_1_SCHNELL},
     ModelRunners.TT_FLUX_1_KONTEXT_DEV: {ModelNames.FLUX_1_KONTEXT_DEV},
-    ModelRunners.TT_FLUX_2_KLEIN_4B: {ModelNames.FLUX_2_KLEIN_4B},
     ModelRunners.TT_FLUX_3_IMAGE_KLEIN: {ModelNames.FLUX_3_IMAGE_KLEIN},
+    ModelRunners.TT_FLUX_2_KLEIN_4B: {ModelNames.FLUX_2_KLEIN_4B},
     ModelRunners.TT_MOTIF_IMAGE_6B_PREVIEW: {ModelNames.MOTIF_IMAGE_6B_PREVIEW},
     ModelRunners.TT_IDEOGRAM_4: {ModelNames.IDEOGRAM_4},
     ModelRunners.TT_QWEN_IMAGE: {ModelNames.QWEN_IMAGE},
@@ -979,6 +979,12 @@ ModelConfigs = {
         "request_processing_timeout_seconds": 2000,
         "trace_region_size": 51000000,
     },
+    (ModelRunners.TT_FLUX_3_IMAGE_KLEIN, DeviceTypes.BLACKHOLE_GALAXY): {
+        "device_mesh_shape": (4, 8),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+    },
     (ModelRunners.TT_FLUX_2_KLEIN_4B, DeviceTypes.T3K): {
         "device_mesh_shape": (2, 4),
         "is_galaxy": False,
@@ -994,12 +1000,6 @@ ModelConfigs = {
         "max_batch_size": 1,
     },
     (ModelRunners.TT_FLUX_2_KLEIN_4B, DeviceTypes.BLACKHOLE_GALAXY): {
-        "device_mesh_shape": (4, 8),
-        "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
-        "max_batch_size": 1,
-    },
-    (ModelRunners.TT_FLUX_3_IMAGE_KLEIN, DeviceTypes.BLACKHOLE_GALAXY): {
         "device_mesh_shape": (4, 8),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,

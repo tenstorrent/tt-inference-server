@@ -60,13 +60,17 @@ unsigned defaultWarmupTimeoutMs() {
   if (tt::config::isEmbeddingService()) {
     return tt::config::embeddingWarmupTimeoutMs();
   }
-  if (tt::config::isImageService()) {
+  if (tt::config::isImageService() || tt::config::isVideoService()) {
     if (const char* env = std::getenv("WARMUP_TIMEOUT_MS"); env && *env) {
       return tt::config::warmupTimeoutMs();
     }
-    return tt::config::imageEngineConfig()
-               .weights_distribution_timeout_seconds *
-           1000u;
+    const unsigned timeoutSeconds =
+        tt::config::isVideoService()
+            ? tt::config::videoEngineConfig()
+                  .weights_distribution_timeout_seconds
+            : tt::config::imageEngineConfig()
+                  .weights_distribution_timeout_seconds;
+    return timeoutSeconds * 1000u;
   }
   // LLM workers: no supervisor-side deadline (unchanged from before the
   // embedding/image warmup coordination). The Blaze runners enforce their own
@@ -82,7 +86,8 @@ void populateCommonWorkerEnv(tt::worker::WorkerConfig& cfg, int workerId) {
   cfg.env_vars["TT_WORKER_ID"] = std::to_string(workerId);
   cfg.env_vars["TT_VISIBLE_DEVICES"] = visibleDevices;
 
-  if (tt::config::isEmbeddingService() || tt::config::isImageService()) {
+  if (tt::config::isEmbeddingService() || tt::config::isImageService() ||
+      tt::config::isVideoService()) {
     cfg.env_vars["OMP_NUM_THREADS"] = "2";
     cfg.env_vars["MKL_NUM_THREADS"] = "2";
     cfg.env_vars["TORCH_NUM_THREADS"] = "1";
@@ -320,7 +325,8 @@ WorkerConfig WorkerManager::makeWorkerConfig(int workerId) {
   if (tt::config::isTtsService()) {
     configureTtsQueues(cfg, workerId);
   } else if (!tt::config::isImageService() &&
-             !tt::config::isEmbeddingService()) {
+             !tt::config::isEmbeddingService() &&
+             !tt::config::isVideoService()) {
     configureLlmQueues(cfg, workerId);
   }
   cfg.worker_id = workerId;
@@ -533,7 +539,8 @@ WorkerConfig makeWorkerConfigForProcess(int workerId) {
   if (tt::config::isTtsService()) {
     configureTtsQueues(cfg, workerId);
   } else if (!tt::config::isImageService() &&
-             !tt::config::isEmbeddingService()) {
+             !tt::config::isEmbeddingService() &&
+             !tt::config::isVideoService()) {
     configureLlmQueues(cfg, workerId);
   }
   cfg.worker_id = workerId;

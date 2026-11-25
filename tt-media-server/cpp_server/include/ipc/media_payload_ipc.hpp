@@ -18,6 +18,23 @@ namespace tt::ipc::media_payload {
 
 namespace ser = tt::ipc::serialization;
 
+/** Error text a worker reports for a task it skipped because the client
+ *  cancelled it while it was still waiting in the task queue. */
+inline constexpr const char* kCancelledBeforeStartError =
+    "cancelled before start";
+
+/** Marker file the service drops next to `request-<id>.json` when a job is
+ *  cancelled. A worker checks for it right after popping a task, so a task
+ *  that is cancelled while queued never touches the device. */
+inline std::string cancelMarkerPath(const std::string& requestPath,
+                                    uint32_t taskId) {
+  if (requestPath.empty()) return {};
+  const auto sep = requestPath.find_last_of('/');
+  const std::string dir =
+      sep == std::string::npos ? std::string() : requestPath.substr(0, sep + 1);
+  return dir + "cancel-" + std::to_string(taskId);
+}
+
 struct MediaPayloadTask {
   uint32_t task_id = 0;
   uint32_t flags = 0;
