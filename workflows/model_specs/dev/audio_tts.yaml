@@ -219,6 +219,8 @@ templates:
         # Long files: vLLM splits them into 30 s requests.
         VLLM_MAX_AUDIO_CLIP_FILESIZE_MB: "200"
         VLLM_MAX_AUDIO_DECODE_DURATION_S: "4000"
+        # The model extracts its text decoder once; the weights mount is read-only.
+        QWEN3ASR_TEXT_DECODER: /home/container_app_user/cache_root/qwen3_asr_text_decoder
   status: EXPERIMENTAL
 
 - weights:
