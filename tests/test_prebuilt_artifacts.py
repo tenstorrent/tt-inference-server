@@ -1656,6 +1656,25 @@ def test_download_that_fills_a_removed_directory_removes_the_records(
     assert (dest / shared).read_bytes() == hub.files(tag)[shared]
 
 
+def test_download_moves_nothing_when_the_records_cannot_be_removed(
+    hub, cache_dir, tmp_path
+):
+    """The records folder is a symbolic link, which rmtree refuses."""
+    (tag,) = hub.tags
+    assert main(upload_argv(cache_dir, SIBLING)) == 0
+    shared = f"tt_dit_cache/{SHARED}/embed.weight.tensorbin"
+    hub.files()[shared] = hub.files(tag)[shared][::-1]
+    dest = tmp_path / "deployment"
+    assert download(dest, revision=tag) == 0
+    records = (dest / RECORDS).rename(tmp_path / "records")
+    (dest / RECORDS).symlink_to(records)
+
+    assert download(dest, SIBLING) == 1
+
+    assert os.listdir(dest / RECORDS) == [f"{VARIANT}.json"]
+    assert (dest / shared).read_bytes() == hub.files(tag)[shared]
+
+
 WEIGHTS = {"repo": WEIGHTS_REPO, "variant": VARIANT, "tag": "t", "commit": "1" * 40}
 RELEASE_OPTIONS = {
     "--image": BASE_IMAGE,

@@ -393,8 +393,9 @@ def download_tt_weights(
 
     # A record vouches for file names and sizes only, and a directory can be
     # shared: no record outlives a run that moves a cache directory into place.
-    if directories:
-        shutil.rmtree(dest_cache / TT_WEIGHTS_RECORDS, ignore_errors=True)
+    records = dest_cache / TT_WEIGHTS_RECORDS
+    if directories and records.exists():
+        shutil.rmtree(records)
     for source, marker in zip(staged, markers):
         marker.parent.mkdir(parents=True, exist_ok=True)
         for name in tensor_sizes(source):

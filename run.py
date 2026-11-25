@@ -818,6 +818,11 @@ def parse_arguments():
         if not args.docker_server:
             parser.error("--kernel-cache-dir requires --docker-server.")
         args.kernel_cache_dir = str(Path(args.kernel_cache_dir).expanduser().resolve())
+        if "," in args.kernel_cache_dir:
+            parser.error(
+                f"--kernel-cache-dir resolves to {args.kernel_cache_dir}, which "
+                "contains a comma; docker --mount separates its fields with commas."
+            )
     args.engine = (
         InferenceEngine.from_string(args.engine).value if args.engine else None
     )
