@@ -1683,6 +1683,7 @@ templates:
     QWEN36_MAX_TOKENS_ALL_USERS: "525312"
     QWEN_SDPA_BF8: "1"  # bfloat8_b K and V caches
     TT_METAL_PINNED_MEMORY_CACHE_LIMIT_BYTES: "0"  # a warm TT weight-cache load hangs otherwise
+    VLLM_IMAGE_FETCH_TIMEOUT: "30"  # seconds; vLLM defaults to 5
     # vLLM runs EngineCore in the server process, so torch keeps one OpenMP worker per core; spinning workers slow the
     # host side of each step and make step times depend on earlier traffic.
     OMP_NUM_THREADS: "8"
@@ -1713,10 +1714,15 @@ templates:
         mm-processor-cache-gb: 0
         # The model warms the vision tower for inputs up to this size and refuses a larger image or video.
         mm-processor-kwargs: '{"max_pixels": 1048576}'
+        media-io-kwargs: '{"video": {"num_frames": 16}}'
         speculative_config: '{"method": "custom_class", "model": "vllm_tt_plugin.model_owned_drafter", "num_speculative_tokens": 3}'
         enable_auto_tool_choice: true
         reasoning_parser: qwen3
         tool_call_parser: qwen3_coder
+        exclude_tools_when_tool_choice_none: true
+        # json_object grammars allow any whitespace by default, and the model can then emit whitespace until max_tokens
+        # without closing the object. The backend must be named: vLLM refuses disable_any_whitespace under "auto".
+        structured-outputs-config: '{"backend": "xgrammar", "disable_any_whitespace": true}'
       override_tt_config:
         fabric_config: FABRIC_1D
         trace_region_size: 1073741824
@@ -1740,10 +1746,13 @@ templates:
         limit-mm-per-prompt: '{"image": 1, "video": 1}'
         mm-processor-cache-gb: 0
         mm-processor-kwargs: '{"max_pixels": 1048576}'
+        media-io-kwargs: '{"video": {"num_frames": 16}}'
         speculative_config: '{"method": "custom_class", "model": "vllm_tt_plugin.model_owned_drafter", "num_speculative_tokens": 3}'
         enable_auto_tool_choice: true
         reasoning_parser: qwen3
         tool_call_parser: qwen3_coder
+        exclude_tools_when_tool_choice_none: true
+        structured-outputs-config: '{"backend": "xgrammar", "disable_any_whitespace": true}'
       override_tt_config:
         # The model's 8-device CCLs use the Ring topology, which needs the wrap-around link of each (1, 8) submesh.
         fabric_config: FABRIC_1D_RING
