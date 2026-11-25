@@ -9,6 +9,7 @@
 #include <json/json.h>
 #include <stdlib.h>
 
+#include <algorithm>
 #include <csignal>
 #include <filesystem>
 #include <fstream>
