@@ -262,9 +262,15 @@ COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
     "VERSION" "${APP_DIR}/VERSION"
 
 # Fix venv symlinks after copy and install additional app requirements
+# The venv's stdlib comes from the interpreter named by pyvenv.cfg "home" (uv's managed
+# CPython); linking a different build (e.g. Ubuntu 24.04's /usr/bin/python3) breaks
+# imports such as _contextvars. Prefer that interpreter; fall back to the system one.
 RUN cd ${PYTHON_ENV_DIR}/bin \
+    && venv_home="$(sed -n 's/^home *= *//p' ${PYTHON_ENV_DIR}/pyvenv.cfg)" \
+    && if [ -x "${venv_home}/python3" ]; then base_python="${venv_home}/python3"; else base_python=/usr/bin/python3; fi \
+    && echo "venv base python: ${base_python}" \
     && rm -f python python3 \
-    && ln -s /usr/bin/python3 python3 \
+    && ln -s "${base_python}" python3 \
     && ln -s python3 python \
     && /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && uv pip install --no-cache-dir -r ${APP_DIR}/requirements.txt \
