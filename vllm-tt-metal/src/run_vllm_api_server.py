@@ -1306,7 +1306,10 @@ OMNI_SERVER_ARGS = {
     "stage_init_timeout",
     "init_timeout",
     "trust_remote_code",
+    "forced_aligner_device",
 }
+# Omni server arguments that name a file in the plugin checkout, as the deploy config.
+OMNI_PLUGIN_FILE_ARGS = {"forced_aligner_config"}
 
 
 def omni_deploy_config(default_vllm_args) -> Optional[str]:
@@ -1314,11 +1317,15 @@ def omni_deploy_config(default_vllm_args) -> Optional[str]:
     checkout when relative; None for a plain vLLM spec."""
     for key, value in default_vllm_args.items():
         if _normalize_vllm_arg_name(key) == "deploy_config":
-            path = Path(value)
-            if path.is_absolute():
-                return str(path)
-            return str(Path(os.environ["vllm_tt_plugin_dir"]) / path)
+            return plugin_file(value)
     return None
+
+
+def plugin_file(value) -> str:
+    path = Path(value)
+    if path.is_absolute():
+        return str(path)
+    return str(Path(os.environ["vllm_tt_plugin_dir"]) / path)
 
 
 def set_omni_sys_argv(args, remaining_sys_argv, default_vllm_args, deploy_config):
@@ -1328,6 +1335,13 @@ def set_omni_sys_argv(args, remaining_sys_argv, default_vllm_args, deploy_config
         for key, value in default_vllm_args.items()
         if _normalize_vllm_arg_name(key) in OMNI_SERVER_ARGS
     }
+    server_args.update(
+        {
+            key: plugin_file(value)
+            for key, value in default_vllm_args.items()
+            if _normalize_vllm_arg_name(key) in OMNI_PLUGIN_FILE_ARGS
+        }
+    )
     server_args["deploy-config"] = deploy_config
     set_vllm_sys_argv(args, remaining_sys_argv, server_args)
     sys.argv[1:1] = ["serve", default_vllm_args["model"], "--omni"]

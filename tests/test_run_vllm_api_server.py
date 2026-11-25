@@ -1695,6 +1695,39 @@ def test_an_omni_spec_serves_through_vllm_omni_with_server_args_only(
     ]
 
 
+def test_an_omni_spec_passes_its_forced_aligner_from_the_plugin_checkout(
+    monkeypatch, run_vllm_api_server_module
+):
+    monkeypatch.setattr(sys, "argv", ["run_vllm_api_server.py"])
+    monkeypatch.setenv("vllm_tt_plugin_dir", "/plugin")
+    default_vllm_args = {
+        "model": "Qwen/Qwen3-ASR-1.7B",
+        "deploy-config": "deploy/asr.yaml",
+        "forced-aligner-config": "deploy/aligner.yaml",
+        "forced-aligner-device": "1",
+    }
+
+    deploy_config = run_vllm_api_server_module.omni_deploy_config(default_vllm_args)
+    run_vllm_api_server_module.set_omni_sys_argv(
+        argparse.Namespace(service_port=7001), [], default_vllm_args, deploy_config
+    )
+
+    assert sys.argv == [
+        "run_vllm_api_server.py",
+        "serve",
+        "Qwen/Qwen3-ASR-1.7B",
+        "--omni",
+        "--port",
+        "7001",
+        "--forced-aligner-device",
+        "1",
+        "--forced-aligner-config",
+        "/plugin/deploy/aligner.yaml",
+        "--deploy-config",
+        "/plugin/deploy/asr.yaml",
+    ]
+
+
 def test_a_plain_vllm_spec_has_no_deploy_config(run_vllm_api_server_module):
     assert (
         run_vllm_api_server_module.omni_deploy_config(

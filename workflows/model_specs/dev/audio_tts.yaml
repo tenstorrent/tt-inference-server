@@ -186,6 +186,43 @@ templates:
         MESH_DEVICE: N150
   status: EXPERIMENTAL
 
+# Qwen3-ASR on vLLM-Omni (`vllm serve --omni`), PoC: transcription (stage 0) on one
+# chip, the Qwen3-ForcedAligner-0.6B word-timestamp stage (stage 1) on another. Needs
+# the vllm-tt-plugin PoC ref, whose install script pins vLLM-Omni with
+# vllm-project/vllm-omni#10609. tenstorrent/vllm-tt-plugin#287
+- weights:
+    - Qwen/Qwen3-ASR-1.7B
+  impl: qwen3_asr_omni
+  min_disk_gb: 15
+  min_ram_gb: 8
+  model_type: AUDIO
+  inference_engine: VLLM
+  # Each stage warms up as it starts.
+  has_builtin_warmup: true
+  device_model_specs:
+    - device: GALAXY
+      # Stage 0 batches up to 8 requests (max_num_seqs in the deploy config).
+      max_concurrency: 8
+      max_context: 2048  # stage 0's max_model_len
+      default_impl: true
+      vllm_args:
+        deploy-config: poc/qwen3-asr-omni/deploy/tt_qwen3_asr_aligner.yaml
+        forced-aligner-config: poc/qwen3-asr-omni/deploy/tt_qwen3_forced_aligner.yaml
+        forced-aligner-device: "1"
+        trust-remote-code: true
+        stage-init-timeout: "600"
+        init-timeout: "900"
+      env_vars:
+        # Two chips of the Galaxy, each opened as an N150.
+        TT_VISIBLE_DEVICES: "0,1"
+        MESH_DEVICE: N150
+        # Long files: vLLM splits them into 30 s requests.
+        VLLM_MAX_AUDIO_CLIP_FILESIZE_MB: "200"
+        VLLM_MAX_AUDIO_DECODE_DURATION_S: "4000"
+        # The model extracts its text decoder once; the weights mount is read-only.
+        QWEN3ASR_TEXT_DECODER: /home/container_app_user/cache_root/qwen3_asr_text_decoder
+  status: EXPERIMENTAL
+
 - weights:
     - Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice
   impl: qwen3_tts
