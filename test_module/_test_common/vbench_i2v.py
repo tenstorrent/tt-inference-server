@@ -68,7 +68,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 # provenance.json, vbench.json).
 # Private to the Tenstorrent org, so reading it needs HF_TOKEN. The revision is
 # pinned, so a new reference or image set reaches CI only through a commit here.
-I2V_EVAL_HF_REPO = "Tenstorrent/wan2.2-i2v-vbench-refs"
+I2V_EVAL_HF_REPO = "Tenstorrent/wan2.2-i2v-vbench-refs-internal"
 I2V_EVAL_HF_REVISION = "821c6cb061c5d4109d10c467d54d478e5fa0095a"
 # The GPU run TT is compared with: Wan2.2's I2V settings, Cache-DiT off.
 GPU_REFERENCE_RUN = "refs/r1"

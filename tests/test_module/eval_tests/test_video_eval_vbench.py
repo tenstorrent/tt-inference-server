@@ -39,7 +39,7 @@ CLIP = "00_vbi2v_9999_832x480.mp4"
 
 def _comparison(run: str, tt: float = 0.98, gpu: float = 0.98) -> dict:
     return {
-        "reference": f"Tenstorrent/wan2.2-i2v-vbench-refs/{run}",
+        "reference": f"Tenstorrent/wan2.2-i2v-vbench-refs-internal/{run}",
         "gpu": "H100",
         "clips": 1,
         "dimensions": {

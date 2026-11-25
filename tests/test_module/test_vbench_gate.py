@@ -64,7 +64,7 @@ def comparison(
         }
 
     return {
-        "reference": f"Tenstorrent/wan2.2-i2v-vbench-refs/{run}",
+        "reference": f"Tenstorrent/wan2.2-i2v-vbench-refs-internal/{run}",
         "dimensions": {
             "i2v_subject": dim(*subject),
             "imaging_quality": dim(*imaging),

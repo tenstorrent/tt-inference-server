@@ -29,19 +29,19 @@ logger = logging.getLogger(__name__)
 # model_id -> (Hugging Face dataset, pinned revision)
 EVAL_DATA = {
     "black-forest-labs/flux.2-klein-4b": (
-        "Tenstorrent/flux.2-klein-4b-refs",
+        "Tenstorrent/flux.2-klein-4b-refs-internal",
         "6fa54cad3af7730e811cd9284324ff2c1e030c25",
     ),
     "qwen/qwen-image-edit-2511": (
-        "Tenstorrent/qwen-image-edit-2511-refs",
+        "Tenstorrent/qwen-image-edit-2511-refs-internal",
         "8104d15d8e6edb0da8f43db00269ed8a24592aca",
     ),
     "ideogram-ai/ideogram-4": (
-        "Tenstorrent/ideogram-4-refs",
+        "Tenstorrent/ideogram-4-refs-internal",
         "9b8d74ca4fe1ad0fe811db1199c765e5c81faf90",
     ),
     "black-forest-labs/flux-3-image-klein": (
-        "Tenstorrent/flux-3-image-klein-refs",
+        "Tenstorrent/flux-3-image-klein-refs-internal",
         "91da28bd0bf46f32c27d380fe6dcae602bc7992c",
     ),
 }
