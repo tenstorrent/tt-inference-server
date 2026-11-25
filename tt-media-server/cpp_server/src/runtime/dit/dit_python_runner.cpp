@@ -22,10 +22,10 @@ namespace tt::dit {
 
 namespace {
 
-constexpr int kCpuThreads = 2;
-constexpr int kTorchThreads = 1;
-constexpr uint64_t kMessageTag = 0x7E57;
-constexpr int kRootRank = 0;
+constexpr int CPU_THREADS = 2;
+constexpr int TORCH_THREADS = 1;
+constexpr uint64_t MESSAGE_TAG = 0x7E57;
+constexpr int ROOT_RANK = 0;
 
 double secondsSince(std::chrono::steady_clock::time_point t) {
   return std::chrono::duration<double>(std::chrono::steady_clock::now() - t)
@@ -42,15 +42,15 @@ py::object toPython(const Json::Value& value) {
 /** The adapters call torch and numpy: keep them from oversubscribing the CPU
  *  (the Python server's device worker sets the same limits). */
 void setCpuThreadLimits() {
-  setEnvIfChanged("OMP_NUM_THREADS", std::to_string(kCpuThreads));
-  setEnvIfChanged("MKL_NUM_THREADS", std::to_string(kCpuThreads));
-  setEnvIfChanged("TORCH_NUM_THREADS", std::to_string(kTorchThreads));
+  setEnvIfChanged("OMP_NUM_THREADS", std::to_string(CPU_THREADS));
+  setEnvIfChanged("MKL_NUM_THREADS", std::to_string(CPU_THREADS));
+  setEnvIfChanged("TORCH_NUM_THREADS", std::to_string(TORCH_THREADS));
   py::module_ torch = py::module_::import("torch");
-  if (torch.attr("get_num_threads")().cast<int>() != kTorchThreads) {
-    torch.attr("set_num_threads")(kTorchThreads);
+  if (torch.attr("get_num_threads")().cast<int>() != TORCH_THREADS) {
+    torch.attr("set_num_threads")(TORCH_THREADS);
   }
-  if (torch.attr("get_num_interop_threads")().cast<int>() != kTorchThreads) {
-    torch.attr("set_num_interop_threads")(kTorchThreads);
+  if (torch.attr("get_num_interop_threads")().cast<int>() != TORCH_THREADS) {
+    torch.attr("set_num_interop_threads")(TORCH_THREADS);
   }
 }
 

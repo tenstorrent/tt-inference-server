@@ -11,8 +11,8 @@ DeviceParams wan22DeviceParams(MeshShape mesh, bool blackhole) {
   p.ring = isLargeMesh(mesh) || (blackhole && mesh == MeshShape{1, 4});
   p.relaxedInit = blackhole;
   if (isLargeMesh(mesh) && blackhole) {
-    p.traceRegionBytes = kGalaxyBhTraceRegionBytes;
-    p.routerPayloadBytes = kGalaxyRouterPayloadBytes;
+    p.traceRegionBytes = GALAXY_BH_TRACE_REGION_BYTES;
+    p.routerPayloadBytes = GALAXY_ROUTER_PAYLOAD_BYTES;
   }
   return p;
 }

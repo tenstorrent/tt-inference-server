@@ -12,7 +12,7 @@ namespace tt::dit {
 
 namespace {
 
-const std::pair<const char*, MeshShape> kMeshEnvOverrides[] = {
+const std::pair<const char*, MeshShape> MESH_ENV_OVERRIDES[] = {
     {"SD_3_5_FAST", {4, 8}},
     {"SD_3_5_BASE", {2, 4}},
     {"TP2", {2, 1}},
@@ -23,7 +23,7 @@ const std::pair<const char*, MeshShape> kMeshEnvOverrides[] = {
 
 MeshShape resolveMesh(const std::map<std::string, MeshShape>& meshes,
                       const std::string& runner, const std::string& device) {
-  for (const auto& [name, shape] : kMeshEnvOverrides) {
+  for (const auto& [name, shape] : MESH_ENV_OVERRIDES) {
     const auto value = envString(name);
     if (value && lowered(*value) == "true") return shape;
   }

@@ -42,7 +42,7 @@ DiTRequest request(const std::string& json) {
   return DiTRequest::fromJson(v);
 }
 
-const char* kImg = "aGVsbG8=";  // base64 content is not decoded in C++
+const char* testImg = "aGVsbG8=";  // base64 content is not decoded in C++
 
 struct EnvGuard {
   std::string name;
@@ -191,8 +191,8 @@ TEST(DiTWan, ImageConditionedModelsCheckAndForwardImagePrompts) {
       [&] { model->validate(request(R"({"prompt":"x"})")); }, "image_prompts");
   auto two = [&](int a, int b) {
     return request(std::string(R"({"prompt":"x","image_prompts":[{"image":")") +
-                   kImg + R"(","frame_pos":)" + std::to_string(a) +
-                   R"(},{"image":")" + kImg + R"(","frame_pos":)" +
+                   testImg + R"(","frame_pos":)" + std::to_string(a) +
+                   R"(},{"image":")" + testImg + R"(","frame_pos":)" +
                    std::to_string(b) + "}]}");
   };
   expectRefused<RequestError>([&] { model->validate(two(0, 0)); },

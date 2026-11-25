@@ -15,10 +15,10 @@ namespace {
 
 using Meshes = std::map<std::string, MeshShape>;
 
-const char* const kWanT2V = "Wan-AI/Wan2.2-T2V-A14B-Diffusers";
-const char* const kWanI2V = "Wan-AI/Wan2.2-I2V-A14B-Diffusers";
+const char* const WAN_T2V = "Wan-AI/Wan2.2-T2V-A14B-Diffusers";
+const char* const WAN_I2V = "Wan-AI/Wan2.2-I2V-A14B-Diffusers";
 
-const Meshes kWanMeshes = {{"n150", {1, 1}},   {"t3k", {2, 4}},
+const Meshes WAN_MESHES = {{"n150", {1, 1}},   {"t3k", {2, 4}},
                            {"galaxy", {4, 8}}, {"bh-galaxy", {4, 8}},
                            {"p150x4", {1, 4}}, {"p150x8", {2, 4}},
                            {"p300x2", {2, 2}}, {"galaxy_quad", {4, 32}}};
@@ -45,17 +45,17 @@ struct Entry {
   std::unique_ptr<DiTModel> (*create)(const RunnerConfig&);
 };
 
-const Entry kEntries[] = {
+const Entry ENTRIES[] = {
     // Wan2.2
     {"tt-wan2.2",
      [](const RunnerConfig& c) {
-       auto s = video("Wan22", kWanMeshes, kWanT2V);
+       auto s = video("Wan22", WAN_MESHES, WAN_T2V);
        s.untracedDevices = {"t3k"};  // traced output is noise on a T3K
        return make<WanModel>(c, s);
      }},
     {"tt-wan2.2-i2v",
      [](const RunnerConfig& c) {
-       auto s = video("Wan22-I2V", withoutN150(kWanMeshes), kWanI2V);
+       auto s = video("Wan22-I2V", withoutN150(WAN_MESHES), WAN_I2V);
        s.untracedDevices = {"t3k"};  // same pipeline, same mesh as T2V
        return make<WanI2VModel>(c, s);
      }},
@@ -65,13 +65,13 @@ const Entry kEntries[] = {
 
 std::vector<std::string> supportedRunners() {
   std::vector<std::string> names;
-  for (const auto& e : kEntries) names.push_back(e.name);
+  for (const auto& e : ENTRIES) names.push_back(e.name);
   std::sort(names.begin(), names.end());
   return names;
 }
 
 std::unique_ptr<DiTModel> createModel(const RunnerConfig& config) {
-  for (const auto& e : kEntries) {
+  for (const auto& e : ENTRIES) {
     if (config.modelRunner == e.name) return e.create(config);
   }
   std::string known;

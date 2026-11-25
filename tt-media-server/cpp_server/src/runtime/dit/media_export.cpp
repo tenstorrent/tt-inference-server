@@ -32,11 +32,11 @@ namespace tt::dit {
 
 namespace {
 
-constexpr int kDefaultCrf = 23;
-constexpr const char* kDefaultPreset = "ultrafast";
-constexpr int kFfmpegTimeoutS = 600;
+constexpr int DEFAULT_CRF = 23;
+constexpr const char* DEFAULT_PRESET = "ultrafast";
+constexpr int FFMPEG_TIMEOUT_S = 600;
 // ffmpeg that takes no input for this long is stuck.
-constexpr int kFeedStallS = 120;
+constexpr int FEED_STALL_S = 120;
 
 double elementAt(const ArrayView& a, size_t i) {
   switch (a.dtype) {
@@ -103,7 +103,7 @@ class SigpipeGuard {
     sigset_t set;
     sigemptyset(&set);
     sigaddset(&set, SIGPIPE);
-    pthread_sigmask(SIG_BLOCK, &set, &previous_);
+    pthread_sigmask(SIG_BLOCK, &set, &previous);
   }
   ~SigpipeGuard() {
     sigset_t set;
@@ -112,13 +112,13 @@ class SigpipeGuard {
     const timespec none{0, 0};
     while (::sigtimedwait(&set, nullptr, &none) > 0) {
     }
-    pthread_sigmask(SIG_SETMASK, &previous_, nullptr);
+    pthread_sigmask(SIG_SETMASK, &previous, nullptr);
   }
   SigpipeGuard(const SigpipeGuard&) = delete;
   SigpipeGuard& operator=(const SigpipeGuard&) = delete;
 
  private:
-  sigset_t previous_;
+  sigset_t previous;
 };
 
 /** In the forked child: ffmpeg must not hold the server's sockets or the
@@ -205,7 +205,7 @@ void runFfmpeg(const std::vector<std::string>& args,
 
   int status = 0;
   const auto deadline =
-      std::chrono::steady_clock::now() + std::chrono::seconds(kFfmpegTimeoutS);
+      std::chrono::steady_clock::now() + std::chrono::seconds(FFMPEG_TIMEOUT_S);
   bool exited = false;
   while (std::chrono::steady_clock::now() < deadline) {
     if (::waitpid(pid, &status, WNOHANG) == pid) {
@@ -233,10 +233,10 @@ void writeAll(int fd, const void* data, size_t size) {
       if (errno == EINTR) continue;
       if (errno == EAGAIN || errno == EWOULDBLOCK) {
         pollfd waiting{fd, POLLOUT, 0};
-        const int ready = ::poll(&waiting, 1, kFeedStallS * 1000);
+        const int ready = ::poll(&waiting, 1, FEED_STALL_S * 1000);
         if (ready == 0) {
           throw std::runtime_error("ffmpeg stopped reading its input for " +
-                                   std::to_string(kFeedStallS) + " s");
+                                   std::to_string(FEED_STALL_S) + " s");
         }
         if (ready < 0 && errno != EINTR) break;
         continue;
@@ -365,13 +365,13 @@ void writeFrame(int fd, const ArrayView& v, const FrameGeometry& g,
 }
 
 std::pair<int, std::string> encodeSettings() {
-  int crf = kDefaultCrf;
+  int crf = DEFAULT_CRF;
   if (const auto v = envString("TT_VIDEO_EXPORT_CRF"); v && !v->empty()) {
     crf = std::clamp(std::stoi(*v), 0, 51);
   }
   return {
       crf,
-      trimmed(envString("TT_VIDEO_EXPORT_PRESET").value_or(kDefaultPreset))};
+      trimmed(envString("TT_VIDEO_EXPORT_PRESET").value_or(DEFAULT_PRESET))};
 }
 
 }  // namespace
