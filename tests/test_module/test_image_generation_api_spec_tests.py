@@ -167,8 +167,8 @@ def test_contract_fails_and_cancels_jobs_when_the_server_accepts_everything(
         for r in result["detailed_test_results"]
         if not r["passed"]
     }
-    assert "caption_photo_and_art_style" in failed and "count_above_1" in failed
-    assert "the server created job" in failed["prompt_is_not_a_field"]
+    assert "caption_bbox_above_1000" in failed and "count_above_1" in failed
+    assert "the server created job" in failed["prompt_and_structured_prompt"]
     # Every job a refused request created was cancelled.
     assert all(job["status"] == "cancelled" for job in server.jobs.values())
 

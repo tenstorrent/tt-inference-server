@@ -222,6 +222,7 @@ MODELS = {
             unserved_model_id="black-forest-labs/flux.2-klein-4b",
             request_fields=frozenset(
                 {
+                    "prompt",
                     "structured_prompt",
                     "count",
                     "aspect_ratio",
@@ -231,7 +232,8 @@ MODELS = {
                     "rendering_speed",
                 }
             ),
-            required_fields=("structured_prompt",),
+            # Exactly one of prompt and structured_prompt: neither on its own.
+            required_fields=(),
             sizes=_IDEOGRAM_SIZES,
             default_size="2K",
             default_aspect_ratio="1:1",

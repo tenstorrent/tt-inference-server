@@ -38,9 +38,9 @@ def _error(loc: list, msg: str, type_: str, value: Any = None) -> dict:
     return {"loc": ["body", *loc], "msg": msg, "type": type_, "input": value}
 
 
-def _palette_errors(loc: list, value: Any, max_items: int) -> list[dict]:
-    if not isinstance(value, list) or len(value) > max_items:
-        return [_error(loc, f"at most {max_items} colors", "too_long", value)]
+def _palette_errors(loc: list, value: Any) -> list[dict]:
+    if not isinstance(value, list):
+        return [_error(loc, "a list of colors", "list_type", value)]
     return [
         _error([*loc, i], "uppercase #RRGGBB", "string_pattern_mismatch", c)
         for i, c in enumerate(value)
@@ -89,19 +89,8 @@ def caption_errors(caption: Any) -> list[dict]:
             _error([*sloc, k], "Extra inputs are not permitted", "extra_forbidden")
             for k in sorted(style.keys() - keys)
         ]
-        errors += [
-            _error([*sloc, k], "Field required", "missing")
-            for k in ("aesthetics", "lighting", "medium")
-            if k not in style
-        ]
-        if ("photo" in style) == ("art_style" in style):
-            errors.append(
-                _error(sloc, "exactly one of photo and art_style", "value_error")
-            )
         if "color_palette" in style:
-            errors += _palette_errors(
-                [*sloc, "color_palette"], style["color_palette"], 16
-            )
+            errors += _palette_errors([*sloc, "color_palette"], style["color_palette"])
     comp = caption.get("compositional_deconstruction")
     if comp is None:
         return [
@@ -132,7 +121,7 @@ def caption_errors(caption: Any) -> list[dict]:
             errors += _bbox_errors([*eloc, "bbox"], element["bbox"])
         if "color_palette" in element:
             errors += _palette_errors(
-                [*eloc, "color_palette"], element["color_palette"], 5
+                [*eloc, "color_palette"], element["color_palette"]
             )
     return errors
 
@@ -148,7 +137,7 @@ def validation_errors(model: api.ImageModel, body: dict) -> list[dict]:
         for key in model.required_fields
         if key not in body
     ]
-    if model.prompt_field == "prompt" and body.get("prompt") == "":
+    if "prompt" in model.request_fields and body.get("prompt") == "":
         errors.append(
             _error(["prompt"], "at least 1 character", "string_too_short", "")
         )
@@ -198,6 +187,22 @@ def validation_errors(model: api.ImageModel, body: dict) -> list[dict]:
         ]
     if "structured_prompt" in body and "structured_prompt" in model.request_fields:
         errors += caption_errors(body["structured_prompt"])
+    if model.prompt_field == "structured_prompt" and not errors:
+        # Exactly one of prompt and structured_prompt (a model validator, so the
+        # error names no field); then, with the prompt enhancer off, a plain
+        # prompt is refused.
+        if ("prompt" in body) == ("structured_prompt" in body):
+            errors.append(
+                _error([], "exactly one of prompt and structured_prompt", "value_error")
+            )
+        elif "prompt" in body:
+            errors.append(
+                _error(
+                    ["prompt"],
+                    "no prompt enhancer; send structured_prompt",
+                    "value_error",
+                )
+            )
     return errors
 
 

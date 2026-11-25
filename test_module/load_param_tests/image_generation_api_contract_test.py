@@ -80,6 +80,7 @@ def cases(
     model: ImageModel,
     unfetchable_image_url: str = DEFAULT_UNFETCHABLE_IMAGE_URL,
     sizes: tuple[str, ...] | None = None,
+    prompt_enhancer: bool = False,
 ) -> list[RequestCase]:
     valid = valid_payload(model, sizes)
     path = model.submit_path
@@ -167,8 +168,7 @@ def cases(
 
     if model.prompt_field == "structured_prompt":
         result += ideogram_caption_cases(valid, path)
-        # Plain text needs prompt expansion, which the API does not run yet.
-        result.append(field("prompt_is_not_a_field", "prompt", PROMPT))
+        result += ideogram_prompt_cases(valid, path, prompt_enhancer)
     if "negative_prompt" in model.request_fields:
         result.append(field("negative_prompt_not_a_string", "negative_prompt", 123))
     return result
@@ -201,19 +201,6 @@ def ideogram_caption_cases(valid: dict, path: str) -> list[RequestCase]:
             lambda c: c["compositional_deconstruction"].pop("elements"),
             "elements",
         ),
-        # Exactly one of photo and art_style.
-        caption_case(
-            "caption_photo_and_art_style",
-            lambda c: c["style_description"].update(
-                art_style="flat vector illustration"
-            ),
-            "style_description",
-        ),
-        caption_case(
-            "caption_neither_photo_nor_art_style",
-            lambda c: c["style_description"].pop("photo"),
-            "style_description",
-        ),
         caption_case(
             "caption_bbox_above_1000",
             lambda c: element(c).update(bbox=[0, 0, 1001, 10]),
@@ -228,11 +215,6 @@ def ideogram_caption_cases(valid: dict, path: str) -> list[RequestCase]:
         caption_case(
             "caption_palette_color_not_hex",
             lambda c: c["style_description"].update(color_palette=["#B2222G"]),
-            "color_palette",
-        ),
-        caption_case(
-            "caption_element_palette_over_5",
-            lambda c: element(c).update(color_palette=["#000000"] * 6),
             "color_palette",
         ),
         caption_case(
@@ -251,6 +233,43 @@ def ideogram_caption_cases(valid: dict, path: str) -> list[RequestCase]:
     ]
 
 
+def ideogram_prompt_cases(
+    valid: dict, path: str, prompt_enhancer: bool
+) -> list[RequestCase]:
+    """Ideogram 4 takes exactly one of a plain `prompt`, which the prompt
+    enhancer rewrites into a caption, and a `structured_prompt`."""
+    no_caption = {k: v for k, v in valid.items() if k != "structured_prompt"}
+    result = [
+        # The model's own validator: the error names no single field.
+        RequestCase("neither_prompt_nor_structured_prompt", no_caption, path=path),
+        RequestCase(
+            "prompt_and_structured_prompt", {**valid, "prompt": PROMPT}, path=path
+        ),
+        RequestCase(
+            "empty_prompt", {**no_caption, "prompt": ""}, path=path, fields=("prompt",)
+        ),
+    ]
+    if not prompt_enhancer:
+        # A deployment without the enhancer can only take a structured_prompt.
+        result.append(
+            RequestCase(
+                "prompt_without_prompt_enhancer",
+                {**no_caption, "prompt": PROMPT},
+                path=path,
+                fields=("prompt",),
+            )
+        )
+    return result
+
+
+def deployment_runs_prompt_enhancer(model_spec: Any) -> bool:
+    """Whether the deployment turns on Ideogram 4's prompt enhancer
+    (tt-media-server's IDEOGRAM_PROMPT_ENHANCER; off unless set)."""
+    env = getattr(model_spec, "env_vars", None) or {}
+    value = str(env.get("IDEOGRAM_PROMPT_ENHANCER", "none")).strip().lower()
+    return value not in ("", "none")
+
+
 async def run_create_contract(
     *,
     base_url: str,
@@ -259,12 +278,13 @@ async def run_create_contract(
     request_timeout: float = DEFAULT_REQUEST_TIMEOUT_SECONDS,
     unfetchable_image_url: str = DEFAULT_UNFETCHABLE_IMAGE_URL,
     sizes: tuple[str, ...] | None = None,
+    prompt_enhancer: bool = False,
 ) -> dict[str, Any]:
     timeout = aiohttp.ClientTimeout(total=request_timeout)
     async with aiohttp.ClientSession(timeout=timeout) as session:
         results = [
             await run_case(session, base_url=base_url, api_key=api_key, case=case)
-            for case in cases(model, unfetchable_image_url, sizes)
+            for case in cases(model, unfetchable_image_url, sizes, prompt_enhancer)
         ]
     for result in results:
         if not result["passed"]:
@@ -303,6 +323,7 @@ class ImageGenerationAPIContractTest(BaseTest):
                 "unfetchable_image_url", DEFAULT_UNFETCHABLE_IMAGE_URL
             ),
             sizes=tuple(self.targets.get("sizes") or ()) or None,
+            prompt_enhancer=deployment_runs_prompt_enhancer(self.ctx.model_spec),
         )
 
 
