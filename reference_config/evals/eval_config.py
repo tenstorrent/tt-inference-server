@@ -10706,6 +10706,10 @@ _eval_config_list = [
             ),
         ],
     ),
+    # Wan2.2 has no published score for this CLIP eval (the 72.0 these entries
+    # carried cited MobileNetV2, arXiv 1801.04381). Placeholders until the GPU
+    # reference dataset lands: fill gpu_reference_score / _ref from it, and the
+    # clip_valid_range in model_accuracy_reference.json that actually gates.
     EvalConfig(
         hf_model_repo="Wan-AI/Wan2.2-T2V-A14B-Diffusers",
         tasks=[
@@ -10716,13 +10720,17 @@ _eval_config_list = [
                 max_concurrent=None,
                 apply_chat_template=False,
                 score=EvalTaskScore(
-                    published_score=72.0,
-                    published_score_ref="https://arxiv.org/abs/1801.04381",
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
                     score_func=lambda results: 0.0,
                 ),
             ),
         ],
     ),
+    # I2V is graded by VBench against the GPU references, not by this score
+    # (test_module/eval_tests/video_eval_tests._i2v_eval_block).
     EvalConfig(
         hf_model_repo="Wan-AI/Wan2.2-I2V-A14B-Diffusers",
         tasks=[
@@ -10733,8 +10741,10 @@ _eval_config_list = [
                 max_concurrent=None,
                 apply_chat_template=False,
                 score=EvalTaskScore(
-                    published_score=72.0,
-                    published_score_ref="https://arxiv.org/abs/1801.04381",
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
                     score_func=lambda results: 0.0,
                 ),
             ),

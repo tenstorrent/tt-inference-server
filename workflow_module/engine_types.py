@@ -279,4 +279,5 @@ class WorkflowVenvType(IntEnum):
     TT_SMI = auto()
     TT_TOPOLOGY = auto()
     LLM_VLLM_TOKEN_TIMING = auto()
+    VBENCH_I2V = auto()
     MINIMAX_VERIFIER = auto()

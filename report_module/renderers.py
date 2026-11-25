@@ -428,6 +428,166 @@ def _has_target_checks(block: Block) -> bool:
     )
 
 
+VBENCH_KIND = "vbench"
+
+
+VBENCH_OUTPUT_NOTE = (
+    "Means over each frame against the GPU clip from the same noise: PSNR and "
+    "SSIM higher is closer, LPIPS lower."
+)
+
+
+def _vbench_mark(check: Mapping[str, Any] | None) -> str:
+    """A failed gate check's marker for its table cell."""
+    return " ❌" if check and check.get("status") == "FAIL" else ""
+
+
+def _vbench_number(value: Any, digits: int) -> str:
+    return "" if value is None else f"{value:.{digits}f}"
+
+
+def _vbench_check_row(check: Mapping[str, Any]) -> Dict[str, str]:
+    """One gate check: what it measured, its limit and its result."""
+    name = check.get("check") or ""
+    value, threshold = check.get("value"), check.get("threshold")
+    detail = check.get("detail") or ""
+    if check.get("resolution"):
+        # Frame metrics: LPIPS lower is closer, PSNR and SSIM higher.
+        shown = _vbench_number(value, 4)
+        bound = "≤" if name.endswith("lpips") else "≥"
+        limit = "" if threshold is None else f"{bound} {threshold:g}"
+    else:
+        # VBench dimensions: TT's change from the GPU score, in %.
+        shown = "" if value is None else f"{value:+.2f} %"
+        limit = "" if threshold is None else f"≥ {threshold:g} %"
+        if check.get("ci_pct"):
+            low, high = check["ci_pct"]
+            detail += f"; 95% CI [{low:+.2f}, {high:+.2f}] %"
+    status = check.get("status") or ""
+    return {
+        "Check": name,
+        "GPU reference": f"{check.get('reference')} ({check.get('role')})",
+        "Resolution": check.get("resolution") or "",
+        "Value": shown,
+        "Limit": limit,
+        "Result": f"{glyph_for_label(status)} {status}".strip(),
+        "Detail": detail,
+    }
+
+
+@register(VBENCH_KIND)
+def render_vbench(block: Block, metadata: Mapping[str, Any]) -> str:
+    """The I2V eval's VBench scores against each GPU reference, and the gate.
+
+    Built from the scorer's summary (vbench_i2v.report_summary): one row per
+    dimension with each reference's score and TT's change from it, then each
+    reference's frame metrics per resolution. A failed gate check is marked in
+    its cell, and every check is listed below with its value and limit.
+    Per-clip detail stays in the run's vbench.json.
+    """
+    data = block.data if isinstance(block.data, Mapping) else {}
+    gate = data.get("gate") or {}
+    checks = {
+        (c.get("reference"), c.get("check"), c.get("resolution")): c
+        for c in gate.get("checks") or []
+    }
+    references = [r for r in data.get("references") or [] if "error" not in r]
+    scores = data.get("scores") or {}
+    problems = data.get("problems") or {}
+
+    intro = (
+        f"{data.get('num_clips') or 0} clips, scored on {data.get('device') or '?'}."
+    )
+    if gate:
+        verdict = gate.get("verdict", "NA")
+        intro += f" Gate: {glyph_for_label(verdict)} {verdict}".rstrip()
+        intro += f" ({sum(c.get('status') == 'FAIL' for c in checks.values())} of"
+        intro += f" {len(checks)} checks failed)."
+    lines = [f"### VBench: {data.get('heading') or block.title}", "", intro]
+    if data.get("error"):
+        lines += ["", f"{data['error']}; the scores are what finished."]
+
+    rows = []
+    for name in [*scores, *(p for p in problems if p not in scores)]:
+        run_checks = [checks.get((r.get("run"), name, None)) for r in references]
+        reported = any(c and c.get("status") == "REPORTED" for c in run_checks)
+        row = {
+            "Dimension": f"{name} (reported)" if reported else name,
+            "TT": _vbench_number(scores.get(name), 4) or str(problems[name])[:80],
+        }
+        for reference, check in zip(references, run_checks):
+            run = reference.get("run") or reference["reference"]
+            label = f"{run} ({reference['role']})" if reference.get("role") else run
+            limit = reference.get("tolerance_pct")
+            gpu = (reference.get("dimensions") or {}).get(name) or {}
+            change = ""
+            if gpu.get("change_pct") is not None:
+                change = f"{gpu['change_pct']:+.2f}"
+            row[f"GPU {label}"] = _vbench_number(gpu.get("gpu"), 4)
+            delta = f"Δ % vs {run}" + (f" (≥ −{limit:g})" if limit is not None else "")
+            row[delta] = change + _vbench_mark(check)
+        rows.append(row)
+    if rows:
+        lines += ["", build_markdown_table(rows)]
+
+    output = []
+    for reference in references:
+        run = reference.get("run") or reference["reference"]
+        for res, m in (reference.get("output") or {}).items():
+            mark = {
+                key: _vbench_mark(checks.get((run, f"mean_{key}", res)))
+                for key in ("psnr", "ssim", "lpips")
+            }
+            worst = ""
+            if m.get("worst_lpips") is not None:
+                worst = f"{m['worst_lpips']:.3f} ({m['worst_clip']})"
+                worst += _vbench_mark(checks.get((run, "clip_lpips", res)))
+            output.append(
+                {
+                    "GPU reference": run,
+                    "Resolution": res,
+                    "Clips": m.get("clips"),
+                    "PSNR (dB)": _vbench_number(m.get("psnr"), 2) + mark["psnr"],
+                    "SSIM": _vbench_number(m.get("ssim"), 3) + mark["ssim"],
+                    "LPIPS": _vbench_number(m.get("lpips"), 3) + mark["lpips"],
+                    "Worst clip LPIPS": worst,
+                }
+            )
+    if output:
+        lines += ["", build_markdown_table(output), "", VBENCH_OUTPUT_NOTE]
+
+    if gate.get("checks"):
+        lines += [
+            "",
+            "#### Gate checks",
+            "",
+            build_markdown_table([_vbench_check_row(c) for c in gate["checks"]]),
+        ]
+
+    notes = []
+    for reference in data.get("references") or []:
+        run = reference.get("run") or reference["reference"]
+        if reference.get("noise_differs"):
+            notes.append(
+                f"- {run}: {reference['noise_differs']} of {reference['noise_checked']}"
+                " seeds do not redraw the GPU run's saved noise on this host"
+            )
+        if reference.get("failed_clips"):
+            notes.append(
+                f"- {run}: frame metrics failed for {', '.join(reference['failed_clips'])}"
+            )
+        if reference.get("lpips_error"):
+            notes.append(
+                f"- {run}: LPIPS unavailable, {reference['lpips_error'][:200]}"
+            )
+        if "error" in reference and not gate:
+            notes.append(f"- {run}: comparison failed, {reference['error'][:200]}")
+    if notes:
+        lines += ["", *notes]
+    lines += ["", "Per-clip scores and frame metrics: vbench.json with the eval clips."]
+    return "\n".join(lines)
+
+
 @register(BENCHMARKS_KIND)
 def render_benchmarks(block: Block, metadata: Mapping[str, Any]) -> str:
     """Render a benchmark block plus whichever notes apply.
