@@ -305,6 +305,35 @@ def http_request(
         raise Exception from e
 
 
+def check_hf_anonymous_access(repo: str) -> bool:
+    """True when ``repo`` is a public, ungated model that downloads without a token.
+
+    Lets runs without HF_TOKEN proceed for such repos (huggingface_hub treats an
+    empty HF_TOKEN as no token); any doubt, including a network error, is False.
+    """
+    if not repo:
+        return False
+    try:
+        data, status, _ = http_request(f"https://huggingface.co/api/models/{repo}")
+        info = json.loads(data.decode("utf-8")) if status == 200 else {}
+        siblings = info.get("siblings") or []
+        first_file = siblings[0].get("rfilename") if siblings else None
+        if info.get("gated") is not False or info.get("private") or not first_file:
+            logger.error(f"⛔ {repo} is not a public, ungated model repo.")
+            return False
+        _, status, headers = http_request(
+            f"https://huggingface.co/{repo}/resolve/main/{first_file}", method="HEAD"
+        )
+    except Exception as e:
+        logger.error(f"⛔ Anonymous Hugging Face access check failed for {repo}: {e}")
+        return False
+    if status >= 400 or any(k.lower() == "x-error-code" for k in headers):
+        logger.error(f"⛔ {repo} cannot be downloaded anonymously (HTTP {status}).")
+        return False
+    logger.info(f"✅ {repo} is public and ungated: proceeding without HF_TOKEN.")
+    return True
+
+
 class HostSetupManager:
     def __init__(
         self,
@@ -338,6 +367,8 @@ class HostSetupManager:
         )
         self.jwt_secret = jwt_secret
         self.hf_token = hf_token
+        # Set by get_hf_env_vars() when there is no HF_TOKEN and the repo is public.
+        self.hf_anonymous = False
         self.image_user = int(image_user) if image_user else None
 
     def check_model_weights_dir(self, host_weights_dir: Path) -> bool:
@@ -540,7 +571,17 @@ class HostSetupManager:
         self.hf_token = self.hf_token or os.getenv("HF_TOKEN", "")
         if not self.hf_token and not self.automatic:
             self.hf_token = getpass.getpass("Enter your HF_TOKEN: ").strip()
-        assert self.check_hf_access(self.hf_token), "⛔ HF_TOKEN validation failed."
+        if self.hf_token:
+            assert self.check_hf_access(self.hf_token), "⛔ HF_TOKEN validation failed."
+        else:
+            logger.info("HF_TOKEN is not set: checking anonymous Hugging Face access.")
+            self.hf_anonymous = check_hf_anonymous_access(
+                self.model_spec.hf_weights_repo
+            )
+            assert self.hf_anonymous, (
+                "⛔ HF_TOKEN validation failed: HF_TOKEN is not set and "
+                f"{self.model_spec.hf_weights_repo} is not downloadable anonymously."
+            )
 
         if self.setup_config.host_hf_cache:
             hf_home = Path(self.setup_config.host_hf_cache)
@@ -699,14 +740,17 @@ class HostSetupManager:
             )
             return
 
-        assert self.hf_token, "⛔ HF_TOKEN not set."
+        assert self.hf_token or self.hf_anonymous, "⛔ HF_TOKEN not set."
         if self.model_spec.repacked == 1:
             raise ValueError("⛔ Repacked models are not supported for Hugging Face.")
         # setup venv using uv
         venv_config = VENV_CONFIGS[WorkflowVenvType.HF_SETUP]
         venv_config.setup(model_spec=self.model_spec)
         os.environ["HF_HUB_DOWNLOAD_TIMEOUT"] = "60"
-        os.environ["HF_TOKEN"] = self.hf_token
+        if self.hf_token:
+            os.environ["HF_TOKEN"] = self.hf_token
+        else:
+            logger.info("Downloading anonymously (no HF_TOKEN; public, ungated repo).")
         hf_exec = venv_config.venv_path / "bin" / "hf"
         assert hf_exec.exists(), (
             f"⛔ 'hf' CLI not found at: {hf_exec}. Check HF_SETUP venv installation."

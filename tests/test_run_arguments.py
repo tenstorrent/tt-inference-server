@@ -1500,6 +1500,27 @@ class TestSecretsHandling:
         assert mock_getpass.call_count == 2
         mock_write_dotenv.assert_called_once()
 
+    @pytest.mark.parametrize("public", [True, False])
+    def test_empty_hf_token_allowed_only_for_public_repo(
+        self, mock_runtime_config, public
+    ):
+        """tt-shield writes HF_TOKEN= to .env when it has no token."""
+        mock_runtime_config.workflow = "server"
+        mock_runtime_config.docker_server = True
+        mock_runtime_config.interactive = False
+        mock_runtime_config.no_auth = False
+        spec = MagicMock(hf_weights_repo="org/model", hf_model_repo="org/model")
+        env = {"JWT_SECRET": "test-jwt", "HF_TOKEN": ""}
+        with patch("run.load_dotenv", return_value=True), patch.dict(
+            os.environ, env, clear=True
+        ), patch("run.check_hf_anonymous_access", return_value=public) as check:
+            if public:
+                handle_secrets(mock_runtime_config, spec)
+            else:
+                with pytest.raises(AssertionError, match="HF_TOKEN is not set"):
+                    handle_secrets(mock_runtime_config, spec)
+        check.assert_called_once_with("org/model")
+
 
 class TestUtilityFunctions:
     """Tests for utility functions."""

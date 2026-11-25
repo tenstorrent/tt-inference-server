@@ -51,7 +51,7 @@ from workflows.run_docker_server import (
 )
 from workflows.runtime_config import RuntimeConfig
 from workflows.eval_shard import parse_eval_shard  # noqa: E402
-from workflows.setup_host import setup_host
+from workflows.setup_host import check_hf_anonymous_access, setup_host
 from workflows.utils import (
     ensure_readwriteable_dir,
     get_default_hf_home_path,
@@ -957,7 +957,7 @@ def parse_arguments():
     return args
 
 
-def handle_secrets(runtime_config):
+def handle_secrets(runtime_config, model_spec=None):
     # JWT_SECRET is only required for --workflow server --docker-server
     workflow_type = WorkflowType.from_string(runtime_config.workflow)
     jwt_secret_required = (
@@ -1006,15 +1006,39 @@ def handle_secrets(runtime_config):
             "Set API_KEY in .env or as an environment variable."
         )
 
+    # HF_TOKEN may be absent when the model's Hugging Face repo is public and
+    # ungated: weights and tokenizer then download anonymously.
+    hf_token_waived = None
+
+    def _hf_token_not_needed(key):
+        nonlocal hf_token_waived
+        if key != "HF_TOKEN" or os.getenv(key) or model_spec is None:
+            return False
+        if hf_token_waived is None:
+            repos = sorted(
+                {model_spec.hf_weights_repo, model_spec.hf_model_repo} - {None}
+            )
+            hf_token_waived = bool(repos) and all(
+                check_hf_anonymous_access(repo) for repo in repos
+            )
+            if hf_token_waived:
+                logger.info(
+                    f"HF_TOKEN is not set and {', '.join(repos)} is public and "
+                    "ungated: continuing without a Hugging Face token."
+                )
+        return hf_token_waived
+
     # load secrets from env file or prompt user to enter them once
     if not load_dotenv():
         env_vars = {}
         for key in required_env_vars:
             _val = os.getenv(key)
+            if _hf_token_not_needed(key):
+                continue
             if not _val:
                 _val = getpass.getpass(f"Enter your {key}: ").strip()
             env_vars[key] = _val
-        assert all([env_vars[k] for k in required_env_vars])
+        assert all(env_vars.values())
         write_dotenv(env_vars)
         # read back secrets to current process env vars
         check = load_dotenv()
@@ -1022,7 +1046,7 @@ def handle_secrets(runtime_config):
     else:
         logger.info("Using secrets from .env file.")
         for key in required_env_vars:
-            assert os.getenv(key), (
+            assert os.getenv(key) or _hf_token_not_needed(key), (
                 f"Required environment variable {key} is not set in .env file."
             )
 
@@ -1255,7 +1279,7 @@ def main():
     model_id = model_spec.model_id
 
     # step 2: handle secrets
-    handle_secrets(runtime_config)
+    handle_secrets(runtime_config, model_spec)
     tt_inference_server_sha = get_current_commit_sha()
 
     # step 3: setup logging and finalize run_id

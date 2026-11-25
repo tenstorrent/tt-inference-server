@@ -1606,3 +1606,82 @@ class TestSpecDrivenHfDownload:
         partial.mkdir(parents=True)
         (partial / "abc.incomplete").write_text("")
         assert manager.check_model_weights_dir(root) is False
+
+
+class TestAnonymousHfAccess:
+    """No HF_TOKEN: public, ungated repos proceed anonymously; others still fail."""
+
+    @staticmethod
+    def _hub(gated=False, head_status=200, head_headers=None):
+        def fake(url, method="GET", headers=None):
+            assert not headers, "anonymous checks must not send credentials"
+            if "/api/models/" in url:
+                body = {"gated": gated, "private": False}
+                body["siblings"] = [{"rfilename": ".gitattributes"}]
+                return json.dumps(body).encode(), 200, {}
+            return b"", head_status, head_headers or {}
+
+        return fake
+
+    @pytest.mark.parametrize(
+        "hub,expected",
+        [
+            (dict(), True),
+            (dict(gated="manual"), False),
+            (dict(gated="auto"), False),
+            (dict(head_status=401, head_headers={"X-Error-Code": "GatedRepo"}), False),
+        ],
+    )
+    def test_check_hf_anonymous_access(self, hub, expected):
+        from workflows.setup_host import check_hf_anonymous_access
+
+        with patch("workflows.setup_host.http_request", side_effect=self._hub(**hub)):
+            assert check_hf_anonymous_access(TINY_HF_REPO) is expected
+
+    def test_network_error_is_not_access(self):
+        from workflows.setup_host import check_hf_anonymous_access
+
+        with patch("workflows.setup_host.http_request", side_effect=Exception("down")):
+            assert check_hf_anonymous_access(TINY_HF_REPO) is False
+
+    def test_empty_token_public_repo_downloads_anonymously(
+        self, tiny_model_spec, temp_dir
+    ):
+        manager = HostSetupManager(
+            model_spec=tiny_model_spec,
+            automatic=True,
+            hf_token="",
+            host_volume=str(temp_dir / "persistent_volume"),
+        )
+        venv = MagicMock()
+        venv.venv_path = temp_dir / "fake_venv"
+        (venv.venv_path / "bin").mkdir(parents=True)
+        (venv.venv_path / "bin" / "hf").write_text("#!/bin/bash")
+        with patch.dict(os.environ, {"HF_TOKEN": ""}), patch(
+            "workflows.setup_host.http_request", side_effect=self._hub()
+        ), patch("workflows.setup_host.VENV_CONFIGS") as venvs, patch(
+            "subprocess.run"
+        ) as run:
+            venvs.__getitem__ = MagicMock(return_value=venv)
+            run.return_value.returncode = 0
+            manager.get_hf_env_vars()
+            manager.setup_weights_huggingface()
+            assert os.environ["HF_TOKEN"] == ""
+        assert manager.hf_anonymous is True
+        run.assert_called_once()
+
+    def test_empty_token_gated_repo_still_fails(self, tiny_model_spec, temp_dir):
+        manager = HostSetupManager(
+            model_spec=tiny_model_spec,
+            automatic=True,
+            hf_token="",
+            host_volume=str(temp_dir / "persistent_volume"),
+        )
+        with patch.dict(os.environ, {"HF_TOKEN": ""}), patch(
+            "workflows.setup_host.http_request",
+            side_effect=self._hub(gated="manual"),
+        ):
+            with pytest.raises(AssertionError, match="HF_TOKEN validation failed"):
+                manager.get_hf_env_vars()
+        with pytest.raises(AssertionError, match="HF_TOKEN not set"):
+            manager.setup_weights_huggingface()
