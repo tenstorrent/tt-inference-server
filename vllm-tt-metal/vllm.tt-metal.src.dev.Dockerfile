@@ -118,9 +118,16 @@ RUN /bin/bash -c "git clone --depth 1 https://github.com/tenstorrent-metal/tt-me
 # Build vllm-tt-plugin - clone with minimal history and clean.
 # The plugin owns the vLLM version pin and its dependency overrides, so the
 # install is delegated to its own docs/install-vllm-tt.sh rather than restated here
+# Stopgap (agentic-models QB2 CI): a tt-metal carrier may ship a hash-pinned plugin patch
+# series at ${TT_METAL_HOME}/agentic_models/ci/vllm_tt_plugin/series ('base <sha>' first, then
+# '<sha256> <file>' per patch in apply order; format in apply_vllm_tt_plugin_series.sh). When
+# present it is applied after the checkout and before the install (and before .git is removed);
+# a base, hash or apply mismatch fails the build. Without the file nothing changes.
+COPY vllm-tt-metal/apply_vllm_tt_plugin_series.sh /usr/local/bin/apply_vllm_tt_plugin_series.sh
 RUN /bin/bash -c "git clone https://github.com/tenstorrent/vllm-tt-plugin.git ${vllm_tt_plugin_dir} \
     && cd ${vllm_tt_plugin_dir} \
     && git checkout ${TT_VLLM_COMMIT_SHA_OR_TAG} \
+    && if [ -f ${TT_METAL_HOME}/agentic_models/ci/vllm_tt_plugin/series ]; then bash /usr/local/bin/apply_vllm_tt_plugin_series.sh ${TT_METAL_HOME}/agentic_models/ci/vllm_tt_plugin/series; fi \
     && source ${PYTHON_ENV_DIR}/bin/activate \
     && uv pip install --upgrade pip \
     && source docs/install-vllm-tt.sh \
