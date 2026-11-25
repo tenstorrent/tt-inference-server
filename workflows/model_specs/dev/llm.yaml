@@ -7401,7 +7401,7 @@ templates:
         - python3
         - /home/container_app_user/app/src/run_qwen_tt.py
   env_vars:
-    QWEN_TT_PACKAGE: tt-lab-b0acf666
+    QWEN_TT_PACKAGE: tt-lab-1ed1231d
     QWEN_TT_TTQ: Qwen3.8-27B-bfp4-gptq-bfp8ah.ttq
     QWEN_TT_VOCAB: Qwen3.8-27B-vocab.gguf
     QWEN_TT_DFLASH2: dflash2/Qwen3.8-27B-DFlash2-bfp4.ttq
@@ -7417,8 +7417,8 @@ templates:
         - Qwen3.8-27B-vocab.gguf
         - dflash2/Qwen3.8-27B-DFlash2-bfp4.ttq
         - Qwen3.8-27B-vision-bf16.ttq
-        - tt-lab-b0acf666/SHA256SUMS
-        - tt-lab-b0acf666/bin/tt-lab
-        - tt-lab-b0acf666/runtime/ld-linux-x86-64.so.2
+        - tt-lab-1ed1231d/SHA256SUMS
+        - tt-lab-1ed1231d/bin/tt-lab
+        - tt-lab-1ed1231d/runtime/ld-linux-x86-64.so.2
   status: EXPERIMENTAL
   docker_image: ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22.04-amd64@sha256:26cdfb7ce851936c694c339b5b9db4addb70072a90345eb630072f842673c2af
