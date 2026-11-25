@@ -1412,7 +1412,9 @@ class TestTrainingInferenceEngine:
         link = generate_default_docker_link(
             "0.1.0", "abc1234", None, inference_engine="training"
         )
-        assert link.startswith("ghcr.io/tenstorrent/tt-media-inference-server-training:")
+        assert link.startswith(
+            "ghcr.io/tenstorrent/tt-media-inference-server-training:"
+        )
 
     def test_training_is_a_media_server_engine(self):
         assert InferenceEngine.TRAINING.value in InferenceEngine.media_server_values()
