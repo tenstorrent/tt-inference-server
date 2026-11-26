@@ -4,22 +4,24 @@ All development uses the following workflows in git for the repo repository http
 
 ## Git Workflows
 
-### development in `dev`
+### development in `main`
 
-All normal development work should be done using this simple workflow, making branches off `dev` and making PRs back to `dev`.
+All normal development work should be done using this simple workflow, making branches off `main` and making PRs back to `main`.
+
+> **Note:** `main` is the active development / integration branch.
 
 **branches:**
 - `<namett>/<my-description>`
 - `<namett>/fix-<my-description>`
-- `dev`
+- `main`
 
 **workflow for development:**
-1. git checkout `dev` && git pull
+1. git checkout `main` && git pull
 1. git checkout -b `<namett>/<my-description>` or `<namett>/fix-<my-description>`
 1. make code changes
-1. PR `<namett>/<my-description>` to `dev`
-1. PR reviewed and approved by >= 1 responsible person defined in CODEOWNERS.md
-1. squash and merge PR to `dev`
+1. PR `<namett>/<my-description>` to `main`
+1. PR reviewed and approved by >= 1 responsible person defined in [.github/CODEOWNERS](../.github/CODEOWNERS)
+1. squash and merge PR to `main`
 
 ### releases in `main`
 
@@ -35,33 +37,32 @@ workflow for release:
 - git checkout `dev` && git pull
 - git checkout `<specific-release-commit-SHA>` (from Models CI, should be a recent commit on `dev`)
 - follow release doc at [../scripts/release/README.md](../scripts/release/README.md)
-- PR reviewed and approved by >= 1 responsible person defined in CODEOWNERS.md
+- PR reviewed and approved by >= 1 responsible person defined in [.github/CODEOWNERS](../.github/CODEOWNERS)
 - squash and merge PR to `dev`
 
 ### Branch descriptions
 
 `main` (default on GitHub):
-- releases only via PR
+- primary development and integration branch; feature branches PR here
 - all changes must be passing in Models CI
-- PR merge sign-off from repo owners
+- PR merge sign-off from repo owners (see [.github/CODEOWNERS](../.github/CODEOWNERS))
 - PRs are merged into main to allow users to see well documented linear history
-
-`dev`:
-- where independent development work is consolidated
-- Models CI runs nightly using this branch
 - Merge criteria
-  - PR reviewed and approved by from >= 1 responsible person defined in CODEOWNERS.md
-  - well named and documented commits refing PR 
+  - PR reviewed and approved by >= 1 responsible person defined in [.github/CODEOWNERS](../.github/CODEOWNERS)
+  - well named and documented commits refing PR
   - squash to merge in GitHub
+
+`dev` (legacy):
+- previously the development consolidation branch; retained for history and no longer the target for new work.
 
 `<namett>/<my-description>`:
 - specific WIP development work
-- based off `dev`, PR back to `dev`
-- multiple people can work together on a single branch, but generally easier to structure collaboration  via multiple PRs into `dev
+- based off `main`, PR back to `main`
+- multiple people can work together on a single branch, but generally easier to structure collaboration via multiple PRs into `main`
 
 `<namett>/fix-<my-description>`:
 - bug fix (generally) higher priority than features
-- based off `dev`, PR back to `dev`
+- based off `main`, PR back to `main`
 - similar approach as feature branches
 
 `pre-release-v<MAJOR>.<MINOR>.<PATCH>`:
@@ -207,7 +208,7 @@ How to manage many branches in parallel on a single host machine.
 - avoid issues with persisent data that is not tracked in git
 
 ```bash
-# create a new worktree AND a new branch on it off the current branch (e.g. from dev)
+# create a new worktree AND a new branch on it off the current branch (e.g. from main)
 git worktree add ../tt-inference-server-feature-x -b github-id/feature-branch-name
 
 git worktree add ../tt-inference-server-remove-lm-eval-cuda -b tstesco/remove-lm-eval-cuda
