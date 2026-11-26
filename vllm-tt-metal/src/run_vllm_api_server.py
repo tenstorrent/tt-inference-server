@@ -25,6 +25,12 @@ from utils.pinned_artifacts import get_pinned_revision
 from utils.device_utils import get_mesh_device_name
 from utils.logging_utils import set_vllm_logging_config
 from utils.prompt_client import run_background_trace_capture
+from utils.submesh_engines import (
+    DEFAULT_SUBMESH_ENGINE_HOST,
+    SUBMESH_ENGINE_HOST_ENV,
+    submesh_engine_port,
+)
+from utils.submesh_engines import submesh_engine_count as engine_count_of_vllm_args
 from utils.vllm_run_utils import (
     create_model_symlink,
     get_encoded_api_key,
@@ -1465,24 +1471,11 @@ VLLM_ROUTER_STOP_TIMEOUT_S = 10.0
 ENGINE_HEALTH_TIMEOUT_S = 3.0
 
 
-def _vllm_arg(vllm_args: dict, name: str, default=None):
-    """A vllm_args value under either spelling (data_parallel_size or data-parallel-size)."""
-    return vllm_args.get(name, vllm_args.get(name.replace("_", "-"), default))
-
-
 def submesh_engine_count(model_spec: dict) -> Optional[int]:
-    """The number of submesh engines, the spec's data_parallel_size, when its vllm_args set data_parallel_external_lb;
-    else None."""
-    vllm_args = model_spec.get("device_model_spec", {}).get("vllm_args", {})
-    if not _vllm_arg(vllm_args, "data_parallel_external_lb"):
-        return None
-    data_parallel_size = int(_vllm_arg(vllm_args, "data_parallel_size", 1))
-    if data_parallel_size < 2:
-        raise ValueError(
-            "data_parallel_external_lb runs one engine per data-parallel rank: data_parallel_size must be at "
-            f"least 2, got {data_parallel_size}"
-        )
-    return data_parallel_size
+    """The number of submesh engines (utils.submesh_engines) for the spec's vllm_args; None for one server."""
+    return engine_count_of_vllm_args(
+        model_spec.get("device_model_spec", {}).get("vllm_args", {})
+    )
 
 
 SUBMESH_ENGINE_DISCOVERY_JOIN_S = 5.0
@@ -1565,23 +1558,45 @@ def discover_submesh_engine_groups(count: int) -> List[Tuple[str, str]]:
     return groups
 
 
-def submesh_engine_port(service_port: int, index: int) -> int:
-    return service_port + 1 + index
+# vLLM's short data-parallel aliases (--data-parallel-size is -dp, --data-parallel-external-lb is -dpe, ...).
+_DATA_PARALLEL_SHORT_FLAGS = frozenset(
+    ("-dp", "-dpn", "-dpr", "-dpl", "-dpa", "-dpp", "-dpb", "-dph", "-dpe", "-dpm")
+)
+
+
+def _engine_drops(flag: str) -> bool:
+    """Whether an engine drops this launcher flag: the port and host (the router's), and every vLLM data-parallel
+    flag in any spelling (--data-parallel-*, --data_parallel_*, --no-data-parallel-*, -dp*)."""
+    if flag in _DATA_PARALLEL_SHORT_FLAGS:
+        return True
+    if not flag.startswith("--"):
+        return False
+    name = flag[2:].replace("_", "-")
+    name = name[len("no-") :] if name.startswith("no-") else name
+    return name in ("port", "service-port", "host") or name.startswith("data-parallel-")
 
 
 def _engine_argv(argv: List[str]) -> List[str]:
-    """The launcher's arguments without its port and host: an engine serves its own port on loopback only (the router
-    reaches it on 127.0.0.1; the service port and host are the router's)."""
-    out, skip_value = [], False
-    for token in argv:
-        if skip_value:
-            skip_value = False
+    """The launcher's arguments for an engine. Without the launcher's port and host: the engine serves its own port
+    (submesh_engine_command), and the service port and host are the router's. Without vLLM's data-parallel flags:
+    the launcher owns data parallelism and runs each engine as one standalone rank at data_parallel_size 1
+    (configure_submesh_engine), and a flag here would override that, e.g. a data_parallel_size or
+    data_parallel_external_lb that the docker runner forwards from --vllm-override-args."""
+    out, index = [], 0
+    while index < len(argv):
+        token = argv[index]
+        flag, separator, _ = token.partition("=")
+        if not _engine_drops(flag):
+            out.append(token)
+            index += 1
             continue
-        name, separator, _ = token.partition("=")
-        if name in ("--port", "--service-port", "--host"):
-            skip_value = not separator
-            continue
-        out.append(token)
+        # A dropped flag takes the next token as its value unless the value is inline or the flag is a bare switch.
+        takes_next = (
+            not separator
+            and index + 1 < len(argv)
+            and not argv[index + 1].startswith("-")
+        )
+        index += 2 if takes_next else 1
     return out
 
 
@@ -1596,7 +1611,7 @@ def submesh_engine_command(
         "--service-port",
         str(submesh_engine_port(service_port, index)),
         "--host",
-        "127.0.0.1",
+        os.environ.get(SUBMESH_ENGINE_HOST_ENV, DEFAULT_SUBMESH_ENGINE_HOST),
     ]
 
 

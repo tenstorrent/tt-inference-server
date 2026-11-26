@@ -24,7 +24,10 @@ def _spec(model_type, name="Llama-3.1-8B-Instruct", hf_model_repo=None):
             else name
         )
     return SimpleNamespace(
-        model_type=model_type, model_name=name, hf_model_repo=hf_model_repo
+        model_type=model_type,
+        model_name=name,
+        hf_model_repo=hf_model_repo,
+        device_model_spec=SimpleNamespace(vllm_args={}),
     )
 
 
@@ -491,6 +494,19 @@ def test_agentic_traces_forwards_each_metrics_url_separately(monkeypatch, tmp_pa
     ]
     assert forwarded == ["worker-a:9000", "worker-b:9000/metrics"]
 
+    # unset, with submesh engines behind vllm-router: the engines' own /metrics (the router has none)
+    spec.device_model_spec.vllm_args = {
+        "data_parallel_size": 2,
+        "data_parallel_external_lb": True,
+    }
+    rc.agentic_traces_metrics_url = None
+    argv = workflow_dispatch.build_engine_commands(spec, rc, "/tmp/spec.json")[0].argv
+    assert [
+        argv[i + 1]
+        for i, token in enumerate(argv)
+        if token == "--agentic-traces-metrics-url"
+    ] == ["http://127.0.0.1:8001/metrics", "http://127.0.0.1:8002/metrics"]
+
 
 def test_release_child_forwards_the_metrics_urls(monkeypatch, tmp_path):
     spec = _spec(ModelType.LLM, name="Kimi-K2.7-Code")
@@ -646,12 +662,34 @@ def test_spec_decode_forwards_each_metrics_url_separately(monkeypatch, tmp_path)
 
     argv = workflow_dispatch.build_engine_commands(spec, rc, "/tmp/spec.json")[0].argv
 
-    forwarded = [
-        argv[i + 1]
-        for i, token in enumerate(argv)
-        if token == "--spec-decode-metrics-url"
+    def forwarded(argv):
+        return [
+            argv[i + 1]
+            for i, token in enumerate(argv)
+            if token == "--spec-decode-metrics-url"
+        ]
+
+    assert forwarded(argv) == ["worker-a:9000", "worker-b:9000/metrics"]
+
+    # Submesh engines behind vllm-router (its service port has no /metrics): unset URLs default to the engines'
+    # ports, explicit ones win, and a remote server keeps none (the engine ports are loopback-only on its host).
+    spec.device_model_spec.vllm_args = {
+        "data_parallel_size": 2,
+        "data_parallel_external_lb": True,
+    }
+    rc.spec_decode_metrics_url = None
+    argv = workflow_dispatch.build_engine_commands(spec, rc, "/tmp/spec.json")[0].argv
+    assert forwarded(argv) == [
+        "http://127.0.0.1:8001/metrics",
+        "http://127.0.0.1:8002/metrics",
     ]
-    assert forwarded == ["worker-a:9000", "worker-b:9000/metrics"]
+    assert rc.spec_decode_metrics_url is None  # the caller's config is unchanged
+    rc.spec_decode_metrics_url = ["worker-a:9000"]
+    argv = workflow_dispatch.build_engine_commands(spec, rc, "/tmp/spec.json")[0].argv
+    assert forwarded(argv) == ["worker-a:9000"]
+    rc.spec_decode_metrics_url, rc.server_url = None, "https://remote.example"
+    argv = workflow_dispatch.build_engine_commands(spec, rc, "/tmp/spec.json")[0].argv
+    assert forwarded(argv) == []
 
 
 def test_release_forwards_agentic_traces_flags(monkeypatch, tmp_path):

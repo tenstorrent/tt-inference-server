@@ -1130,6 +1130,28 @@ class TestOverrideArgsIntegration:
             assert env_var_found, (
                 f"RUNTIME_MODEL_SPEC_JSON_PATH not found in docker command: {docker_command}"
             )
+            assert "TT_SUBMESH_ENGINE_HOST=0.0.0.0" not in docker_command
+
+            # Submesh engines: each engine port is published on the host's loopback (vllm-router does not proxy
+            # their /metrics), and the engines bind all of the container's interfaces.
+            mock_model_spec.device_model_spec.vllm_args = {
+                "data_parallel_size": 2,
+                "data_parallel_external_lb": True,
+            }
+            docker_command, _ = generate_docker_run_command(
+                mock_model_spec, mock_runtime_config, mock_setup_config, json_fpath
+            )
+            published = [
+                docker_command[i + 1]
+                for i, arg in enumerate(docker_command)
+                if arg == "--publish"
+            ]
+            assert published == [
+                "0.0.0.0:8000:8000",
+                "127.0.0.1:8001:8001",
+                "127.0.0.1:8002:8002",
+            ]
+            assert "TT_SUBMESH_ENGINE_HOST=0.0.0.0" in docker_command
 
     def test_default_mode_uses_docker_volume_and_user(self, mock_setup_config):
         """Test default mode emits type=volume mount and --user 1000."""

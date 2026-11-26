@@ -1661,7 +1661,7 @@ def test_quetzal_metadata_without_vendored_registry_is_unchanged(
 
 
 def test_submesh_engine_command_serves_its_own_port_on_loopback(
-    run_vllm_api_server_module,
+    run_vllm_api_server_module, monkeypatch
 ):
     module = run_vllm_api_server_module
     argv = [
@@ -1673,13 +1673,31 @@ def test_submesh_engine_command_serves_its_own_port_on_loopback(
         "--host",
         "0.0.0.0",
         "--host=::",
+        # vLLM's data-parallel flags in every spelling the launcher can receive (the docker runner forwards
+        # --vllm-override-args as --data-parallel-size 4 / a bare --data-parallel-external-lb): the launcher runs
+        # each engine as one rank at data_parallel_size 1, so none reaches an engine
+        "--data-parallel-size",
+        "4",
+        "--data-parallel-external-lb",
+        "--data_parallel_size=4",
+        "-dp",
+        "4",
+        "-dpe",
+        "--no-data-parallel-external-lb",
+        "--data-parallel-rank",
+        "0",
         "--x",
         "1",
+        "--flag",
     ]
-    assert module._engine_argv(argv) == ["--model", "m", "--x", "1"]
+    assert module._engine_argv(argv) == ["--model", "m", "--x", "1", "--flag"]
     command = module.submesh_engine_command(argv, 8071, 2)
     assert command[-4:] == ["--service-port", "8074", "--host", "127.0.0.1"]
     assert "8000" not in command and "0.0.0.0" not in command
+    assert not any("data" in token or token.startswith("-dp") for token in command)
+    # in a container the engines bind all interfaces: the docker runner publishes their ports on the host's loopback
+    monkeypatch.setenv("TT_SUBMESH_ENGINE_HOST", "0.0.0.0")
+    assert module.submesh_engine_command(argv, 8071, 2)[-2:] == ["--host", "0.0.0.0"]
 
 
 def test_submesh_engine_count_and_engine_configuration(
