@@ -680,14 +680,8 @@ _K2_HORIZON_LM_EVAL_TASKS = os.path.join(
 )
 
 # The tokenizer the Kimi-K3.1 evals load: the served name moonshotai/Kimi-K3.1 is not
-# an HF repo. The local Kimi-K3.1-Pro checkpoint where weka is mounted; elsewhere (CI
-# runners) the public moonshotai/Kimi-K3.1-Pro repo, whose tokenizer files are the same.
-_KIMI_K31_LOCAL_CHECKPOINT = "/mnt/weka/model-weights/llm/moonshotai/Kimi-K3.1-Pro-dequantized"
-_KIMI_K31_TOKENIZER = (
-    _KIMI_K31_LOCAL_CHECKPOINT
-    if os.path.isdir(_KIMI_K31_LOCAL_CHECKPOINT)
-    else "moonshotai/Kimi-K3.1-Pro"
-)
+# an HF repo, so they use the checkpoint's public one.
+_KIMI_K31_TOKENIZER = "moonshotai/Kimi-K3.1-Pro"
 
 # Per-request client timeout for QwQ-32B r1_* tasks (lm-eval local-completions
 # `timeout`, an aiohttp ClientTimeout total per request; harness default 1800 s).
