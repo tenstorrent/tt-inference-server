@@ -65,6 +65,20 @@ class TestMediaContextUrls:
         assert c.base_url == "http://1.2.3.4:8001"
         assert c.server_port == 8001
 
+    def test_command_factory_resolve_server_url_merges_service_port(self):
+        from argparse import Namespace
+        from workflow_module.command_factory import _resolve_server_url
+
+        args = Namespace(server_url="http://bh-glx-120-a05u08", service_port=8080)
+        assert _resolve_server_url(args, None) == "http://bh-glx-120-a05u08:8080"
+
+    def test_command_factory_resolve_server_url_preserves_explicit_port(self):
+        from argparse import Namespace
+        from workflow_module.command_factory import _resolve_server_url
+
+        args = Namespace(server_url="http://bh-glx-120-a05u08:9090", service_port=8080)
+        assert _resolve_server_url(args, None) == "http://bh-glx-120-a05u08:9090"
+
     def test_test_payloads_path(self):
         assert _ctx().test_payloads_path == "utils/test_payloads"
 
