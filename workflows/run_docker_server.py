@@ -107,6 +107,29 @@ _CPP_EMBEDDING_DEVICE_IDS = {
 }
 
 
+# Video models on the cpp_server backend (the Wan2.2 text-to-video runner). The
+# C++ binary runs the whole mesh as ONE device-id group, which it serves in its own
+# process (in-process mode); the groups and the DEVICE value mirror
+# constants.py::ModelConfigs for (ModelRunners.TT_WAN_2_2, device). DEVICE is the
+# name of the C++ mesh table, so "blackhole_galaxy" becomes "bh-galaxy".
+_CPP_VIDEO_RUNNER_BY_MODEL_NAME = {
+    "Wan2.2-T2V-A14B-Diffusers": "tt-wan2.2",
+}
+
+# device.name.lower() -> (DEVICE of the C++ server, DEVICE_IDS: one group)
+_CPP_VIDEO_DEVICE_DEFAULTS = {
+    "t3k": ("t3k", "(0,1,2,3)"),
+    "galaxy": ("galaxy", "(" + ",".join(str(i) for i in range(32)) + ")"),
+    "blackhole_galaxy": (
+        "bh-galaxy",
+        "(" + ",".join(str(i) for i in range(32)) + ")",
+    ),
+    "p150x4": ("p150x4", "(0,1,2,3)"),
+    "p150x8": ("p150x8", "(0,1,2,3,4,5,6,7)"),
+    "p300x2": ("p300x2", "(0,1,2,3)"),
+}
+
+
 # One deployment per Qwen3-TTS release; the C++ server derives it from HF_MODEL.
 _CPP_TTS_RUNNER_BY_MODEL_NAME = {
     "Qwen3-TTS-12Hz-1.7B-Base": "tt_qwen3_tts",
@@ -146,6 +169,8 @@ def _is_cpp_media_spec(model_spec) -> bool:
         return device in _CPP_EMBEDDING_DEVICE_IDS
     if model_name in _CPP_TTS_RUNNER_BY_MODEL_NAME:
         return device in _CPP_TTS_DEVICE_IDS
+    if model_name in _CPP_VIDEO_RUNNER_BY_MODEL_NAME:
+        return device in _CPP_VIDEO_DEVICE_DEFAULTS
     return False
 
 
@@ -243,8 +268,40 @@ def _get_cpp_tts_server_docker_env_vars(model_spec):
     return env_vars
 
 
+def _get_cpp_video_server_docker_env_vars(model_spec):
+    """Build the env-var set the cpp_server video (Wan2.2 text-to-video) service needs.
+
+    The C++ parent needs the service, the runner, the machine class (DEVICE, as the
+    C++ mesh table names it) and the worker layout (DEVICE_IDS, one group with every
+    chip). MODEL must NOT be set: like the other cpp_server services it does not take
+    the Python server's model name. The tt_dit weight cache lives on the persistent
+    cache_root volume, so the compiled weights survive a container restart.
+    """
+    device = model_spec.device_type.name.lower()
+    runner = _CPP_VIDEO_RUNNER_BY_MODEL_NAME[model_spec.model_name]
+    cpp_device, device_ids = _CPP_VIDEO_DEVICE_DEFAULTS[device]
+
+    env_vars = {
+        "SERVER_MODE": "cpp",
+        "MODEL_SERVICE": "video",
+        "MODEL_RUNNER": runner,
+        "DEVICE": cpp_device,
+        "DEVICE_IDS": device_ids,
+        "CACHE_ROOT": "/home/container_app_user/cache_root",
+        "HF_HOME": "/home/container_app_user/cache_root/huggingface",
+        "TT_DIT_CACHE_DIR": "/home/container_app_user/cache_root/tt_dit_cache",
+    }
+    logger.info(
+        f"cpp_server environment variables: MODEL_SERVICE=video, "
+        f"MODEL_RUNNER={runner}, DEVICE={cpp_device}, DEVICE_IDS={device_ids}"
+    )
+    return env_vars
+
+
 def _get_cpp_server_docker_env_vars(model_spec):
     """Dispatch to the per-service env-var builder for the cpp_server backend."""
+    if model_spec.model_name in _CPP_VIDEO_RUNNER_BY_MODEL_NAME:
+        return _get_cpp_video_server_docker_env_vars(model_spec)
     if model_spec.model_name in _CPP_EMBEDDING_RUNNER_BY_MODEL_NAME:
         return _get_cpp_embedding_server_docker_env_vars(model_spec)
     if model_spec.model_name in _CPP_TTS_RUNNER_BY_MODEL_NAME:

@@ -3,6 +3,8 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
+from types import SimpleNamespace
+
 import pytest
 import argparse
 import os
@@ -30,6 +32,7 @@ from workflows.validate_setup import (
 from workflows.device_utils import _get_tt_smi_board_type_counts, infer_default_device
 from workflows.model_spec import get_runtime_model_spec
 from workflows.run_docker_server import (
+    _is_cpp_media_spec,
     generate_docker_run_command,
     get_media_server_docker_env_vars,
 )
@@ -1414,6 +1417,56 @@ class TestMediaServerDockerEnvVars:
         assert int(env_vars["TTS_AUDIO_QUEUE_CAPACITY"]) <= 64
         # The C++ parent throws on a non-LLM MODEL value.
         assert "MODEL" not in env_vars
+
+    @pytest.mark.parametrize(
+        ("device", "cpp_device", "chips"),
+        [
+            ("t3k", "t3k", 4),
+            ("galaxy", "galaxy", 32),
+            ("blackhole_galaxy", "bh-galaxy", 32),
+        ],
+    )
+    def test_wan22_text_to_video_uses_cpp_server(self, device, cpp_device, chips):
+        model_spec, _, _ = get_runtime_model_spec(
+            model="Wan2.2-T2V-A14B-Diffusers", device=device
+        )
+
+        env_vars = get_media_server_docker_env_vars(model_spec)
+
+        assert env_vars["SERVER_MODE"] == "cpp"
+        assert env_vars["MODEL_SERVICE"] == "video"
+        assert env_vars["MODEL_RUNNER"] == "tt-wan2.2"
+        # The name of the C++ mesh table, not the workflow's device name.
+        assert env_vars["DEVICE"] == cpp_device
+        # One group with every chip: the whole mesh is one worker.
+        device_ids = env_vars["DEVICE_IDS"]
+        assert device_ids.count("(") == 1
+        assert len(device_ids.strip("()").split(",")) == chips
+        # The weight cache is on the persistent volume.
+        assert env_vars["TT_DIT_CACHE_DIR"].startswith(
+            "/home/container_app_user/cache_root/"
+        )
+        assert "MODEL" not in env_vars
+
+    @pytest.mark.parametrize(
+        ("model_name", "device"),
+        [
+            # The C++ server has no image-to-video routes in this build.
+            ("Wan2.2-I2V-A14B-Diffusers", "GALAXY"),
+            # No entry in the C++ video device table.
+            ("Wan2.2-T2V-A14B-Diffusers", "N150"),
+        ],
+    )
+    def test_wan22_outside_the_cpp_video_table_stays_on_the_python_server(
+        self, model_name, device
+    ):
+        spec = SimpleNamespace(
+            inference_engine="media",
+            model_name=model_name,
+            device_type=SimpleNamespace(name=device),
+        )
+
+        assert _is_cpp_media_spec(spec) is False
 
     def test_non_cpp_media_persists_hf_cache_on_cache_root(self):
         """Whisper (uvicorn media server) must place HF_HOME on the cache_root
