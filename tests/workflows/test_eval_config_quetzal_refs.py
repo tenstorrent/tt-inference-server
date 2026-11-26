@@ -29,8 +29,6 @@ OLL_RESULTS = "https://huggingface.co/datasets/open-llm-leaderboard/results/blob
 EXPECTED = {
     "Qwen/Qwen3.6-35B-A3B": {
         "terminal_bench_2": 51.5,
-        # Stopgap: GPQA for the agentic-models QB2 impl (qwen36-35b-a3b-qb2).
-        "r1_gpqa_diamond": 86.0,
     },
     "tiiuae/Falcon3-1B-Instruct": {
         "leaderboard_ifeval": 50.46,

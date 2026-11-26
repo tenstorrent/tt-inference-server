@@ -102,12 +102,7 @@
       "Qwen/Qwen3-14B-Base",
       "Qwen/QwQ-32B",
       "Qwen/Qwen3.5-9B-Base",
-      "IFM/K2-Horizon-7B",
-      "Qwen/Qwen3.6-35B-A3B",
-      "ornith-ai/Ornith-1.5-9B",
-      "Qwen/Qwen3.6-27B",
-      "ornith-ai/Ornith-1.5-35B-A3B",
-      "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16"
+      "IFM/K2-Horizon-7B"
     ]
   },
   "available_markers": {
@@ -1104,56 +1099,6 @@
       "id_name": "IFM--K2-Horizon-7B",
       "weights": [
         "IFM/K2-Horizon-7B"
-      ]
-    },
-    "Qwen/Qwen3.6-35B-A3B": {
-      "category": "LLM",
-      "compatible_devices": [
-        "p300x2"
-      ],
-      "id_name": "Qwen--Qwen3.6-35B-A3B",
-      "weights": [
-        "Qwen/Qwen3.6-35B-A3B"
-      ]
-    },
-    "ornith-ai/Ornith-1.5-9B": {
-      "category": "LLM",
-      "compatible_devices": [
-        "p300x2"
-      ],
-      "id_name": "ornith-ai--Ornith-1.5-9B",
-      "weights": [
-        "ornith-ai/Ornith-1.5-9B"
-      ]
-    },
-    "Qwen/Qwen3.6-27B": {
-      "category": "LLM",
-      "compatible_devices": [
-        "p300x2"
-      ],
-      "id_name": "Qwen--Qwen3.6-27B",
-      "weights": [
-        "Qwen/Qwen3.6-27B"
-      ]
-    },
-    "ornith-ai/Ornith-1.5-35B-A3B": {
-      "category": "LLM",
-      "compatible_devices": [
-        "p300x2"
-      ],
-      "id_name": "ornith-ai--Ornith-1.5-35B-A3B",
-      "weights": [
-        "ornith-ai/Ornith-1.5-35B-A3B"
-      ]
-    },
-    "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16": {
-      "category": "LLM",
-      "compatible_devices": [
-        "p300x2"
-      ],
-      "id_name": "nvidia--NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16",
-      "weights": [
-        "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16"
       ]
     }
   },

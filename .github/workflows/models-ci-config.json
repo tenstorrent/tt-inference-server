@@ -344,45 +344,15 @@
             ]
         },
         "Qwen/Qwen3.6-27B": {
-            "implementations": [
-                {
-                    "inference_engine": "vLLM",
-                    "ci": {
-                        "nightly": {
-                            "devices": [
-                                "P300X2",
-                                "P150X4"
-                            ]
-                        }
-                    }
-                },
-                {
-                    "inference_engine": "vLLM",
-                    "impl": "qwen36-27b-qb2",
-                    "ci": {
-                        "nightly": {
-                            "devices": [
-                                "P300X2"
-                            ],
-                            "device-args": {
-                                "P300X2": {
-                                    "additional-args": "--eval-tasks r1_gpqa_diamond"
-                                }
-                            }
-                        },
-                        "release": {
-                            "devices": [
-                                "P300X2"
-                            ],
-                            "device-args": {
-                                "P300X2": {
-                                    "additional-args": "--eval-tasks r1_gpqa_diamond"
-                                }
-                            }
-                        }
-                    }
+            "inference_engine": "vLLM",
+            "ci": {
+                "nightly": {
+                    "devices": [
+                        "P300X2",
+                        "P150X4"
+                    ]
                 }
-            ]
+            }
         },
         "Qwen/Qwen3.5-27B": {
             "inference_engine": "vLLM",
@@ -632,110 +602,6 @@
                     "devices": [
                         "P300X2"
                     ]
-                }
-            }
-        },
-        "Qwen/Qwen3.6-35B-A3B": {
-            "inference_engine": "vLLM",
-            "impl": "qwen36-35b-a3b-qb2",
-            "ci": {
-                "nightly": {
-                    "devices": [
-                        "P300X2"
-                    ],
-                    "device-args": {
-                        "P300X2": {
-                            "additional-args": "--eval-tasks r1_gpqa_diamond"
-                        }
-                    }
-                },
-                "release": {
-                    "devices": [
-                        "P300X2"
-                    ],
-                    "device-args": {
-                        "P300X2": {
-                            "additional-args": "--eval-tasks r1_gpqa_diamond"
-                        }
-                    }
-                }
-            }
-        },
-        "ornith-ai/Ornith-1.5-9B": {
-            "inference_engine": "vLLM",
-            "impl": "ornith15-9b-qb2",
-            "ci": {
-                "nightly": {
-                    "devices": [
-                        "P300X2"
-                    ],
-                    "device-args": {
-                        "P300X2": {
-                            "additional-args": "--eval-tasks r1_gpqa_diamond"
-                        }
-                    }
-                },
-                "release": {
-                    "devices": [
-                        "P300X2"
-                    ],
-                    "device-args": {
-                        "P300X2": {
-                            "additional-args": "--eval-tasks r1_gpqa_diamond"
-                        }
-                    }
-                }
-            }
-        },
-        "ornith-ai/Ornith-1.5-35B-A3B": {
-            "inference_engine": "vLLM",
-            "impl": "ornith15-35b-a3b-qb2",
-            "ci": {
-                "nightly": {
-                    "devices": [
-                        "P300X2"
-                    ],
-                    "device-args": {
-                        "P300X2": {
-                            "additional-args": "--eval-tasks r1_gpqa_diamond"
-                        }
-                    }
-                },
-                "release": {
-                    "devices": [
-                        "P300X2"
-                    ],
-                    "device-args": {
-                        "P300X2": {
-                            "additional-args": "--eval-tasks r1_gpqa_diamond"
-                        }
-                    }
-                }
-            }
-        },
-        "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16": {
-            "inference_engine": "vLLM",
-            "impl": "nemotron35-lightning-qb2",
-            "ci": {
-                "nightly": {
-                    "devices": [
-                        "P300X2"
-                    ],
-                    "device-args": {
-                        "P300X2": {
-                            "additional-args": "--eval-tasks r1_gpqa_diamond"
-                        }
-                    }
-                },
-                "release": {
-                    "devices": [
-                        "P300X2"
-                    ],
-                    "device-args": {
-                        "P300X2": {
-                            "additional-args": "--eval-tasks r1_gpqa_diamond"
-                        }
-                    }
                 }
             }
         },
