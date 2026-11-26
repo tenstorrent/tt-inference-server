@@ -347,6 +347,7 @@
             "implementations": [
                 {
                     "inference_engine": "vLLM",
+                    "impl": "qwen36-blackhole",
                     "ci": {
                         "nightly": {
                             "devices": [
