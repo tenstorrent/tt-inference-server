@@ -679,8 +679,8 @@ _K2_HORIZON_LM_EVAL_TASKS = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "lm_eval_tasks", "k2_horizon"
 )
 
-# lm-eval task definitions for Kimi-K3.1 (see lm_eval_tasks/kimi_k31): aime25 with a
-# grader that accepts a boxed equation. Absolute, like the K2-Horizon path.
+# lm-eval task definitions for Kimi-K3.1 (see lm_eval_tasks/kimi_k31): its math tasks
+# with graders that accept a boxed equation. Absolute, like the K2-Horizon path.
 _KIMI_K31_LM_EVAL_TASKS = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "lm_eval_tasks", "kimi_k31"
 )
@@ -2672,7 +2672,10 @@ _eval_config_list = [
                 limit_samples_map={EvalLimitMode.SMOKE_TEST: 0.1},
             ),
             EvalTask(
+                # r1_aime24 from lm_eval_tasks/kimi_k31: the fork's task with a grader that
+                # also accepts a boxed equation.
                 task_name="r1_aime24",
+                include_path=_KIMI_K31_LM_EVAL_TASKS,
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 max_concurrent=15,
                 use_chat_api=True,
@@ -2746,7 +2749,10 @@ _eval_config_list = [
                 },
             ),
             EvalTask(
+                # r1_math500 from lm_eval_tasks/kimi_k31: the fork's task with a grader that
+                # also accepts a boxed equation.
                 task_name="r1_math500",
+                include_path=_KIMI_K31_LM_EVAL_TASKS,
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 max_concurrent=15,
                 use_chat_api=True,
@@ -3143,8 +3149,10 @@ _eval_config_list = [
             EvalTask(
                 # HMMT February 2026 (MathArena), avg@4: 33 problems x 4 samples.
                 # The seed is not sent to the server, so the 4 samples differ.
+                # From lm_eval_tasks/kimi_k31: the K2-Horizon task with a grader that
+                # also accepts a boxed equation.
                 task_name="k2_hmmt_feb_2026_avg4",
-                include_path=_K2_HORIZON_LM_EVAL_TASKS,
+                include_path=_KIMI_K31_LM_EVAL_TASKS,
                 max_concurrent=15,
                 propagate_seed_to_gen_kwargs=False,
                 score=EvalTaskScore(
