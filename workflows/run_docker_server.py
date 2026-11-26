@@ -437,6 +437,24 @@ def format_docker_command(docker_command):
             f"{shlex.quote(docker_command[0])} {shlex.quote(docker_command[1])}"
         )
         i = 2
+
+    sensitive_env_keys = {"API_KEY", "OPENAI_API_KEY"}
+
+    def _redact_env_arg(env_assignment: str) -> str:
+        if "=" not in env_assignment:
+            return env_assignment
+        key, value = env_assignment.split("=", 1)
+        key_upper = key.upper()
+        if (
+            key_upper in sensitive_env_keys
+            or "TOKEN" in key_upper
+            or "SECRET" in key_upper
+            or "PASSWORD" in key_upper
+            or key_upper.endswith("_KEY")
+        ):
+            return f"{key}=***REDACTED***"
+        return f"{key}={value}"
+
     while i < len(docker_command):
         quoted = shlex.quote(docker_command[i])
         if (
@@ -444,7 +462,10 @@ def format_docker_command(docker_command):
             and i + 1 < len(docker_command)
             and not docker_command[i + 1].startswith("-")
         ):
-            next_quoted = shlex.quote(docker_command[i + 1])
+            next_arg = docker_command[i + 1]
+            if docker_command[i] in ("-e", "--env"):
+                next_arg = _redact_env_arg(next_arg)
+            next_quoted = shlex.quote(next_arg)
             lines.append(f"{quoted} {next_quoted}")
             i += 2
         else:
