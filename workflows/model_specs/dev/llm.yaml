@@ -1793,6 +1793,7 @@ templates:
 - weights:
     - Qwen/Qwen3.6-35B-A3B
   impl: qwen36_35b_a3b_qb2
+  min_ram_gb: 32  # stopgap: weights live on device and safetensors are mmapped (server RSS ~2 GB); the 2.5 GB/B default rejects small-RAM BH-Quietbox-2 runners
   inference_engine: VLLM
   model_type: LLM
   supported_modalities:
@@ -1857,6 +1858,7 @@ templates:
 - weights:
     - ornith-ai/Ornith-1.5-9B
   impl: ornith15_9b_qb2
+  min_ram_gb: 32  # stopgap: weights live on device and safetensors are mmapped (server RSS ~2 GB); the 2.5 GB/B default rejects small-RAM BH-Quietbox-2 runners
   inference_engine: VLLM
   model_type: LLM
   supported_modalities:
@@ -1915,6 +1917,7 @@ templates:
 - weights:
     - Qwen/Qwen3.6-27B
   impl: qwen36_27b_qb2
+  min_ram_gb: 32  # stopgap: weights live on device and safetensors are mmapped (server RSS ~2 GB); the 2.5 GB/B default rejects small-RAM BH-Quietbox-2 runners
   inference_engine: VLLM
   model_type: LLM
   supported_modalities:
@@ -1976,6 +1979,7 @@ templates:
 - weights:
     - ornith-ai/Ornith-1.5-35B-A3B
   impl: ornith15_35b_a3b_qb2
+  min_ram_gb: 32  # stopgap: weights live on device and safetensors are mmapped (server RSS ~2 GB); the 2.5 GB/B default rejects small-RAM BH-Quietbox-2 runners
   inference_engine: VLLM
   model_type: LLM
   supported_modalities:
@@ -2030,6 +2034,7 @@ templates:
 - weights:
     - nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16
   impl: nemotron35_lightning_qb2
+  min_ram_gb: 32  # stopgap: weights live on device and safetensors are mmapped (server RSS ~2 GB); the 2.5 GB/B default rejects small-RAM BH-Quietbox-2 runners
   inference_engine: VLLM
   model_type: LLM
   supported_modalities:
