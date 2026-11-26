@@ -250,8 +250,25 @@ def md5(b):
     return hashlib.md5(b).hexdigest()
 
 
+def run_in_private_dir(command, files):
+    """Run a fixed ffmpeg/ffprobe command on copies of the given files (bytes by fixed
+    name) in a private temporary folder, so no path from the command line reaches it."""
+    with tempfile.TemporaryDirectory() as tmp:
+        for name, data in files.items():
+            with open(os.path.join(tmp, name), "wb") as handle:
+                handle.write(data)
+        return subprocess.run(
+            command, capture_output=True, text=True, cwd=tmp, check=False
+        )
+
+
+def read_bytes(path):
+    with open(path, "rb") as handle:
+        return handle.read()
+
+
 def probe_video(path):
-    out = subprocess.run(
+    out = run_in_private_dir(
         [
             "ffprobe",
             "-v",
@@ -262,10 +279,9 @@ def probe_video(path):
             "stream=width,height,nb_frames,codec_name",
             "-of",
             "json",
-            path,
+            "video.mp4",
         ],
-        capture_output=True,
-        text=True,
+        {"video.mp4": read_bytes(path)},
     ).stdout
     try:
         return json.loads(out)["streams"][0]
@@ -274,22 +290,21 @@ def probe_video(path):
 
 
 def psnr(a, b):
-    out = subprocess.run(
+    out = run_in_private_dir(
         [
             "ffmpeg",
             "-hide_banner",
             "-i",
-            a,
+            "a.mp4",
             "-i",
-            b,
+            "b.mp4",
             "-lavfi",
             "[0:v][1:v]psnr",
             "-f",
             "null",
             "-",
         ],
-        capture_output=True,
-        text=True,
+        {"a.mp4": read_bytes(a), "b.mp4": read_bytes(b)},
     ).stderr
     m = re.search(r"average:([0-9.]+)", out)
     return float(m.group(1)) if m else None
@@ -313,10 +328,41 @@ def reset_chips():
     if held:
         p("chips are held, no reset:", held[:2])
         return False
-    cmd = "source '%s/python_env/bin/activate' && tt-smi -r" % ARGS.tt_metal
-    r = subprocess.run(["bash", "-c", cmd], capture_output=True, text=True, timeout=300)
+    r = subprocess.run(
+        [
+            "bash",
+            "-c",
+            'source "$1/python_env/bin/activate" && tt-smi -r',
+            "bash",
+            ARGS.tt_metal,
+        ],
+        capture_output=True,
+        text=True,
+        timeout=300,
+        check=False,
+    )
     p("tt-smi -r exit", r.returncode)
     return r.returncode == 0
+
+
+def check_launcher_args(ap, args):
+    """The launcher command is built from these values: accept only what a real launch
+    needs (existing folders, a plain token, a port, two digits, four card numbers)."""
+    for name in ("tt_metal", "dit_cache"):
+        value = os.path.realpath(getattr(args, name))
+        if not os.path.isdir(value):
+            ap.error(f"--{name.replace('_', '-')} is not a folder")
+        setattr(args, name, value)
+    if not os.path.isfile(os.path.join(args.tt_metal, "python_env", "bin", "activate")):
+        ap.error("--tt-metal has no python_env/bin/activate")
+    if not re.fullmatch(r"[A-Za-z0-9._-]{1,128}", args.api_key):
+        ap.error("--api-key may only have letters, digits, '.', '_' and '-'")
+    if not 1024 <= args.port <= 65535:
+        ap.error("--port must be between 1024 and 65535")
+    if not re.fullmatch(r"[1-9], [1-9]", args.host_topology):
+        ap.error('--host-topology must look like "2, 2"')
+    if not re.fullmatch(r"[0-3]( [0-3]){3}", args.card_order):
+        ap.error('--card-order must be four card numbers like "0 1 2 3"')
 
 
 def main():
@@ -343,6 +389,7 @@ def main():
         "--skip-teardown-phases", action="store_true", help="only phases 1 and 2"
     )
     args = ap.parse_args()
+    check_launcher_args(ap, args)
     ARGS = args
     work = args.workdir or tempfile.mkdtemp(prefix="tt-video-multihost.")
     os.makedirs(work, exist_ok=True)
