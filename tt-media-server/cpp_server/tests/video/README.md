@@ -6,6 +6,7 @@ The tests are split into folders by what they need to run.
 |---|---|---|
 | `mock/` | only a build of the server, no device | contract cases and server tests that run against the server with the mock runner, and worker crash tests. Guide: `mock/README.md` |
 | `real_device/` | a real server with a device and the model loaded | tests of cancel, the job queue, download and sync mode, grouped by topic. Guide: `real_device/README.md` |
+| `python/` | Python with numpy and pytest, no device | checks of the `python/cpp_dit_adapters` package (fake `tt_dit` pipelines), and of the runner list and mesh table against the Python server. The C++ runner layer is tested by `build/dit_runner_test`. Run: `python -m pytest -q tests/video/python` |
 | `benchmark/` | mock runner (server overhead) or a real server with a device | timings, not validation: sequential and burst video generation, control-plane latency, jobs per second. Guide: `benchmark/README.md` |
 | (this folder) | | `run_device_tests.sh` (the contract checks against a real server with a device, uses `mock/contract_cases.py`) |
 
