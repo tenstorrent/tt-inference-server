@@ -44,12 +44,12 @@ CompositeMigrationClient::BurstId CompositeMigrationClient::start_burst(
 }
 
 void CompositeMigrationClient::enqueue_migration_in_burst(
-    BurstId burst, int remote_endpoint_id, uint32_t src_slot, uint32_t dst_slot,
-    uint32_t layer_start, uint32_t layer_end_exclusive, uint32_t pos_start,
-    uint32_t pos_end_exclusive) {
-  burst_->enqueue_migration_in_burst(burst, remote_endpoint_id, src_slot,
-                                     dst_slot, layer_start, layer_end_exclusive,
-                                     pos_start, pos_end_exclusive);
+    BurstId burst, int remoteEndpointId, uint32_t srcSlot, uint32_t dstSlot,
+    uint32_t layerStart, uint32_t layerEndExclusive, uint32_t posStart,
+    uint32_t posEndExclusive) {
+  burst_->enqueue_migration_in_burst(burst, remoteEndpointId, srcSlot, dstSlot,
+                                     layerStart, layerEndExclusive, posStart,
+                                     posEndExclusive);
 }
 
 CompositeMigrationClient::MigrationToken CompositeMigrationClient::finish_burst(
@@ -60,11 +60,11 @@ CompositeMigrationClient::MigrationToken CompositeMigrationClient::finish_burst(
 // --- Single migrate: forward verbatim to loopback_ ---
 
 CompositeMigrationClient::MigrationToken CompositeMigrationClient::migrate(
-    int remote_endpoint_id, uint32_t src_slot, uint32_t dst_slot,
-    uint32_t layer_start, uint32_t layer_end_exclusive, uint32_t pos_start,
-    uint32_t pos_end_exclusive) {
-  return loopback_->migrate(remote_endpoint_id, src_slot, dst_slot, layer_start,
-                            layer_end_exclusive, pos_start, pos_end_exclusive);
+    int remoteEndpointId, uint32_t srcSlot, uint32_t dstSlot,
+    uint32_t layerStart, uint32_t layerEndExclusive, uint32_t posStart,
+    uint32_t posEndExclusive) {
+  return loopback_->migrate(remoteEndpointId, srcSlot, dstSlot, layerStart,
+                            layerEndExclusive, posStart, posEndExclusive);
 }
 
 // --- Backpressure: min so the scheduler respects the tighter constraint ---
@@ -133,16 +133,16 @@ void CompositeMigrationClient::on_connection_received(
 //     construction time), so the observable behavior is dominated by the
 //     loopback backend's real handshake.
 
-void CompositeMigrationClient::connect_to(int remote_endpoint_id,
+void CompositeMigrationClient::connect_to(int remoteEndpointId,
                                           const std::string& role,
-                                          const std::string& service_name) {
-  burst_->connect_to(remote_endpoint_id, role, service_name);
-  loopback_->connect_to(remote_endpoint_id, role, service_name);
+                                          const std::string& serviceName) {
+  burst_->connect_to(remoteEndpointId, role, serviceName);
+  loopback_->connect_to(remoteEndpointId, role, serviceName);
 }
 
-void CompositeMigrationClient::wait_ready(int timeout_ms) {
-  burst_->wait_ready(timeout_ms);
-  loopback_->wait_ready(timeout_ms);
+void CompositeMigrationClient::wait_ready(int timeoutMs) {
+  burst_->wait_ready(timeoutMs);
+  loopback_->wait_ready(timeoutMs);
 }
 
 void CompositeMigrationClient::shutdown(bool drain) {
