@@ -113,7 +113,7 @@ BENCHMARK_ISL_OSL_PAIRS = [
 SUPER_CLUSTER_EXTRA_ISL_OSL_PAIRS = [
     (196608, 128),  # 192K
     (256000 - 128, 128),  # 240K
-    (1048576 - 128, 128),  # 1M
+    (1024000 - 128, 128),  # 1M: GLM-5.3's 1,024,000-token window
 ]
 # Remote SUPER_CLUSTER endpoints serve high-ISL sweep points at full
 # concurrency, but get_num_prompts scales prompts as a small multiple of

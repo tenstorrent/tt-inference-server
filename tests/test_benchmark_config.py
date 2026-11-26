@@ -482,7 +482,7 @@ def _text_sweep(config):
 
 def test_super_cluster_sweep_reaches_1m_only_with_a_1m_context(monkeypatch):
     benchmark_config = _import_benchmark_config(monkeypatch)
-    one_m = 1048576 - 128
+    one_m = 1024000 - 128
 
     full = _text_sweep(
         benchmark_config.get_benchmark_config(_super_cluster_spec(1048576))
@@ -503,7 +503,7 @@ def test_max_concurrency_env_caps_the_sweep(monkeypatch):
     sweep = _text_sweep(benchmark_config.get_benchmark_config(spec))
     assert sweep
     assert {p.max_concurrency for p in sweep} == {1}
-    assert {p.isl for p in sweep} >= {128, 131072, 1048576 - 128}
+    assert {p.isl for p in sweep} >= {128, 131072, 1024000 - 128}
 
     # A cap above the spec's max_concurrency leaves the spec's value.
     monkeypatch.setenv("BENCHMARK_MAX_CONCURRENCY", "1000")
