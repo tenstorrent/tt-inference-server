@@ -38,6 +38,10 @@ from .._test_common import (
     is_minimax_h3_model,
     run_tiered_check,
 )
+from .._test_common.server_metrics import (
+    scrape_video_metrics,
+    server_side_video_metrics,
+)
 from ..context import MediaContext, require_health
 from ..test_status import VideoGenerationTestStatus
 
@@ -376,8 +380,12 @@ def run_video_benchmark(ctx: MediaContext) -> Block:
     burst_jobs = _burst_jobs_from_env()
     try:
         num_calls = get_num_calls(ctx)
+        # The server's own view of each phase (empty for a server without /metrics).
+        metrics_start = scrape_video_metrics(ctx.base_url)
         status_list = _run_video_generation_benchmark(ctx, num_calls)
+        metrics_sequential = scrape_video_metrics(ctx.base_url)
         burst = _run_video_burst_benchmark(ctx, burst_jobs) if burst_jobs else {}
+        metrics_end = scrape_video_metrics(ctx.base_url) if burst_jobs else {}
     except Exception as e:
         logger.error(f"Benchmark execution encountered an error: {e}")
         raise
@@ -426,6 +434,12 @@ def run_video_benchmark(ctx: MediaContext) -> Block:
         )
     if burst:
         block_data["Benchmarks"].update(burst)
+    server_side = server_side_video_metrics(metrics_start, metrics_sequential)
+    if server_side:
+        block_data["Benchmarks"]["server_side"] = server_side
+    burst_server_side = server_side_video_metrics(metrics_sequential, metrics_end)
+    if burst_server_side:
+        block_data["Benchmarks"]["burst_server_side"] = burst_server_side
 
     # A benchmark where any generation failed is not a valid PASS regardless of
     # the timing of the survivors: surface it as a blocking failure so a broken

@@ -495,8 +495,57 @@ def test_a_failed_burst_job_fails_the_benchmark(monkeypatch):
     )
     monkeypatch.setattr(mod, "_video_target_checks", lambda *a: ({}, "n/a"))
     monkeypatch.setattr(mod, "block_id", lambda ctx: "id")
+    monkeypatch.setattr(mod, "scrape_video_metrics", lambda base_url: {})
     monkeypatch.setenv(mod.VIDEO_BENCHMARK_BURST_JOBS_ENV, "4")
-    block = mod.run_video_benchmark(_ctx("Wan-AI/Wan2.2-T2V-A14B-Diffusers"))
+    ctx = _ctx("Wan-AI/Wan2.2-T2V-A14B-Diffusers")
+    ctx.base_url = "http://localhost:8000"
+    block = mod.run_video_benchmark(ctx)
     assert block.data["status"] == TestStatus.FAIL.value
     assert block.data["Benchmarks"]["generation_seconds"] == 78.0
     assert block.data["Benchmarks"]["burst_jobs"] == 4
+
+
+def test_server_side_metrics_are_reported_per_phase(monkeypatch):
+    status = mod.VideoGenerationTestStatus(
+        status=True, elapsed=80.0, num_inference_steps=40
+    )
+    monkeypatch.setattr(mod, "require_health", lambda ctx: None)
+    monkeypatch.setattr(mod, "get_num_calls", lambda ctx: 1)
+    monkeypatch.setattr(mod, "_run_video_generation_benchmark", lambda c, n: [status])
+    monkeypatch.setattr(
+        mod,
+        "_run_video_burst_benchmark",
+        lambda c, n: {"burst_jobs": n, "burst_succeeded": n},
+    )
+    monkeypatch.setattr(mod, "_video_target_checks", lambda *a: ({}, "n/a"))
+    monkeypatch.setattr(mod, "block_id", lambda ctx: "id")
+    scrapes = iter(["start", "after sequential", "after burst"])
+    monkeypatch.setattr(mod, "scrape_video_metrics", lambda base_url: next(scrapes))
+    monkeypatch.setattr(
+        mod,
+        "server_side_video_metrics",
+        lambda before, after: {"phase": f"{before} -> {after}"},
+    )
+    monkeypatch.setenv(mod.VIDEO_BENCHMARK_BURST_JOBS_ENV, "2")
+    ctx = _ctx("Wan-AI/Wan2.2-T2V-A14B-Diffusers")
+    ctx.base_url = "http://localhost:8000"
+    data = mod.run_video_benchmark(ctx).data["Benchmarks"]
+    assert data["server_side"] == {"phase": "start -> after sequential"}
+    assert data["burst_server_side"] == {"phase": "after sequential -> after burst"}
+
+
+def test_a_server_without_metrics_adds_nothing_to_the_report(monkeypatch):
+    status = mod.VideoGenerationTestStatus(
+        status=True, elapsed=80.0, num_inference_steps=40
+    )
+    monkeypatch.setattr(mod, "require_health", lambda ctx: None)
+    monkeypatch.setattr(mod, "get_num_calls", lambda ctx: 1)
+    monkeypatch.setattr(mod, "_run_video_generation_benchmark", lambda c, n: [status])
+    monkeypatch.setattr(mod, "_video_target_checks", lambda *a: ({}, "n/a"))
+    monkeypatch.setattr(mod, "block_id", lambda ctx: "id")
+    monkeypatch.setattr(mod, "scrape_video_metrics", lambda base_url: {})
+    monkeypatch.delenv(mod.VIDEO_BENCHMARK_BURST_JOBS_ENV, raising=False)
+    ctx = _ctx("Wan-AI/Wan2.2-T2V-A14B-Diffusers")
+    ctx.base_url = "http://localhost:8000"
+    data = mod.run_video_benchmark(ctx).data["Benchmarks"]
+    assert "server_side" not in data and "burst_server_side" not in data
