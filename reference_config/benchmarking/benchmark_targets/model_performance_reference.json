@@ -7494,8 +7494,8 @@
         "p300x2": [
             {
                 "_comment": [
-                    "PLACEHOLDER (stopgap): bring-up reference measured at base tt-metal 8c48b4e4 with plugin 042a9486 and vLLM 0.31, NOT at the CI pins. Replace with the pin measurement (agentic-models integration plan section 5.1 step 6, decision D4) before relying on this gate.",
-                    "Source: m2 perf/PERF.md round-6 final (perf/bench/r6_final), vllm bench serve random greedy: TTFT mean 0.18 s, 47.2 t/s/u, 44.5 t/s."
+                    "Stopgap: measured at the CI pins (tt-metal 58afa857 + patches 1-16, vllm-tt-plugin f6fe76b + P1-P7, vLLM 0.32.0), agentic-models integration plan section 5.1 step 6, decision D4.",
+                    "Source: m2, 2026-11-25, vllm bench serve random greedy ignore-eos, two fresh instances: TTFT mean 207-213 ms, 43.1-44.6 t/s/u, 40.6-41.8 t/s (bring-up base: 180 ms, 47.2, 44.5)."
                 ],
                 "isl": 128,
                 "osl": 128,
@@ -7508,17 +7508,17 @@
                 "images_per_prompt": null,
                 "targets": {
                     "measured": {
-                        "ttft_ms": 180,
-                        "tput_user": 47.2,
-                        "tput": 44.5,
+                        "ttft_ms": 210,
+                        "tput_user": 43.1,
+                        "tput": 40.6,
                         "tolerance": 0.2
                     }
                 }
             },
             {
                 "_comment": [
-                    "PLACEHOLDER (stopgap): bring-up reference measured at base tt-metal 8c48b4e4 with plugin 042a9486 and vLLM 0.31, NOT at the CI pins. Replace with the pin measurement (agentic-models integration plan section 5.1 step 6, decision D4) before relying on this gate.",
-                    "Source: m2 round-6 final 1024/1024 x16: TTFT mean 3.08 s, 19.5 t/s/u, 294.0 t/s."
+                    "Stopgap: measured at the CI pins (tt-metal 58afa857 + patches 1-16, vllm-tt-plugin f6fe76b + P1-P7, vLLM 0.32.0), agentic-models integration plan section 5.1 step 6, decision D4.",
+                    "Source: m2 1024/1024 x16 (32 prompts), two instances: TTFT mean 2.91-2.96 s, 18.83-18.86 t/s/u, 285.4-286.0 t/s (bring-up base: 3.08 s, 19.5, 294.0)."
                 ],
                 "isl": 1024,
                 "osl": 1024,
@@ -7531,9 +7531,9 @@
                 "images_per_prompt": null,
                 "targets": {
                     "measured": {
-                        "ttft_ms": 3080,
-                        "tput_user": 19.5,
-                        "tput": 294.0,
+                        "ttft_ms": 2950,
+                        "tput_user": 18.8,
+                        "tput": 285.4,
                         "tolerance": 0.2
                     }
                 }
@@ -7544,8 +7544,8 @@
         "p300x2": [
             {
                 "_comment": [
-                    "PLACEHOLDER (stopgap): bring-up reference measured at base tt-metal 8c48b4e4 with plugin 042a9486 and vLLM 0.31, NOT at the CI pins. Replace with the pin measurement (agentic-models integration plan section 5.1 step 6, decision D4) before relying on this gate.",
-                    "Source: m3 perf/PERF.md 'Round 6 final' (tt-metal b43970c8d): TTFT mean 64 ms, 102.4 t/s/u, 98 t/s."
+                    "Stopgap: measured at the CI pins (tt-metal 58afa857 + patches 1-16, vllm-tt-plugin f6fe76b + P1-P7, vLLM 0.32.0), agentic-models integration plan section 5.1 step 6, decision D4.",
+                    "Source: m3, 2026-11-25, cold TTI local server, vllm bench serve as the TTI driver: TTFT mean 60.5 ms, 102.1 t/s/u, 98.1 t/s (bring-up base: 64 ms, 102.4, 98)."
                 ],
                 "isl": 128,
                 "osl": 128,
@@ -7558,17 +7558,17 @@
                 "images_per_prompt": null,
                 "targets": {
                     "measured": {
-                        "ttft_ms": 64,
-                        "tput_user": 102.4,
-                        "tput": 98,
+                        "ttft_ms": 61,
+                        "tput_user": 102.1,
+                        "tput": 98.1,
                         "tolerance": 0.2
                     }
                 }
             },
             {
                 "_comment": [
-                    "PLACEHOLDER (stopgap): bring-up reference measured at base tt-metal 8c48b4e4 with plugin 042a9486 and vLLM 0.31, NOT at the CI pins. Replace with the pin measurement (agentic-models integration plan section 5.1 step 6, decision D4) before relying on this gate.",
-                    "Source: m3 'Round 6 final' 1024/1024 x16: TTFT mean 1001 ms, 77.6 t/s/u, 1152 t/s."
+                    "Stopgap: measured at the CI pins (tt-metal 58afa857 + patches 1-16, vllm-tt-plugin f6fe76b + P1-P7, vLLM 0.32.0), agentic-models integration plan section 5.1 step 6, decision D4.",
+                    "Source: m3 1024/1024 x16 (32 prompts): TTFT mean 982 ms, 76.8 t/s/u, 1142 t/s (bring-up base: 1001 ms, 77.6, 1152)."
                 ],
                 "isl": 1024,
                 "osl": 1024,
@@ -7581,9 +7581,9 @@
                 "images_per_prompt": null,
                 "targets": {
                     "measured": {
-                        "ttft_ms": 1001,
-                        "tput_user": 77.6,
-                        "tput": 1152,
+                        "ttft_ms": 982,
+                        "tput_user": 76.8,
+                        "tput": 1142,
                         "tolerance": 0.2
                     }
                 }
@@ -7594,8 +7594,8 @@
         "p300x2": [
             {
                 "_comment": [
-                    "PLACEHOLDER (stopgap): bring-up reference measured at base tt-metal 8c48b4e4 with plugin 042a9486 and vLLM 0.31, NOT at the CI pins. Replace with the pin measurement (agentic-models integration plan section 5.1 step 6, decision D4) before relying on this gate.",
-                    "Source: m4 perf/PERF.md 'Round 6b and FINAL' (cold, greedy, MTP on): TTFT mean 137 ms, 58.6 t/s/u (no c1 total recorded)."
+                    "Stopgap: measured at the CI pins (tt-metal 58afa857 + patches 1-16, vllm-tt-plugin f6fe76b + P1-P7 + P8, vLLM 0.32.0), agentic-models integration plan section 5.1 step 6, decision D4.",
+                    "Source: m4, 2026-11-25, fresh server, TTI vllm-bench tool: TTFT mean 141 ms, 53.2 t/s/u, 50.6 t/s output (bring-up base: 137 ms, 58.6)."
                 ],
                 "isl": 128,
                 "osl": 128,
@@ -7608,16 +7608,16 @@
                 "images_per_prompt": null,
                 "targets": {
                     "measured": {
-                        "ttft_ms": 137,
-                        "tput_user": 58.6,
+                        "ttft_ms": 141,
+                        "tput_user": 53.2,
                         "tolerance": 0.2
                     }
                 }
             },
             {
                 "_comment": [
-                    "PLACEHOLDER (stopgap): bring-up reference measured at base tt-metal 8c48b4e4 with plugin 042a9486 and vLLM 0.31, NOT at the CI pins. Replace with the pin measurement (agentic-models integration plan section 5.1 step 6, decision D4) before relying on this gate.",
-                    "Source: m4 FINAL 1024/1024 x16: 34.3 t/s/u, 506.5 t/s (no TTFT recorded)."
+                    "Stopgap: measured at the CI pins (tt-metal 58afa857 + patches 1-16, vllm-tt-plugin f6fe76b + P1-P7 + P8, vLLM 0.32.0), agentic-models integration plan section 5.1 step 6, decision D4.",
+                    "Source: m4 1024/1024 x16 (32 prompts): 33.4 t/s/u, 494.2 t/s output, TTFT mean 1886 ms (bring-up base: 34.3, 506.5)."
                 ],
                 "isl": 1024,
                 "osl": 1024,
@@ -7630,8 +7630,8 @@
                 "images_per_prompt": null,
                 "targets": {
                     "measured": {
-                        "tput_user": 34.3,
-                        "tput": 506.5,
+                        "tput_user": 33.4,
+                        "tput": 494.2,
                         "tolerance": 0.2
                     }
                 }
@@ -7642,8 +7642,8 @@
         "p300x2": [
             {
                 "_comment": [
-                    "PLACEHOLDER (stopgap): bring-up reference measured at base tt-metal 8c48b4e4 with plugin 042a9486 and vLLM 0.31, NOT at the CI pins. Replace with the pin measurement (agentic-models integration plan section 5.1 step 6, decision D4) before relying on this gate.",
-                    "Source: m5 evals/RESULTS.md server A sweep: TTFT p50 94 ms, 15.0 t/s/u, 14.9 t/s (decode is a fixed 32-row trace)."
+                    "Stopgap: measured at the CI pins (tt-metal 58afa857 + patches 1-16, vllm-tt-plugin f6fe76b + P1-P7, vLLM 0.32.0), agentic-models integration plan section 5.1 step 6, decision D4.",
+                    "Source: m3, 2026-11-25, cold TTI local server, vllm bench serve: TTFT mean 91.8 ms (p50 90.4), 12.33 t/s/u, 12.3 t/s (bring-up base: p50 94 ms, 15.0, 14.9; decode step 81 vs 67 ms at the pin)."
                 ],
                 "isl": 128,
                 "osl": 128,
@@ -7656,17 +7656,17 @@
                 "images_per_prompt": null,
                 "targets": {
                     "measured": {
-                        "ttft_ms": 94,
-                        "tput_user": 15.0,
-                        "tput": 14.9,
+                        "ttft_ms": 92,
+                        "tput_user": 12.3,
+                        "tput": 12.3,
                         "tolerance": 0.2
                     }
                 }
             },
             {
                 "_comment": [
-                    "PLACEHOLDER (stopgap): bring-up reference measured at base tt-metal 8c48b4e4 with plugin 042a9486 and vLLM 0.31, NOT at the CI pins. Replace with the pin measurement (agentic-models integration plan section 5.1 step 6, decision D4) before relying on this gate.",
-                    "Source: m5 server A sweep 128/128 x32: TTFT p50 3025 ms, 11.9 t/s/u, 295 t/s."
+                    "Stopgap: measured at the CI pins (tt-metal 58afa857 + patches 1-16, vllm-tt-plugin f6fe76b + P1-P7, vLLM 0.32.0), agentic-models integration plan section 5.1 step 6, decision D4.",
+                    "Source: m3 128/128 x32 (64 prompts): TTFT mean 1984 ms (p50 1430), 9.4 t/s/u, 273.5 t/s (bring-up base: p50 3025 ms, 11.9, 295)."
                 ],
                 "isl": 128,
                 "osl": 128,
@@ -7679,9 +7679,9 @@
                 "images_per_prompt": null,
                 "targets": {
                     "measured": {
-                        "ttft_ms": 3025,
-                        "tput_user": 11.9,
-                        "tput": 295,
+                        "ttft_ms": 1984,
+                        "tput_user": 9.4,
+                        "tput": 273,
                         "tolerance": 0.2
                     }
                 }
@@ -7692,8 +7692,8 @@
         "p300x2": [
             {
                 "_comment": [
-                    "PLACEHOLDER (stopgap): bring-up reference measured at base tt-metal 8c48b4e4 with plugin 042a9486 and vLLM 0.31, NOT at the CI pins. Replace with the pin measurement (agentic-models integration plan section 5.1 step 6, decision D4) before relying on this gate.",
-                    "Source: m6 perf/PERF.md 'Round 6 final' (H-13, f1dd78ee): TTFT mean 0.10 s, 70.3 t/s/u (no c1 total recorded)."
+                    "Stopgap: measured at the CI pins (tt-metal 58afa857 + patches 1-16, vllm-tt-plugin f6fe76b + P1-P7, vLLM 0.32.0), agentic-models integration plan section 5.1 step 6, decision D4.",
+                    "Source: m6, 2026-11-25, cold server, vllm bench serve random greedy ignore-eos: TTFT mean 103 ms (p90 115), 69.5 t/s/u, 66.3 t/s (bring-up base: 100 ms, 70.3)."
                 ],
                 "isl": 128,
                 "osl": 128,
@@ -7706,16 +7706,16 @@
                 "images_per_prompt": null,
                 "targets": {
                     "measured": {
-                        "ttft_ms": 100,
-                        "tput_user": 70.3,
+                        "ttft_ms": 103,
+                        "tput_user": 69.5,
                         "tolerance": 0.2
                     }
                 }
             },
             {
                 "_comment": [
-                    "PLACEHOLDER (stopgap): bring-up reference measured at base tt-metal 8c48b4e4 with plugin 042a9486 and vLLM 0.31, NOT at the CI pins. Replace with the pin measurement (agentic-models integration plan section 5.1 step 6, decision D4) before relying on this gate.",
-                    "Source: m6 R6 final 1024/1024 x16: 29.8 t/s/u, 444 t/s (no TTFT recorded)."
+                    "Stopgap: measured at the CI pins (tt-metal 58afa857 + patches 1-16, vllm-tt-plugin f6fe76b + P1-P7, vLLM 0.32.0), agentic-models integration plan section 5.1 step 6, decision D4.",
+                    "Source: m6 1024/1024 x16 (32 prompts): 24.8 t/s/u, 376.8 t/s, TTFT mean 2.25 s (bring-up base: 29.8, 444)."
                 ],
                 "isl": 1024,
                 "osl": 1024,
@@ -7728,8 +7728,8 @@
                 "images_per_prompt": null,
                 "targets": {
                     "measured": {
-                        "tput_user": 29.8,
-                        "tput": 444,
+                        "tput_user": 24.8,
+                        "tput": 377,
                         "tolerance": 0.2
                     }
                 }

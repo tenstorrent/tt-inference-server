@@ -1182,6 +1182,31 @@
           "template": "VLLMParamConformanceTest"
         }
       ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "models": [
+        "Qwen/Qwen3.6-35B-A3B",
+        "ornith-ai/Ornith-1.5-9B",
+        "Qwen/Qwen3.6-27B",
+        "ornith-ai/Ornith-1.5-35B-A3B",
+        "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16"
+      ],
+      "test_cases": [
+        {
+          "template": "VLLMParamConformanceTest",
+          "enabled": true,
+          "description": "vLLM chat/completions parameter conformance (thinking off per request)",
+          "_comment": "Stopgap: the five QB2 agentic-models specs. Known failures are waived per model in the dev spec known_issues.",
+          "test_config": {
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          }
+        }
+      ]
     }
   ]
 }
