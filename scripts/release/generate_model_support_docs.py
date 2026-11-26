@@ -715,7 +715,7 @@ def generate_model_page_group_page(
                         f"  --volume volume_id_{model_name}:/home/container_app_user/cache_root \\",
                         f"  {docker_image} \\",
                         f"  --model {model_cli_arg} \\",
-                        f"  --tt-device {device.name.lower()}",
+                        f"  --tt-device {device.name.lower()} --impl {target_template.impl.impl_name}",
                     ]
                 )
                 lines.append("```")
@@ -727,7 +727,8 @@ def generate_model_page_group_page(
         device_arg = device.name.lower()
         lines.append("```bash")
         lines.append(
-            f"python3 run.py --model {model_cli_arg} --device {device_arg} --workflow server --docker-server"
+            f"python3 run.py --model {model_cli_arg} --device {device_arg} "
+            f"--impl {target_template.impl.impl_name} --workflow server --docker-server"
         )
         lines.append("```")
         if idx == 0:

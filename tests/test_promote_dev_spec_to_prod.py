@@ -5,6 +5,9 @@
 import contextlib
 import io
 import json
+import re
+import shlex
+from pathlib import Path
 import textwrap
 
 import pytest
@@ -647,3 +650,35 @@ def test_docs_do_not_coalesce_implicit_basename_collisions(tmp_path):
     templates = load_templates_from_yaml(prod_dir / "llm.yaml")
 
     assert coalesce_model_families_for_docs(templates) == templates
+
+
+def test_generated_qb2_quickstarts_select_the_documented_implementation(tmp_path):
+    from workflows.model_spec import MODEL_SPECS, resolve_model_spec
+
+    catalogue = (
+        Path(__file__).resolve().parents[1] / "workflows/model_specs/prod/llm.yaml"
+    )
+    templates = [
+        template
+        for template in load_templates_from_yaml(catalogue)
+        if template.impl.impl_id == "llama31_8b_qb2"
+    ]
+    docs = tmp_path / "docs"
+    with contextlib.redirect_stdout(io.StringIO()):
+        generate_doc_pages(templates, str(docs))
+    page = (docs / "llm/Llama-3.1-8B-Instruct_p300x2.md").read_text()
+    commands = re.findall(r"```bash\n(.*?)```", page, re.DOTALL)
+    assert len(commands) == 2
+    for command in commands:
+        args = shlex.split(command.replace("\\\n", " "))
+
+        def value(flag):
+            return args[args.index(flag) + 1] if flag in args else None
+
+        resolved = resolve_model_spec(
+            MODEL_SPECS.values(),
+            model=value("--model"),
+            device=value("--tt-device") or value("--device"),
+            impl=value("--impl"),
+        )
+        assert resolved.impl.impl_id == "llama31_8b_qb2"
