@@ -6,8 +6,11 @@
 from __future__ import annotations
 
 import logging
+import math
+import os
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import requests
@@ -41,7 +44,9 @@ from ..test_status import VideoGenerationTestStatus
 logger = logging.getLogger(__name__)
 
 
-DEFAULT_VIDEO_POLLING_INTERVAL_SECONDS = 5
+# One second: a 5 s interval adds up to 5 s (about 6 % of a Wan2.2 generation) of
+# measurement error, which hides the difference between two servers.
+DEFAULT_VIDEO_POLLING_INTERVAL_SECONDS = 1
 DEFAULT_VIDEO_TIMEOUT_SECONDS = 1200
 # Keyed by full HF repo id.
 VIDEO_INFERENCE_STEPS = {
@@ -52,6 +57,13 @@ VIDEO_INFERENCE_STEPS = {
     "MiniMaxAI/MiniMax-H3-FL2VA-LightX2V": 4,
     "MiniMaxAI/MiniMax-H3-Ref2VA-LightX2V": 4,
 }
+# The same request every time, so the runs are comparable between servers and
+# between runs. Models whose payload fixes the seed already keep their own.
+VIDEO_BENCHMARK_PROMPT = "a red ball rolling on grass"
+VIDEO_BENCHMARK_SEED = 42
+# Videos submitted at once by the burst phase; 0 (the default) turns it off.
+# Keep it below the server's queue limit, a full queue answers 429.
+VIDEO_BENCHMARK_BURST_JOBS_ENV = "VIDEO_BENCHMARK_BURST_JOBS"
 # A shape the boot warmup did not cover compiles inside its first request.
 MINIMAX_H3_VIDEO_TIMEOUT_SECONDS = 1800
 
@@ -95,9 +107,13 @@ def _poll_video_completion(
     ctx: MediaContext,
     job_id: str,
     headers: dict,
-    polling_interval: int = DEFAULT_VIDEO_POLLING_INTERVAL_SECONDS,
+    polling_interval: float = DEFAULT_VIDEO_POLLING_INTERVAL_SECONDS,
     timeout: int = DEFAULT_VIDEO_TIMEOUT_SECONDS,
+    timings: dict | None = None,
 ) -> str:
+    """Wait for the job and download its video; "" when it failed or timed out.
+    ``timings["completed_at"]`` is set when the job reports `completed`, before
+    the download, so generation time and download time can be told apart."""
     logger.info(f"Polling video job: {job_id}")
     logger.info(f"Polling interval: {polling_interval} seconds")
     logger.info(f"Timeout: {timeout} seconds")
@@ -121,6 +137,8 @@ def _poll_video_completion(
             logger.info(f"Job {job_id} status: {status}")
 
             if status == VIDEO_JOB_STATUS_COMPLETED:
+                if timings is not None:
+                    timings["completed_at"] = time.time()
                 return _download_video(ctx, job_id, headers)
             if status in (VIDEO_JOB_STATUS_FAILED, VIDEO_JOB_STATUS_CANCELLED):
                 logger.error(f"Video generation {status}: {job_id}")
@@ -143,7 +161,12 @@ def _generate_video(
     prompt: str,
     num_inference_steps: int = 20,
     image_b64: str | None = None,
+    timings: dict | None = None,
 ) -> tuple[bool, float, str, str]:
+    """Submit one job and wait for its video. Returns (ok, seconds from the
+    submit to the end of the download, job id, video path). When ``timings`` is
+    given, ``timings["generation_seconds"]`` is the time until the job reported
+    `completed` (without the download)."""
     logger.info(f"🎬 Generating video with prompt: {prompt}")
     model_name = ctx.model_spec.model_name
     h3 = is_minimax_h3_model(model_name)
@@ -159,6 +182,7 @@ def _generate_video(
         model_name=model_name,
         image_b64=image_b64,
     )
+    payload.setdefault("seed", VIDEO_BENCHMARK_SEED)
     # Avoid logging the (large) base64 image prompt for I2V.
     logger.info(f"Payload keys: {sorted(payload)} -> endpoint: {submit_endpoint}")
 
@@ -180,6 +204,7 @@ def _generate_video(
         job_id = job_data.get("id")
         logger.info(f"Video generation job submitted: {job_id}")
 
+        poll_times: dict = {}
         video_path = _poll_video_completion(
             ctx,
             job_id,
@@ -189,8 +214,11 @@ def _generate_video(
                 if h3
                 else DEFAULT_VIDEO_TIMEOUT_SECONDS
             ),
+            timings=poll_times,
         )
         elapsed = time.time() - start_time
+        if timings is not None and "completed_at" in poll_times:
+            timings["generation_seconds"] = poll_times["completed_at"] - start_time
 
         if video_path:
             logger.info(f"✅ Video generated successfully: {video_path}")
@@ -221,11 +249,13 @@ def _run_video_generation_benchmark(
     status_list: list[VideoGenerationTestStatus] = []
     for i in range(num_calls):
         logger.info(f"Generating video {i + 1}/{num_calls}...")
+        timings: dict = {}
         status, elapsed, job_id, video_path = _generate_video(
             ctx,
-            prompt=f"Test video generation {i + 1}",
+            prompt=VIDEO_BENCHMARK_PROMPT,
             num_inference_steps=inference_steps,
             image_b64=image_b64,
+            timings=timings,
         )
         logger.info(f"Generated video in {elapsed:.2f} seconds.")
 
@@ -238,10 +268,68 @@ def _run_video_generation_benchmark(
                 inference_steps_per_second=inference_steps_per_second,
                 job_id=job_id,
                 video_path=video_path,
-                prompt=f"Test video generation {i + 1}",
+                prompt=VIDEO_BENCHMARK_PROMPT,
+                generation_seconds=timings.get("generation_seconds"),
             )
         )
     return status_list
+
+
+def _percentile(values: list[float], fraction: float) -> float:
+    """Nearest-rank percentile of a non-empty list."""
+    ordered = sorted(values)
+    return ordered[max(0, math.ceil(fraction * len(ordered)) - 1)]
+
+
+def _run_video_burst_benchmark(ctx: MediaContext, num_jobs: int) -> dict:
+    """Submit ``num_jobs`` videos at once and report how the server queues them:
+    the videos per minute over the whole burst and the latency of each video
+    (submit to download), which includes the wait in the queue."""
+    logger.info(f"Running video burst benchmark with {num_jobs} jobs.")
+    model_name = ctx.model_spec.hf_model_repo
+    inference_steps = VIDEO_INFERENCE_STEPS[model_name]
+    needs_image = is_i2v_video_model(model_name) or is_minimax_h3_model(
+        ctx.model_spec.model_name
+    )
+    image_b64 = _load_fixture_image_base64() if needs_image else None
+
+    start = time.time()
+    with ThreadPoolExecutor(max_workers=num_jobs) as pool:
+        futures = [
+            pool.submit(
+                _generate_video,
+                ctx,
+                VIDEO_BENCHMARK_PROMPT,
+                inference_steps,
+                image_b64,
+            )
+            for _ in range(num_jobs)
+        ]
+        results = [future.result() for future in futures]
+    wall_seconds = time.time() - start
+
+    latencies = [elapsed for ok, elapsed, _job, _path in results if ok]
+    summary = {
+        "burst_jobs": num_jobs,
+        "burst_succeeded": len(latencies),
+        "burst_wall_seconds": wall_seconds,
+        "burst_videos_per_minute": (
+            60 * len(latencies) / wall_seconds if wall_seconds > 0 else 0
+        ),
+    }
+    if latencies:
+        summary["burst_latency_p50"] = _percentile(latencies, 0.5)
+        summary["burst_latency_p95"] = _percentile(latencies, 0.95)
+    return summary
+
+
+def _burst_jobs_from_env() -> int:
+    raw = os.environ.get(VIDEO_BENCHMARK_BURST_JOBS_ENV, "")
+    try:
+        return max(0, int(raw)) if raw else 0
+    except ValueError:
+        logger.warning(f"Ignoring {VIDEO_BENCHMARK_BURST_JOBS_ENV}={raw!r}")
+        return 0
 
 
 def _video_ttft(status_list: list[VideoGenerationTestStatus]) -> float:
@@ -285,9 +373,11 @@ def run_video_benchmark(ctx: MediaContext) -> Block:
         )
     require_health(ctx)
 
+    burst_jobs = _burst_jobs_from_env()
     try:
         num_calls = get_num_calls(ctx)
         status_list = _run_video_generation_benchmark(ctx, num_calls)
+        burst = _run_video_burst_benchmark(ctx, burst_jobs) if burst_jobs else {}
     except Exception as e:
         logger.error(f"Benchmark execution encountered an error: {e}")
         raise
@@ -312,6 +402,9 @@ def run_video_benchmark(ctx: MediaContext) -> Block:
         ctx, ttft_value, inference_steps_per_second
     )
 
+    generation_times = [
+        s.generation_seconds for s in successful if s.generation_seconds is not None
+    ]
     block_data: dict = {
         "Benchmarks": {
             "num_requests": num_total,
@@ -326,6 +419,13 @@ def run_video_benchmark(ctx: MediaContext) -> Block:
             "target_checks": target_checks,
         },
     }
+    if generation_times:
+        # Until the job reported `completed`: ttft above also holds the download.
+        block_data["Benchmarks"]["generation_seconds"] = sum(generation_times) / len(
+            generation_times
+        )
+    if burst:
+        block_data["Benchmarks"].update(burst)
 
     # A benchmark where any generation failed is not a valid PASS regardless of
     # the timing of the survivors: surface it as a blocking failure so a broken
@@ -334,6 +434,12 @@ def run_video_benchmark(ctx: MediaContext) -> Block:
         logger.error(
             f"Video benchmark: only {num_successful}/{num_total} generations "
             f"succeeded; marking benchmark as FAILED."
+        )
+        block_data["status"] = TestStatus.FAIL.value
+    if burst and burst["burst_succeeded"] != burst["burst_jobs"]:
+        logger.error(
+            f"Video burst: only {burst['burst_succeeded']}/{burst['burst_jobs']} "
+            f"generations succeeded; marking benchmark as FAILED."
         )
         block_data["status"] = TestStatus.FAIL.value
 
