@@ -679,6 +679,12 @@ _K2_HORIZON_LM_EVAL_TASKS = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "lm_eval_tasks", "k2_horizon"
 )
 
+# lm-eval task definitions for Kimi-K3.1 (see lm_eval_tasks/kimi_k31): aime25 with a
+# grader that accepts a boxed equation. Absolute, like the K2-Horizon path.
+_KIMI_K31_LM_EVAL_TASKS = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "lm_eval_tasks", "kimi_k31"
+)
+
 # The tokenizer the Kimi-K3.1 evals load: the served name moonshotai/Kimi-K3.1 is not
 # an HF repo, so they use the checkpoint's public one.
 _KIMI_K31_TOKENIZER = "moonshotai/Kimi-K3.1-Pro"
@@ -2629,7 +2635,10 @@ _eval_config_list = [
             # above the workers' default min_disagg_tokens (1024); the others
             # migrate from prefill only when the deployment lowers that threshold.
             EvalTask(
+                # aime25 from lm_eval_tasks/kimi_k31: the fork's task with a grader that
+                # also accepts a boxed equation ("\\boxed{21+49=70}" for 70).
                 task_name="aime25",
+                include_path=_KIMI_K31_LM_EVAL_TASKS,
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 max_concurrent=15,
                 use_chat_api=True,
