@@ -17,6 +17,7 @@
 #include "runtime/dit/dit_env.hpp"
 #include "runtime/dit/dit_python_runner.hpp"
 #include "runtime/runners/video_python_env.hpp"
+#include "runtime/runners/video_request_convert.hpp"
 #include "utils/logger.hpp"
 #include "utils/video_output_dir.hpp"
 
@@ -58,15 +59,6 @@ void setDitCacheDir() {
   }
   tt::dit::setEnvIfChanged("TT_DIT_CACHE_DIR", dir.string());
   TT_LOG_INFO("[VideoDevice] tt_dit weight cache: {}", dir.string());
-}
-
-// The server's request as the runner's own type, through its JSON: every field
-// the server accepted (image_prompts and references included) reaches the
-// model unchanged.
-tt::dit::DiTRequest toDiTRequest(const tt::domain::VideoGenerateRequest& r) {
-  Json::Value json = r.toJson();
-  json["task_id"] = std::to_string(r.task_id);
-  return tt::dit::DiTRequest::fromJson(json);
 }
 
 std::string requireMp4(const std::string& path) {
@@ -190,8 +182,8 @@ std::string VideoDeviceRunner::run(
   }
   py::gil_scoped_acquire gil;
   try {
-    const std::string path =
-        requireMp4(python->runner->generate(toDiTRequest(request)).path);
+    const std::string path = requireMp4(
+        python->runner->generate(tt::runtime::toDiTRequest(request)).path);
     TT_LOG_INFO("[VideoDevice] task {} wrote {}", request.task_id, path);
     return path;
   } catch (const tt::dit::RequestError& e) {

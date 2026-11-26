@@ -13,11 +13,14 @@
 #include <csignal>
 #include <filesystem>
 #include <fstream>
+#include <map>
+#include <sstream>
 
 #include "runtime/dit/device_params.hpp"
 #include "runtime/dit/dit_model.hpp"
 #include "runtime/dit/dit_models.hpp"
 #include "runtime/dit/media_export.hpp"
+#include "runtime/runners/video_request_convert.hpp"
 
 using namespace tt::dit;
 namespace fs = std::filesystem;
@@ -74,10 +77,22 @@ TEST(DiTRegistry, ServesTheWanRunners) {
   EXPECT_EQ(supportedRunners(), expected);
 }
 
-TEST(DiTRegistry, DumpsMeshTableForTheParityCheckAgainstPython) {
-  // tests/video/python compares this file with the Python server's
-  // ModelConfigs.
-  Json::Value out;
+TEST(DiTRegistry, MeshTableMatchesTheCheckedInTable) {
+  // tests/unit/dit/dit_meshes.tsv is the table tests/video/python compares with
+  // the Python server's ModelConfigs; this keeps the C++ side equal to it.
+  std::map<std::string, std::pair<int, int>> expected;
+  std::ifstream file(std::string(DIT_TEST_DATA_DIR) + "/dit_meshes.tsv");
+  ASSERT_TRUE(file.good());
+  for (std::string line; std::getline(file, line);) {
+    if (line.empty() || line[0] == '#') continue;
+    std::istringstream row(line);
+    std::string runner, device;
+    int rows = 0, cols = 0;
+    ASSERT_TRUE(static_cast<bool>(row >> runner >> device >> rows >> cols))
+        << line;
+    expected[runner + " " + device] = {rows, cols};
+  }
+  std::map<std::string, std::pair<int, int>> actual;
   for (const auto& name : supportedRunners()) {
     RunnerConfig c;
     c.modelRunner = name;
@@ -88,15 +103,12 @@ TEST(DiTRegistry, DumpsMeshTableForTheParityCheckAgainstPython) {
       c.device = device;
       try {
         const auto m = createModel(c);
-        out[name][device].append(m->mesh().rows);
-        out[name][device].append(m->mesh().cols);
+        actual[name + " " + device] = {m->mesh().rows, m->mesh().cols};
       } catch (const std::invalid_argument&) {
       }
     }
-    EXPECT_TRUE(out.isMember(name)) << name;
   }
-  std::ofstream file("dit_meshes.json");
-  file << out.toStyledString();
+  EXPECT_EQ(actual, expected);
 }
 
 TEST(DiTRegistry, RefusesUnknownRunnerAndDevice) {
@@ -206,6 +218,63 @@ TEST(DiTWan, ImageConditionedModelsCheckAndForwardImagePrompts) {
   // The warmup request carries an image.
   EXPECT_EQ(model->warmupRequest().imagePrompts.size(), 1u);
   EXPECT_TRUE(make("tt-wan2.2")->warmupRequest().imagePrompts.empty());
+}
+
+TEST(DiTWan, FieldsThePipelineDoesNotReadAreIgnored) {
+  const std::string extra =
+      std::string(R"("image_prompts":[{"image":")") + testImg +
+      R"(","frame_pos":0}],"references":{"images":[{"b64":"a"}]})";
+  const auto t2v = make("tt-wan2.2");
+  const DiTRequest r = request(R"({"prompt":"x",)" + extra + "}");
+  t2v->validate(r);  // not refused
+  const Json::Value call = t2v->buildCall(r);
+  EXPECT_FALSE(call.isMember("image_prompts"));
+  EXPECT_FALSE(call.isMember("references"));
+  // The image-to-video runner takes the images and ignores the references.
+  const auto i2v = make("tt-wan2.2-i2v");
+  i2v->validate(r);
+  const Json::Value i2vCall = i2v->buildCall(r);
+  EXPECT_EQ(i2vCall["image_prompts"].size(), 1u);
+  EXPECT_FALSE(i2vCall.isMember("references"));
+}
+
+TEST(DiTRequestTest, ConvertsAServerRequestFieldByField) {
+  const Json::Value json = [] {
+    Json::Value j;
+    j["prompt"] = "a ball";
+    j["negative_prompt"] = "blur";
+    j["num_inference_steps"] = 8;
+    j["seed"] = 7;
+    j["aspect_ratio"] = "16:9";
+    j["height"] = 480;
+    j["width"] = 832;
+    j["fps"] = 16.5;
+    j["duration"] = 2.5;
+    j["num_frames"] = 33;
+    j["image_prompts"][0]["image"] = "aW1n";
+    j["image_prompts"][0]["frame_pos"] = -1;
+    j["references"]["images"][0]["b64"] = "cmVm";
+    return j;
+  }();
+  const auto server = tt::domain::VideoGenerateRequest::fromJson(json, 42);
+  const DiTRequest direct = tt::runtime::toDiTRequest(server);
+  // Same result as the request going through its JSON and being parsed again.
+  Json::Value viaJson = server.toJson();
+  viaJson["task_id"] = "42";
+  EXPECT_EQ(direct.toJson(), DiTRequest::fromJson(viaJson).toJson());
+  EXPECT_EQ(direct.taskId, "42");
+  EXPECT_EQ(direct.imagePrompts.at(0).framePos, -1);
+  EXPECT_EQ(direct.imagePrompts.at(0).image, "aW1n");
+  EXPECT_EQ(direct.references["images"][0]["b64"].asString(), "cmVm");
+  // A minimal request leaves the optional fields unset.
+  Json::Value minimalJson;
+  minimalJson["prompt"] = "x";
+  const auto minimal =
+      tt::domain::VideoGenerateRequest::fromJson(minimalJson, 1);
+  const DiTRequest bare = tt::runtime::toDiTRequest(minimal);
+  EXPECT_FALSE(bare.seed.has_value());
+  EXPECT_TRUE(bare.imagePrompts.empty());
+  EXPECT_FALSE(bare.references.isObject());
 }
 
 TEST(DiTRequestTest, RoundTripAndRefusals) {

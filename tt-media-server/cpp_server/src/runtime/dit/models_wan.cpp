@@ -40,6 +40,10 @@ Json::Value WanModel::adapterOptions(const HostEnv&) const {
   return o;
 }
 
+// Fields the Wan2.2 pipelines do not read (`references`, and `image_prompts` on
+// the text-to-video runner) are ignored, like any other extra field of a
+// request. The Python server does the same: only its image-to-video route
+// takes images.
 Json::Value WanModel::buildCall(const DiTRequest& r) const {
   Json::Value call;
   call["prompts"].append(r.prompt);

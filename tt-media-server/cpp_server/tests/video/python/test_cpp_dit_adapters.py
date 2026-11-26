@@ -13,7 +13,6 @@ Run: python -m pytest -q tests/video/python   (from cpp_server)
 
 import base64
 import io
-import json
 import re
 import sys
 import types
@@ -113,12 +112,22 @@ def test_unknown_adapter_and_double_registration():
         adapters.register("wan_t2v")(lambda mesh, o: None)
 
 
+def _checked_in_mesh_table() -> dict:
+    """tests/unit/dit/dit_meshes.tsv: {runner: {device: [rows, cols]}}. The C++
+    test dit_runner_test keeps the C++ runners equal to this file."""
+    table: dict = {}
+    path = CPP_SERVER / "tests" / "unit" / "dit" / "dit_meshes.tsv"
+    for line in path.read_text().splitlines():
+        if not line.strip() or line.startswith("#"):
+            continue
+        runner, device, rows, cols = line.split()
+        table.setdefault(runner, {})[device] = [int(rows), int(cols)]
+    return table
+
+
 def test_cpp_runner_list_and_meshes_match_the_python_server():
-    """build/dit_runner_test dumps the C++ mesh table; compare it with the
-    Python server's config (skipped when either side is not available)."""
-    dump = CPP_SERVER / "build" / "dit_meshes.json"
-    if not dump.exists():
-        pytest.skip("run build/dit_runner_test first")
+    """The checked-in mesh table of the C++ runners equals the Python server's
+    config (skipped only when the Python server's config cannot be imported)."""
     sys.path.insert(0, str(MEDIA_SERVER))
     try:
         from config.constants import ModelConfigs, ModelRunners
@@ -134,7 +143,7 @@ def test_cpp_runner_list_and_meshes_match_the_python_server():
         for e in re.findall(r"ModelRunners\.(\w+)\.value", log_map)
         if e != "SP_RUNNER"  # drives an external process, not a tt_dit pipeline
     }
-    cpp = json.loads(dump.read_text())
+    cpp = _checked_in_mesh_table()
     # The C++ server runs the Wan2.2 runners only (the rest of the Python
     # runners are not ported here); each of them must be a Python runner.
     assert set(cpp) == {"tt-wan2.2", "tt-wan2.2-i2v"}

@@ -1263,6 +1263,9 @@ target_link_libraries(dit_runner_test PRIVATE
 target_include_directories(dit_runner_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
+target_compile_definitions(dit_runner_test PRIVATE
+    DIT_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/unit/dit"
+)
 
 add_executable(embedding_ipc_test tests/unit/ipc/embedding_ipc_test.cpp)
 target_link_libraries(embedding_ipc_test PRIVATE
