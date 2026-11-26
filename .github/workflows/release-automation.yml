@@ -146,6 +146,24 @@ jobs:
           IN_TAG_SUFFIX: ${{ github.event.inputs['tag-suffix'] }}
           IN_POST_RELEASE_SUFFIX: ${{ github.event.inputs['post-release-suffix'] }}
         run: |
+          # Check the form of each input first. The values go to GITHUB_ENV
+          # below, where a line break would set other variables for the later
+          # steps, and those steps hold the tt-shield token. Bash `[[ =~ ]]`
+          # with ^...$ matches the whole value, so a line break never passes.
+          bad() { echo "::error::input $1 has a form that is not allowed: $2"; exit 1; }
+          [[ "$IN_VERSION" =~ ^[0-9A-Za-z.+_-]{0,64}$ ]] \
+            || bad version "use letters, digits and . + _ -"
+          [[ "$IN_TT_SHIELD_RUN_ID" =~ ^[0-9]{1,20}$ ]] \
+            || bad tt-shield-run-id "use the run ID, a number"
+          [[ "$IN_TT_METAL_COMMIT" =~ ^[0-9a-fA-F]{7,40}$ ]] \
+            || bad tt-metal-commit "use a commit SHA, 7 to 40 hex characters"
+          [[ "$IN_VLLM_COMMIT" =~ ^([0-9a-fA-F]{7,40})?$ ]] \
+            || bad vllm-commit "use a commit SHA, 7 to 40 hex characters, or leave it empty"
+          [[ "$IN_TAG_SUFFIX" =~ ^[0-9A-Za-z._-]{0,40}$ ]] \
+            || bad tag-suffix "use letters, digits and . _ -"
+          [[ "$IN_POST_RELEASE_SUFFIX" =~ ^[0-9A-Za-z._-]{0,40}$ ]] \
+            || bad post-release-suffix "use letters, digits and . _ -"
+
           # The VERSION file is the source of truth (checkout runs first, so it
           # is present). The `version` input is only for the run title; require
           # it to match the file so the title can never misrepresent the release.
