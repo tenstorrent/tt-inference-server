@@ -14,5 +14,12 @@
 # copy of the .so, so the preload override that distinguished build-tree from
 # install-tree copies is no longer needed.
 
+# Drop the DRISC seat locks (tt-metal's per-chip exclusive locks in /dev/shm) left
+# by an earlier process of this container. The C++ media server runs with a private
+# /dev/shm (--ipc private), so these files can only be ours; with the host's IPC
+# namespace this would delete the locks of other containers, so it is done here and
+# not in the shared entry point.
+rm -rf /dev/shm/tt-drisc-seats/* 2>/dev/null || true
+
 cd cpp_server
 ./build/tt_media_server_cpp -p 8000
