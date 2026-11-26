@@ -18,6 +18,7 @@ format or quantization suffixes. Models covered:
 | MiniMax-H3 FL2VA | `POST /v1/generations/minimaxai/minimax-h3-fl2va` |
 | MiniMax-H3 FL2VA, LightX2V | `POST /v1/generations/tenstorrent/minimax-h3-fl2va-lightx2v` |
 | MiniMax-H3 FL2VA, HyperFlow | `POST /v1/generations/tenstorrent/minimax-h3-fl2va-hyperflow` |
+| MiniMax-H3 FL2VA, FastH3 | `POST /v1/generations/tenstorrent/minimax-h3-fl2va-fasth3` |
 | MiniMax-H3 Ref2VA | `POST /v1/generations/minimaxai/minimax-h3-ref2va` |
 | MiniMax-H3 Ref2VA, LightX2V | `POST /v1/generations/tenstorrent/minimax-h3-ref2va-lightx2v` |
 | MiniMax-H3 Ref2VA, HyperFlow | `POST /v1/generations/tenstorrent/minimax-h3-ref2va-hyperflow` |

@@ -356,6 +356,18 @@ MINIMAX_H3_FL2VA_HYPERFLOW = GenerationModel(
     ),
     example=_FL2VA_EXAMPLE,
 )
+MINIMAX_H3_FL2VA_FASTH3 = GenerationModel(
+    id="tenstorrent/minimax-h3-fl2va-fasth3",
+    request=MiniMaxH3FL2VARequest,
+    title="MiniMax-H3 FL2VA FastH3",
+    summary="Submit a MiniMax-H3 FL2VA FastH3 job",
+    description=(
+        "MiniMax-H3 FL2VA with FastVideo's FastH3 DMD student and video sparse "
+        "attention: the same request as `minimaxai/minimax-h3-fl2va`, generated "
+        "in 4 denoising steps, so faster, with somewhat different output."
+    ),
+    example=_FL2VA_EXAMPLE,
+)
 
 
 class _MiniMaxH3ReferencesRequest(_MiniMaxH3Request):

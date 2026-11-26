@@ -1139,6 +1139,7 @@ async def test_cancelled_jobs_report_their_status(
         ("tt-minimax-h3-ref2va-lightx2v", 4),
         ("tt-minimax-h3-fl2va-hyperflow", 8),
         ("tt-minimax-h3-ref2va-hyperflow", 8),
+        ("tt-minimax-h3-fl2va-fasth3", 4),
     ],
 )
 def test_video_metrics_count_the_forwards_each_runner_runs(runner, forwards):

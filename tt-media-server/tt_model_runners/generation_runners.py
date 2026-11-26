@@ -29,6 +29,7 @@ from config.constants import (
     LTX_HEIGHT,
     LTX_NUM_FRAMES,
     LTX_WIDTH,
+    MINIMAX_H3_FASTH3_NUM_INFERENCE_STEPS,
     MINIMAX_H3_LIGHTX2V_NUM_INFERENCE_STEPS,
     MINIMAX_H3_NUM_INFERENCE_STEPS,
     WAN22_I2V_A14B_NUM_STEPS,
@@ -923,6 +924,41 @@ class _MiniMaxH3HyperFlowMixin(_MiniMaxH3TurboMixin):
         return pipeline
 
 
+def _minimax_h3_vsa_config(default_sparsity: float | None):
+    """``MINIMAX_H3_VSA_SPARSITY`` overrides the runner's default; 0 runs dense (no vsa_config)."""
+    raw = os.environ.get("MINIMAX_H3_VSA_SPARSITY")
+    sparsity = default_sparsity if raw is None else float(raw)
+    if not sparsity:
+        return None
+    from models.tt_dit.models.transformers.minimax_h3.vsa_prepass import (
+        MiniMaxH3VSAConfig,
+    )
+
+    return MiniMaxH3VSAConfig(sparsity=sparsity)
+
+
+class _MiniMaxH3FastMixin(_MiniMaxH3TurboMixin):
+    """FastVideo's FastH3 vsa-datafree adapter in ``MINIMAX_H3_LORA_PATH``, run under VSA at
+    tt-metal's default shifts (12 / 3), as tt-metal's FastH3 test runs it."""
+
+    num_inference_steps = MINIMAX_H3_FASTH3_NUM_INFERENCE_STEPS
+    # The adapter's trained sparsity.
+    vsa_sparsity = 0.9
+
+    def _pipeline_factory(self):
+        from models.tt_dit.pipelines.minimax_h3.pipeline_minimax_h3_fast import (
+            MiniMaxH3FastPipeline,
+        )
+
+        return MiniMaxH3FastPipeline
+
+    def _create_pipeline_kwargs(self) -> dict:
+        return {
+            **super()._create_pipeline_kwargs(),
+            "vsa_config": _minimax_h3_vsa_config(self.vsa_sparsity),
+        }
+
+
 class TTMiniMaxH3Runner(_MiniMaxH3KeyframesRunner):
     """MiniMax-H3, from text or keyframes (FL2VA)."""
 
@@ -936,6 +972,10 @@ class TTMiniMaxH3TurboRunner(_MiniMaxH3TurboMixin, TTMiniMaxH3Runner):
 
 class TTMiniMaxH3HyperFlowRunner(_MiniMaxH3HyperFlowMixin, TTMiniMaxH3Runner):
     """MiniMax-H3 FL2VA with a HyperFlow 8-step adapter."""
+
+
+class TTMiniMaxH3FastRunner(_MiniMaxH3FastMixin, TTMiniMaxH3Runner):
+    """MiniMax-H3 FL2VA with FastVideo's FastH3 4-step DMD student."""
 
 
 class TTMiniMaxH3Ref2VARunner(_MiniMaxH3ReferencesRunner):

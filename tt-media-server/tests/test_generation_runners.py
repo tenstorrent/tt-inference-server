@@ -924,11 +924,26 @@ H3_TURBO_RUNNERS = [
         None,
         None,
     ),
+    ("TTMiniMaxH3FastRunner", "TTMiniMaxH3Runner", "t2va", None, 5),
 ]
 
 
 @pytest.fixture
-def adapter(tmp_path, monkeypatch):
+def vsa_prepass(monkeypatch):
+    """Stands in for tt-metal's VSA config module, which the runners import lazily."""
+    module = ModuleType("vsa_prepass")
+    module.MiniMaxH3VSAConfig = lambda sparsity: SimpleNamespace(sparsity=sparsity)
+    monkeypatch.setitem(
+        sys.modules,
+        "models.tt_dit.models.transformers.minimax_h3.vsa_prepass",
+        module,
+    )
+    monkeypatch.delenv("MINIMAX_H3_VSA_SPARSITY", raising=False)
+    return module
+
+
+@pytest.fixture
+def adapter(tmp_path, monkeypatch, vsa_prepass):
     path = tmp_path / "turbo.safetensors"
     path.write_bytes(b"")
     monkeypatch.setenv("MINIMAX_H3_LORA_PATH", str(path))
@@ -940,9 +955,8 @@ def adapter(tmp_path, monkeypatch):
 @pytest.fixture
 def adapter_pipeline(monkeypatch):
     pipeline = Mock()
-    monkeypatch.setattr(
-        runners._MiniMaxH3TurboMixin, "_pipeline_factory", lambda self: pipeline
-    )
+    for mixin in (runners._MiniMaxH3TurboMixin, runners._MiniMaxH3FastMixin):
+        monkeypatch.setattr(mixin, "_pipeline_factory", lambda self: pipeline)
     return pipeline
 
 
@@ -1007,6 +1021,17 @@ def test_h3_hyperflow_refuses_an_adapter_without_its_header(
     adapter_pipeline.create_pipeline.return_value.hyperflow = None
     with pytest.raises(ValueError, match="not a HyperFlow adapter"):
         _h3_runner(name).create_pipeline()
+
+
+@pytest.mark.parametrize("env, sparsity", [(None, 0.9), ("0.8", 0.8), ("0", None)])
+def test_h3_fasth3_runs_under_vsa(
+    env, sparsity, adapter, adapter_pipeline, monkeypatch
+):
+    if env is not None:
+        monkeypatch.setenv("MINIMAX_H3_VSA_SPARSITY", env)
+    _h3_runner("TTMiniMaxH3FastRunner").create_pipeline()
+    vsa_config = adapter_pipeline.create_pipeline.call_args.kwargs["vsa_config"]
+    assert (vsa_config and vsa_config.sparsity) == sparsity
 
 
 @pytest.mark.parametrize(
