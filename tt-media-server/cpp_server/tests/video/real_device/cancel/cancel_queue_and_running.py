@@ -82,11 +82,15 @@ def phase_cancel():
     )
     time.sleep(3)  # worker sada vadi B iz reda
     if c.LOG:
+        # Worker process: the worker pops B and logs "skipping cancelled task ... before
+        # claim". In-process mode (one DEVICE_IDS group) has no worker: the cancel removes
+        # B from the in-memory queue and only the service logs "removed from the queue".
         lines = log_lines(pos, "skipping cancelled task")
+        removed = log_lines(pos, "removed from the queue")
         note(
-            any("before claim" in ln for ln in lines),
-            "worker skipped B (before claim) in the log",
-            str(lines[:2]),
+            any("before claim" in ln for ln in lines) or len(removed) >= 1,
+            "B was skipped before it was claimed (worker log, or removed from the in-process queue)",
+            str((lines or removed)[:1]),
         )
         req_lines = log_lines(pos, "Cancel requested for task")
         note(

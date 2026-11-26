@@ -23,8 +23,7 @@ Wan2.2. See [Tests](#tests) and [Known limitations](#known-limitations).
 | warmup timeout | none (a hung warmup is not killed) | `WARMUP_TIMEOUT_MS` / weights distribution timeout |
 
 Only the number of `DEVICE_IDS` groups decides the mode; there is no variable for it. A
-multihost launch has one group (rank 0 serves HTTP), so it also runs in process; that
-combination has not been run on several hosts. A Python exception in the runner is
+Python exception in the runner is
 caught in both modes and fails only that job. Everything below describes the worker
 process mode unless it says otherwise; the API, statuses, limits, sweeper and output
 directory work the same in both.

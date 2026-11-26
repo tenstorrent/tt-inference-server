@@ -3,7 +3,7 @@
 
 // Tests of the C++ runner layer (runtime/dit) that need neither a device nor
 // Python: the models (mesh, device parameters, validation, pipeline calls),
-// the mp4 export (needs ffmpeg on PATH) and the multihost lockstep.
+// the mp4 export (needs ffmpeg on PATH).
 
 #include <gtest/gtest.h>
 #include <json/json.h>

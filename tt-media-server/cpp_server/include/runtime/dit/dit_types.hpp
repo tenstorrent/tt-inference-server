@@ -5,6 +5,7 @@
 
 #include <json/json.h>
 
+#include <cstdint>
 #include <functional>
 #include <map>
 #include <optional>
@@ -84,7 +85,7 @@ struct DiTRequest {
   std::string prompt;
   std::optional<std::string> negativePrompt;
   std::optional<int> numInferenceSteps;
-  std::optional<int> seed;
+  std::optional<int64_t> seed;
   std::optional<double> fps;
   std::optional<int> height;
   std::optional<int> width;

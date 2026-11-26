@@ -5,8 +5,9 @@
 """Worker crash tests of the video service, on the mock runner (no device).
 
 Starts its own tt_media_server_cpp (private shm names and ports, a temporary
-output folder), kills the worker process with SIGKILL and checks what the
-service does. A dead worker is not restarted: the service is marked failed and
+output folder) with two DEVICE_IDS groups (two worker processes; one group would
+run the runner in the server process), kills a worker process with SIGKILL and
+checks what the service does. A dead worker is not restarted: the service is marked failed and
 the server process exits with code 1, so a supervisor (systemd, Kubernetes)
 starts a fresh one. The job table lives in the server process, so no job is left
 waiting for a worker that is gone.
@@ -62,6 +63,11 @@ def start(port, tag, workdir, extra_env=None):
         TT_MEDIA_RESULT_QUEUE=f"wc{tag}_results",
         TT_WARMUP_SIGNALS_QUEUE=f"wc{tag}_warm",
         TT_WORKER_METRICS_SHM=f"/wc{tag}_metrics",
+        # These cases are about worker processes (kill one, shm queues). One
+        # DEVICE_IDS group runs the runner in the server process, so the mock
+        # server gets two groups, hence two workers (the mock runner opens no
+        # chip). inprocess_cases.py covers one group.
+        DEVICE_IDS="(0),(1)",
     )
     for key, value in (extra_env or {}).items():
         if value is None:
@@ -129,11 +135,15 @@ def wait_until(predicate, timeout):
     return None
 
 
-def worker(port):
-    """(pid, is_alive) of the first worker from /tt-liveness, or (None, None)."""
-    for info in (liveness(port).get("worker_info") or {}).values():
-        return info.get("pid"), info.get("is_alive")
-    return None, None
+def workers(port):
+    """{worker id: (pid, is_alive)} from /tt-liveness."""
+    info = liveness(port).get("worker_info") or {}
+    return {k: (v.get("pid"), v.get("is_alive")) for k, v in info.items()}
+
+
+def worker(port, worker_id="0"):
+    """(pid, is_alive) of one worker from /tt-liveness, or (None, None)."""
+    return workers(port).get(worker_id, (None, None))
 
 
 def job(port, jid):
@@ -154,18 +164,31 @@ def wait_job(port, jid, wanted, timeout):
 
 
 def case_a(workdir):
-    print("=== A. kill -9 of the worker while a job runs and another one waits ===")
+    print(
+        "=== A. kill -9 of one of two workers while both run a job and a third waits ==="
+    )
     port = 18150
     proc, log = start(port, "a", workdir)
     try:
         note(bool(wait_until(lambda: model_ready(port), 60)), "server ready")
         pid0, _ = worker(port)
-        note(pid0 is not None, "worker pid is read from /tt-liveness", f"pid={pid0}")
+        pid1_other, _ = worker(port, "1")
+        note(
+            pid0 is not None and pid1_other is not None and pid0 != pid1_other,
+            "two worker pids are read from /tt-liveness",
+            f"pids={pid0},{pid1_other}",
+        )
         id1 = call(port, "POST", GENERATIONS, {"prompt": "job one"})[1]["id"]
         id2 = call(port, "POST", GENERATIONS, {"prompt": "job two"})[1]["id"]
+        id3 = call(port, "POST", GENERATIONS, {"prompt": "job three"})[1]["id"]
         s1, _ = wait_job(port, id1, ("in_progress",), 15)
-        note(s1 == "in_progress", "job 1 is in_progress", f"status={s1}")
-        note(job(port, id2)[0] == "queued", "job 2 is queued behind it")
+        s2, _ = wait_job(port, id2, ("in_progress",), 15)
+        note(
+            s1 == "in_progress" and s2 == "in_progress",
+            "jobs 1 and 2 are in_progress, one per worker",
+            f"status={s1},{s2}",
+        )
+        note(job(port, id3)[0] == "queued", "job 3 is queued behind them")
 
         os.kill(pid0, signal.SIGKILL)
         t0 = time.time()
