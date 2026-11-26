@@ -14,6 +14,8 @@ is the limiter.
 
 Unlike the image pipelines, neither video pipeline emits ``denoising_step_<i>``
 sections, so there is no per-step latency to be had here: the loop is one span.
+TeaCache utilization is recorded separately from ``DenoiseStep`` events that
+carry an explicit cached/skipped flag -- empty until tt-metal emits that.
 
 **The ``vae`` span does not cover identical work on the two pipelines.** Wan
 closes it after the host readback (``.numpy()`` / ``postprocess_video``), so D2H
@@ -37,7 +39,11 @@ import time
 from typing import Any
 
 from prometheus_client import Counter, Histogram
-from telemetry.image_metrics import format_resolution
+from telemetry.image_metrics import (
+    format_resolution,
+    record_teacache_steps,
+    teacache_outcome,
+)
 from utils.logger import TTLogger
 
 logger = TTLogger()
@@ -131,6 +137,15 @@ vae_pixels_total = Counter(
     "tt_media_server_video_vae_pixels_total",
     "Pixels decoded from latents to pixels by the VAE",
     _STAGE_LABELS,
+)
+
+# Same contract as the image series: only DenoiseStep events that carry an
+# explicit TeaCache bool are counted. Empty until tt-metal emits that flag,
+# including on Wan, which today has no per-step events at all.
+teacache_steps_total = Counter(
+    "tt_media_server_video_teacache_steps_total",
+    "Denoising steps classified by TeaCache decision (cached vs computed)",
+    _STAGE_LABELS + ["outcome"],
 )
 
 # Frame tensors are identified by which axis holds a plausible channel count.
@@ -252,13 +267,18 @@ class VideoStageRecorder:
         self.resolution = resolution or None
         self.denoise_seconds: float | None = None
         self.vae_seconds: float | None = None
+        self.teacache_outcomes: list[str] = []
         self._open: dict[str, float] = {}
 
     # -- event intake ---------------------------------------------------------
     def __call__(self, event: Any) -> None:
+        outcome = teacache_outcome(event)
+        if outcome is not None:
+            self.teacache_outcomes.append(outcome)
+            return
         name = getattr(event, "name", None)
         if name not in _TIMED_SECTIONS:
-            return  # Other sections, and DenoiseStep, which carries no name.
+            return  # Other sections, and a DenoiseStep with no TeaCache flag.
 
         kind = type(event).__name__
         if kind == "SectionStart":
@@ -282,7 +302,11 @@ class VideoStageRecorder:
         mid-decode reports its denoise time and nothing else, and every frame
         counted has a timed decode behind it.
         """
-        if self.denoise_seconds is None and self.vae_seconds is None:
+        if (
+            self.denoise_seconds is None
+            and self.vae_seconds is None
+            and not self.teacache_outcomes
+        ):
             return
         try:
             resolution, frame_count, pixels_per_frame = frames_shape(frames)
@@ -296,6 +320,15 @@ class VideoStageRecorder:
                 vae_seconds=self.vae_seconds,
                 frame_count=frame_count,
                 pixels_per_frame=pixels_per_frame,
+            )
+            record_teacache_steps(
+                teacache_steps_total,
+                dict(
+                    model_type=self.model_type,
+                    device_id=self.device_id,
+                    resolution=resolution,
+                ),
+                self.teacache_outcomes,
             )
         except (
             Exception

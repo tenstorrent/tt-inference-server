@@ -106,6 +106,42 @@ engine_duration = Histogram(
 
 UNKNOWN = "unknown"
 
+# TeaCache utilization
+TEACACHE_CACHED = "cached"
+TEACACHE_COMPUTED = "computed"
+_TEACACHE_FLAGS = ("cached", "skipped", "teacache_hit")
+
+teacache_steps_total = Counter(
+    "tt_media_server_image_teacache_steps_total",
+    "Denoising steps classified by TeaCache decision (cached vs computed)",
+    _DENOISE_LABELS + ["outcome"],
+)
+
+
+def teacache_outcome(event: Any) -> str | None:
+    """Return cached/computed if a DenoiseStep reports a TeaCache decision.
+
+    Matched by class name so this module never imports tt-metal. The first
+    present flag wins. Missing or None means the field has not landed yet.
+    """
+    if type(event).__name__ != "DenoiseStep":
+        return None
+    for attr in _TEACACHE_FLAGS:
+        value = getattr(event, attr, None)
+        if value is None:
+            continue
+        return TEACACHE_CACHED if value else TEACACHE_COMPUTED
+    return None
+
+
+def record_teacache_steps(
+    counter: Counter, labels: dict[str, str], outcomes: list[str]
+) -> None:
+    """Increment ``counter`` once per classified step. Never invents a series."""
+    for outcome in outcomes:
+        counter.labels(**labels, outcome=outcome).inc()
+
+
 # tt_dit section name -> ``encoder`` label. ``encoder`` wraps the others, which
 # are nested inside it, so they are reported separately and must not be summed.
 _CONDITIONING_SECTIONS = {
@@ -221,13 +257,19 @@ class ImageStageRecorder:
         self.vae_seconds: float | None = None
         self.step_seconds: list[float] = []
         self.conditioning_seconds: dict[str, float] = {}
+        self.teacache_outcomes: list[str] = []
 
     # -- event intake ---------------------------------------------------------
     def __call__(self, event: Any) -> None:
+        outcome = teacache_outcome(event)
+        if outcome is not None:
+            self.teacache_outcomes.append(outcome)
+            return
+
         kind = type(event).__name__
         name = getattr(event, "name", None)
         if name is None:
-            return  # DenoiseStep and anything else tt-metal adds later.
+            return  # Nameless events with no TeaCache flag, including today's DenoiseStep.
 
         if kind == "SectionStart":
             self._open[name] = _now()
@@ -277,6 +319,17 @@ class ImageStageRecorder:
                 conditioning_seconds=self.conditioning_seconds,
                 image_count=image_count,
                 pixels_per_image=pixels,
+            )
+            record_teacache_steps(
+                teacache_steps_total,
+                dict(
+                    model_type=self.model_type,
+                    device_id=self.device_id,
+                    resolution=resolution,
+                    sampler=self.sampler,
+                    batch=self.batch,
+                ),
+                self.teacache_outcomes,
             )
         except (
             Exception
