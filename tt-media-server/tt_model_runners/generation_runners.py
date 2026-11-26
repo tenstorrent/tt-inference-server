@@ -947,6 +947,12 @@ class TTMiniMaxH3TurboRef2VARunner(_MiniMaxH3TurboMixin, TTMiniMaxH3Ref2VARunner
     tt-metal's default shifts."""
 
 
+class TTMiniMaxH3HyperFlowRef2VARunner(
+    _MiniMaxH3HyperFlowMixin, TTMiniMaxH3Ref2VARunner
+):
+    """MiniMax-H3 Ref2VA with a HyperFlow 8-step adapter; it must target ``transformer_ref/``."""
+
+
 class TTIdeogram4Runner(_GenerationRunner):
     def create_pipeline(self):
         from models.tt_dit.pipelines.ideogram4.pipeline_ideogram4 import (

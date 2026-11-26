@@ -535,6 +535,7 @@ class TestGalaxyQuadDevice:
             ("MiniMax-H3-FL2VA-LightX2V", "tt-minimax-h3-fl2va-lightx2v"),
             ("MiniMax-H3-Ref2VA-LightX2V", "tt-minimax-h3-ref2va-lightx2v"),
             ("MiniMax-H3-FL2VA-HyperFlow", "tt-minimax-h3-fl2va-hyperflow"),
+            ("MiniMax-H3-Ref2VA-HyperFlow", "tt-minimax-h3-ref2va-hyperflow"),
         ],
     )
     def test_h3_distills_on_blackhole_galaxy_are_4x8(self, monkeypatch, model, runner):

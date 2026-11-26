@@ -539,3 +539,15 @@ MINIMAX_H3_REF2VA_LIGHTX2V = GenerationModel(
     ),
     example=_REF2VA_EXAMPLE,
 )
+MINIMAX_H3_REF2VA_HYPERFLOW = GenerationModel(
+    id="tenstorrent/minimax-h3-ref2va-hyperflow",
+    request=MiniMaxH3Ref2VARequest,
+    title="MiniMax-H3 Ref2VA HyperFlow",
+    summary="Submit a MiniMax-H3 Ref2VA HyperFlow job",
+    description=(
+        "MiniMax-H3 Ref2VA with a HyperFlow interval-conditioned adapter: the same "
+        "request as `minimaxai/minimax-h3-ref2va`, generated in 8 denoising steps, "
+        "so faster, with somewhat different output."
+    ),
+    example=_REF2VA_EXAMPLE,
+)

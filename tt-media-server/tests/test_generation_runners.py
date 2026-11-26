@@ -917,6 +917,13 @@ H3_TURBO_RUNNERS = [
     ("TTMiniMaxH3TurboRunner", "TTMiniMaxH3Runner", "t2va", (6.0, 3.0), 5),
     ("TTMiniMaxH3TurboRef2VARunner", "TTMiniMaxH3Ref2VARunner", "ref2va", None, 5),
     ("TTMiniMaxH3HyperFlowRunner", "TTMiniMaxH3Runner", "t2va", None, None),
+    (
+        "TTMiniMaxH3HyperFlowRef2VARunner",
+        "TTMiniMaxH3Ref2VARunner",
+        "ref2va",
+        None,
+        None,
+    ),
 ]
 
 
@@ -991,7 +998,9 @@ def test_h3_turbo_refuses_to_start_without_an_adapter_file(
         _h3_runner(name)._create_pipeline_kwargs()
 
 
-@pytest.mark.parametrize("name", ["TTMiniMaxH3HyperFlowRunner"])
+@pytest.mark.parametrize(
+    "name", ["TTMiniMaxH3HyperFlowRunner", "TTMiniMaxH3HyperFlowRef2VARunner"]
+)
 def test_h3_hyperflow_refuses_an_adapter_without_its_header(
     name, adapter, adapter_pipeline
 ):
@@ -1006,6 +1015,7 @@ def test_h3_hyperflow_refuses_an_adapter_without_its_header(
         ("TTMiniMaxH3Runner", None),
         ("TTMiniMaxH3Ref2VARunner", 16384),
         ("TTMiniMaxH3TurboRef2VARunner", 16384),
+        ("TTMiniMaxH3HyperFlowRef2VARunner", 16384),
     ],
 )
 def test_h3_ref2va_keeps_its_l1_pool(class_name, l1_small_size, monkeypatch):
