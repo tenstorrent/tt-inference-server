@@ -1,14 +1,22 @@
-const BASE = '/v1/fine_tuning';
+const BASE = '/v1';
 const API_KEY = 'your-secret-key';
+const ORG_ID = 'fine-tuning-dashboard';
 const HEADERS = {
     'Content-Type': 'application/json',
-    'Authorization': `Bearer ${API_KEY}`
+    'Authorization': `Bearer ${API_KEY}`,
+    'X-TT-Organization': ORG_ID,
+};
+const TERMINAL_STATUSES = ['completed', 'failed', 'cancelled'];
+const INFERENCE_BASE_URL = 'http://localhost:8003/v1';
+const INFERENCE_HEADERS = {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${API_KEY}`,
 };
 
 let selectedJobId = null;
 let metricsInterval = null;
-let nextAfter = 0;
 let metricsSeries = {};
+let catalog = null;
 
 const PARAM_DISPLAY_NAMES = {
     dataset_loader: "Dataset Loader",
@@ -19,12 +27,17 @@ const PARAM_DISPLAY_NAMES = {
     num_epochs: "Number of Epochs",
     val_steps_freq: "Validation Steps Frequency",
     steps_freq: "Training Steps Frequency",
+    max_steps: "Max Steps",
+    save_interval: "Checkpoint Saving Interval",
     dtype: "Data Type",
     lora_r: "LoRA Rank (r)",
     lora_alpha: "LoRA Alpha",
     lora_target_modules: "LoRA Target Modules",
     lora_task_type: "LoRA Task Type",
     ignored_index: "Ignored Index",
+    device_type: "Device",
+    trainer: "Trainer",
+    optimizer: "Optimizer",
 };
 
 const CHART_COLORS = { train_loss: '#2980b9', val_loss: '#e74c3c' };
@@ -44,30 +57,38 @@ function formatTime(ts) {
     return new Date(ts * 1000).toISOString().slice(0, 19).replace('T', ' ');
 }
 
-async function loadOptions() {
+function populateSelect(selectId, entries, { preferSupported = false } = {}) {
+    const sel = $(selectId);
+    sel.innerHTML = '';
+    let firstSupported = null;
+    for (const entry of entries) {
+        const opt = document.createElement('option');
+        opt.value = entry.id;
+        opt.textContent = entry.display_name || entry.id;
+        if (entry.supported === false) opt.disabled = true;
+        if (preferSupported && firstSupported === null && entry.supported !== false) {
+            firstSupported = entry.id;
+        }
+        sel.appendChild(opt);
+    }
+    if (firstSupported !== null) sel.value = firstSupported;
+}
+
+function applyModelCatalog() {
+    if (!catalog) return;
+    populateSelect('device_type', catalog.clusters || []);
+    populateSelect('trainer', catalog.trainers || [], { preferSupported: true });
+    populateSelect('optimizer', catalog.optimizers || [], { preferSupported: true });
+    populateSelect('dataset_loader', catalog.datasets || [], { preferSupported: true });
+}
+
+async function loadCatalog() {
     try {
-        const [datasets, models] = await Promise.all([
-            fetch(`${BASE}/datasets`, { headers: HEADERS }).then(r => r.json()),
-            fetch(`${BASE}/models`, { headers: HEADERS }).then(r => r.json()),
-        ]);
-
-        const sel = $('dataset_loader');
-        sel.innerHTML = '';
-        for (const d of datasets.data) {
-            const opt = document.createElement('option');
-            opt.value = d;
-            opt.textContent = d;
-            sel.appendChild(opt);
-        }
-
-        const modelSel = $('model_select');
-        modelSel.innerHTML = '';
-        for (const m of models.data) {
-            const opt = document.createElement('option');
-            opt.value = m;
-            opt.textContent = m;
-            modelSel.appendChild(opt);
-        }
+        const res = await fetch(`${BASE}/catalog`, { headers: HEADERS });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        catalog = await res.json();
+        populateSelect('model_select', catalog.models || []);
+        applyModelCatalog();
         $('info-text').textContent = '';
     } catch (e) {
         $('info-text').textContent = 'Failed to load options: ' + e.message;
@@ -88,7 +109,11 @@ async function submitJob(e) {
         num_epochs: parseInt($('num_epochs').value),
         val_steps_freq: parseInt($('val_steps_freq').value),
         steps_freq: parseInt($('steps_freq').value),
+        max_steps: parseInt($('max_steps').value),
+        save_interval: parseInt($('save_interval').value),
         dtype: $('dtype').value,
+        device_type: $('device_type').value,
+        optimizer: $('optimizer').value,
         lora_r: parseInt($('lora_r').value),
         lora_alpha: parseInt($('lora_alpha').value),
         lora_target_modules: $('lora_target_modules').value.split(',').map(s => s.trim()).filter(Boolean),
@@ -120,7 +145,7 @@ async function refreshJobs() {
         const tbody = document.querySelector('#jobs-table tbody');
         tbody.innerHTML = '';
 
-        const jobs = data.data || [];
+        const jobs = data.jobs || [];
         jobs.sort((a, b) => (b.created_at || 0) - (a.created_at || 0));
 
         for (const job of jobs) {
@@ -144,6 +169,13 @@ async function refreshJobs() {
     }
 }
 
+function formatError(err) {
+    if (!err) return '';
+    if (typeof err === 'string') return err;
+    if (err.message) return err.code ? `${err.code}: ${err.message}` : err.message;
+    return JSON.stringify(err);
+}
+
 async function refreshJobDetail(jobId) {
     const detailDiv = $('job-detail');
     detailDiv.hidden = false;
@@ -151,6 +183,7 @@ async function refreshJobDetail(jobId) {
 
     try {
         const res = await fetch(`${BASE}/jobs/${jobId}`, { headers: HEADERS });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const job = await res.json();
 
         const meta = $('detail-meta');
@@ -160,7 +193,7 @@ async function refreshJobDetail(jobId) {
             ['Created', formatTime(job.created_at)],
             ['Completed', formatTime(job.completed_at)],
         ];
-        if (job.error) entries.push(['Error', job.error]);
+        if (job.error) entries.push(['Error', formatError(job.error)]);
         if (job.request_parameters) {
             for (const [k, v] of Object.entries(job.request_parameters)) {
                 entries.push([k, Array.isArray(v) ? v.join(', ') : v]);
@@ -172,8 +205,17 @@ async function refreshJobDetail(jobId) {
         const cancellable = ['queued', 'in_progress'].includes(job.status);
         cancelBtn.hidden = !cancellable;
         cancelBtn.onclick = () => cancelJob(jobId);
+
+        const deployBtn = $('deploy-btn');
+        const deployable = job.status === 'completed';
+        deployBtn.hidden = !deployable;
+        if (!deployable) {
+            $('deploy-panel').hidden = true;
+        }
+        return job;
     } catch (e) {
         $('detail-meta').innerHTML = `<dt>Error</dt><dd>${e.message}</dd>`;
+        return null;
     }
 }
 
@@ -185,28 +227,126 @@ async function selectJob(jobId) {
     metricsSeries = {};
     $('metrics-heading').textContent = 'No metrics to show';
     $('metrics-chart').style.display = 'none';
-    nextAfter = 0;
     if (metricsInterval) clearInterval(metricsInterval);
     pollMetrics(jobId);
     metricsInterval = setInterval(() => pollMetrics(jobId), 2000);
+
+    $('deploy-panel').hidden = true;
+    $('deploy-response').textContent = '';
+    $('deploy-status').textContent = '';
+    $('deploy-prompt').value = '';
+    $('deploy-checkpoint').innerHTML = '';
+}
+
+async function loadCheckpoints(jobId) {
+    const sel = $('deploy-checkpoint');
+    sel.innerHTML = '';
+    try {
+        const res = await fetch(`${BASE}/jobs/${jobId}/checkpoints`, { headers: HEADERS });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        const checkpoints = data.checkpoints || [];
+        if (checkpoints.length === 0) {
+            const opt = document.createElement('option');
+            opt.textContent = 'No checkpoints available';
+            opt.disabled = true;
+            sel.appendChild(opt);
+            return;
+        }
+        for (const ckpt of checkpoints) {
+            const opt = document.createElement('option');
+            opt.value = ckpt.id;
+            opt.textContent = ckpt.id;
+            sel.appendChild(opt);
+        }
+        sel.value = checkpoints[checkpoints.length - 1].id;
+    } catch (e) {
+        const opt = document.createElement('option');
+        opt.textContent = `Failed to load checkpoints: ${e.message}`;
+        opt.disabled = true;
+        sel.appendChild(opt);
+    }
+}
+
+async function toggleDeployPanel() {
+    const panel = $('deploy-panel');
+    if (panel.hidden) {
+        panel.hidden = false;
+        await loadCheckpoints(selectedJobId);
+    } else {
+        panel.hidden = true;
+    }
+}
+
+async function runInference() {
+    const jobId = selectedJobId;
+    const checkpointId = $('deploy-checkpoint').value;
+    const prompt = $('deploy-prompt').value.trim();
+    const maxTokens = parseInt($('deploy-max-tokens').value) || 64;
+    const statusEl = $('deploy-status');
+    const responseEl = $('deploy-response');
+    const submitBtn = $('deploy-submit');
+
+    if (!prompt) {
+        statusEl.textContent = 'Enter a prompt first';
+        return;
+    }
+    if (!checkpointId) {
+        statusEl.textContent = 'No checkpoint selected';
+        return;
+    }
+
+    responseEl.textContent = '';
+    statusEl.textContent = 'Running inference...';
+    submitBtn.disabled = true;
+    const started = performance.now();
+
+    try {
+        const res = await fetch(`${INFERENCE_BASE_URL}/completions`, {
+            method: 'POST',
+            headers: INFERENCE_HEADERS,
+            body: JSON.stringify({
+                prompt,
+                max_tokens: maxTokens,
+                adapter: `${jobId}/${checkpointId}`,
+                stream: false,
+            }),
+        });
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.error?.message || err.detail || `HTTP ${res.status}`);
+        }
+        const data = await res.json();
+        const text = data.choices?.[0]?.text ?? JSON.stringify(data, null, 2);
+        responseEl.textContent = text;
+        const elapsed = ((performance.now() - started) / 1000).toFixed(2);
+        statusEl.textContent = `Done in ${elapsed}s`;
+    } catch (e) {
+        responseEl.textContent = '';
+        statusEl.textContent = `Error: ${e.message}`;
+    } finally {
+        submitBtn.disabled = false;
+    }
 }
 
 async function pollMetrics(jobId) {
     if (jobId !== selectedJobId) return;
     try {
-        const res = await fetch(
-            `${BASE}/jobs/${jobId}/metrics?after=${nextAfter}`, { headers: HEADERS }
-        );
+        const res = await fetch(`${BASE}/jobs/${jobId}/metrics`, { headers: HEADERS });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
+        const metrics = Array.isArray(data) ? data : (data.data || []);
 
-        for (const m of (data.data || [])) {
-            if (!metricsSeries[m.metric_name]) metricsSeries[m.metric_name] = [];
-            metricsSeries[m.metric_name].push({ step: m.global_step, value: m.value });
+        const rebuilt = {};
+        for (const m of metrics) {
+            if (!rebuilt[m.metric_name]) rebuilt[m.metric_name] = [];
+            rebuilt[m.metric_name].push({ step: m.global_step, value: m.value });
         }
-
+        metricsSeries = rebuilt;
         drawChart();
-        nextAfter = data.next_after;
-        if (data.is_final) {
+
+        const job = await refreshJobDetail(jobId);
+        if (job && TERMINAL_STATUSES.includes(job.status) && metricsInterval) {
             clearInterval(metricsInterval);
             metricsInterval = null;
             refreshJobs();
@@ -324,6 +464,9 @@ function drawChart() {
 }
 
 $('job-form').addEventListener('submit', submitJob);
-loadOptions();
+$('model_select').addEventListener('change', applyModelCatalog);
+$('deploy-btn').addEventListener('click', toggleDeployPanel);
+$('deploy-submit').addEventListener('click', runInference);
+loadCatalog();
 refreshJobs();
 setInterval(refreshJobs, 5000);
