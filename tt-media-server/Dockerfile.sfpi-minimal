@@ -27,7 +27,7 @@
 
 FROM ubuntu:22.04 AS base
 
-LABEL maintainer="Tenstorrent USA, Inc.
+LABEL maintainer="Tenstorrent USA, Inc."
 LABEL description="Minimal TTNN environment with SFPI dependencies"
 
 ARG DEBIAN_FRONTEND=noninteractive
@@ -119,7 +119,8 @@ RUN mkdir -p ${TT_METAL_HOME} \
     && echo "/tt_metal/" >> .git/info/sparse-checkout \
     && echo "tt_metal/python_env/" >> .git/info/sparse-checkout \
     && git fetch --depth 1 origin ${TT_METAL_BRANCH} \
-    && git checkout FETCH_HEAD
+    && git checkout FETCH_HEAD \
+    && find "${TT_METAL_HOME}" -name .git -prune -exec rm -rf {} +
 
 # Install tt-metal requirements-dev.txt (filtering out relative paths that don't exist)
 # Note: Some dependencies are filtered out as they reference files not in sparse checkout
@@ -135,7 +136,8 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 # ------------------------------------------------------------------------------
 ENV TT_INFERENCE_SERVER_HOME=/opt/tt-inference-server
 
-RUN git clone --depth 1 --branch dev https://github.com/tenstorrent/tt-inference-server.git ${TT_INFERENCE_SERVER_HOME}
+RUN git clone --depth 1 --branch dev https://github.com/tenstorrent/tt-inference-server.git ${TT_INFERENCE_SERVER_HOME} \
+    && find "${TT_INFERENCE_SERVER_HOME}" -name .git -prune -exec rm -rf {} +
 
 # Install tt-media-server requirements
 RUN --mount=type=cache,target=/root/.cache/pip \

@@ -110,7 +110,7 @@ RUN /bin/bash -c "git clone --depth 1 https://github.com/tenstorrent-metal/tt-me
     && if [ -f 'models/demos/qwen25_vl/requirements.txt' ]; then uv pip install -r models/demos/qwen25_vl/requirements.txt; fi \
     && grep -rhE --include=requirements.txt '^tt[-_]transformers[[:space:]]*[@=<>~!]' models | sort -u > /tmp/tt-transformers-requirements.txt \
     && if [ -s /tmp/tt-transformers-requirements.txt ]; then uv pip install --no-deps -r /tmp/tt-transformers-requirements.txt; fi \
-    && rm -rf ${TT_METAL_HOME}/.git \
+    && find ${TT_METAL_HOME} -name .git -prune -exec rm -rf {} + \
     && { uv cache clean || echo 'WARN: uv cache clean failed'; true; }"
 
 # Build vllm-tt-plugin - clone with minimal history and clean.
@@ -122,7 +122,7 @@ RUN /bin/bash -c "git clone https://github.com/tenstorrent/vllm-tt-plugin.git ${
     && source ${PYTHON_ENV_DIR}/bin/activate \
     && uv pip install --upgrade pip \
     && source docs/install-vllm-tt.sh \
-    && rm -rf ${vllm_tt_plugin_dir}/.git \
+    && find ${vllm_tt_plugin_dir} -name .git -prune -exec rm -rf {} + \
     && { uv cache clean || echo 'WARN: uv cache clean failed'; true; }"
 
 # The optional source is supplied by the authenticated caller as a sanitized
@@ -164,7 +164,7 @@ RUN /bin/bash -c "git clone https://github.com/tenstorrent/tt-smi.git ${TT_SMI_D
     && pip3 install --upgrade pip \
     && source ${CARGO_HOME}/env \
     && pip3 install . \
-    && rm -rf ${TT_SMI_DIR}/.git"
+    && find ${TT_SMI_DIR} -name .git -prune -exec rm -rf {} +"
 
 # ==============================================================================
 # RUNTIME STAGE - Minimal dependencies for running the application

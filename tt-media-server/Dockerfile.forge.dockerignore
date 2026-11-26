@@ -1,0 +1,59 @@
+# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+# SPDX-License-Identifier: Apache-2.0
+#
+# Dockerfile-specific ignore files replace the repo-root .dockerignore.
+# Patterns are relative to the build context (normally the repository root).
+
+# Git metadata and common local credentials.
+**/.git
+**/.git-credentials
+**/.gitconfig
+**/.netrc
+**/.ssh
+**/.config/git/credentials
+**/.config/gh/hosts.yml
+**/.aws
+**/.azure
+**/.kube
+**/.docker/config.json
+**/.npmrc
+**/.pypirc
+**/id_rsa
+**/id_ed25519
+**/id_ecdsa
+**/id_dsa
+**/*.pem
+**/*.p12
+**/*.pfx
+**/*.key
+**/.env*
+
+# Local development artifacts and caches.
+**/.gitignore
+**/.cpmcache
+**/.cache
+**/.venv
+**/venv
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/*.egg-info
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+**/.idea
+**/.vscode
+**/node_modules
+**/*.log
+**/*.tmp
+**/build
+**/build-*
+**/compile_commands.json
+
+# Private submodule and on-demand-only repository content.
+**/cpp_server/tt-llm-engine
+llm-gauntlet
+
+# Do not include Dockerfile definitions in application COPY contexts.
+tt-media-server/Dockerfile
+tt-media-server/Dockerfile.*

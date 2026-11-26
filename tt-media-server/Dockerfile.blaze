@@ -164,7 +164,11 @@ RUN chmod +x ${APP_DIR}/server/run_cpp.sh
 # Cleanup build-only directories before the cross-stage COPY.
 RUN rm -rf ${HOME_DIR}/.rustup \
     && rm -rf ${HOME_DIR}/.cargo \
-    && rm -rf ${HOME_DIR}/.cache
+    && rm -rf ${HOME_DIR}/.cache \
+    # Drop both .git directories and submodule .git pointer files from the
+    # imported engine tree and app source before either is copied to runtime.
+    && find "${APP_DIR}/server" -name .git -prune -exec rm -rf {} + \
+    && find /opt/tt-llm-engine /opt/tt-llm-engine-src -name .git -prune -exec rm -rf {} +
 
 
 # ==============================================================================
@@ -313,10 +317,10 @@ RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_
 COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
     /home/container_app_user ${HOME_DIR}
 
-# Engine artifacts — COPY straight from the engine image (not via builder)
-# so the runtime /opt tree is byte-identical to the engine's final stage.
-COPY --from=engine /opt/tt-llm-engine     /opt/tt-llm-engine
-COPY --from=engine /opt/tt-llm-engine-src /opt/tt-llm-engine-src
+# Engine artifacts come from the builder's cleaned filesystem snapshot, so
+# no .git directories or submodule pointer files are carried into runtime.
+COPY --from=builder /opt/tt-llm-engine     /opt/tt-llm-engine
+COPY --from=builder /opt/tt-llm-engine-src /opt/tt-llm-engine-src
 
 # Fix venv permissions (COPY --chown above can break symlink permissions).
 RUN chmod -R +x ${PYTHON_ENV_DIR}/bin
