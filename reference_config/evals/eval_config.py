@@ -3167,7 +3167,7 @@ _eval_config_list = [
             EvalTask(
                 task_name="r1_gpqa_diamond",
                 score=EvalTaskScore(
-                    # Graded against the model card at the task tolerance (0.95 x card).
+                    # Without a limit mode: graded against the card at 0.95 x card.
                     published_score=87.8,
                     published_score_ref="https://huggingface.co/Qwen/Qwen3.6-27B",
                     gpu_reference_score=None,
@@ -3196,8 +3196,9 @@ _eval_config_list = [
                     "top_p": 0.95,
                     "top_k": 20,
                 },
-                # 20% ci-nightly subset for the qwen36_blackhole and quetzal profiles;
-                # qwen36-27b-qb2 drops that cap in its catalog metadata (all 198).
+                # 20% ci-nightly subset (40) for the qwen36_blackhole and quetzal profiles,
+                # graded against the card; qwen36-27b-qb2 runs the first 80 against its own
+                # local subset reference (catalog metadata).
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 0.2,
                     EvalLimitMode.SMOKE_TEST: 0.01,
@@ -3341,11 +3342,21 @@ _eval_config_list = [
             EvalTask(
                 task_name="r1_gpqa_diamond",
                 score=EvalTaskScore(
-                    # Graded against the model card at the task tolerance (0.95 x card).
+                    # Without a limit mode: graded against the card at 0.95 x card.
                     published_score=86.0,
                     published_score_ref="https://huggingface.co/Qwen/Qwen3.6-35B-A3B",
                     gpu_reference_score=None,
                     gpu_reference_score_ref=None,
+                    # ci-nightly runs the first 40 questions (lm-eval --limit, dataset order)
+                    # against the local QB2 accuracy on exactly those questions; tolerance
+                    # 0.10 keeps P(fail) under 5% for a binomial at the local rate.
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=88.8,
+                            ref="local QB2 GPQA on the first 40 questions: 71/80 over 2 runs; needs 31/40",
+                            tolerance=0.10,
+                        ),
+                    },
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -3371,8 +3382,9 @@ _eval_config_list = [
                     "top_k": 20,
                     "presence_penalty": 1.5,
                 },
-                # All 198 questions in every mode but smoke-test.
+                # ci-nightly: the first 40 questions; all 198 without a limit mode.
                 limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 40,
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
@@ -12725,11 +12737,21 @@ _eval_config_list = [
                 task_name="r1_gpqa_diamond",
                 capture_reasoning=True,
                 score=EvalTaskScore(
-                    # Graded against the model card at the task tolerance (0.95 x card).
+                    # Without a limit mode: graded against the card at 0.95 x card.
                     published_score=86.4,
                     published_score_ref="https://huggingface.co/ornith-ai/Ornith-1.5-9B (GPQA Diamond, avg of 5 runs)",
                     gpu_reference_score=None,
                     gpu_reference_score_ref=None,
+                    # ci-nightly runs the first 40 questions (lm-eval --limit, dataset order)
+                    # against the local QB2 accuracy on exactly those questions; tolerance
+                    # 0.10 keeps P(fail) under 5% for a binomial at the local rate.
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=87.5,
+                            ref="local QB2 GPQA on the first 40 questions: 105/120 over 3 runs; needs 31/40",
+                            tolerance=0.10,
+                        ),
+                    },
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -12756,8 +12778,9 @@ _eval_config_list = [
                     "top_p": 0.95,
                     "presence_penalty": 1.5,
                 },
-                # All 198 questions in every mode but smoke-test.
+                # ci-nightly: the first 40 questions; all 198 without a limit mode.
                 limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 40,
                     EvalLimitMode.SMOKE_TEST: 2,
                 },
             ),
@@ -12901,11 +12924,21 @@ _eval_config_list = [
             EvalTask(
                 task_name="r1_gpqa_diamond",
                 score=EvalTaskScore(
-                    # Graded against the model card at the task tolerance (0.95 x card).
+                    # Without a limit mode: graded against the card at 0.95 x card.
                     published_score=89.2,
                     published_score_ref="https://huggingface.co/ornith-ai/Ornith-1.5-35B-A3B",
                     gpu_reference_score=None,
                     gpu_reference_score_ref=None,
+                    # ci-nightly runs the first 40 questions (lm-eval --limit, dataset order)
+                    # against the local QB2 accuracy on exactly those questions; tolerance
+                    # 0.10 keeps P(fail) under 5% for a binomial at the local rate.
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=95.0,
+                            ref="local QB2 GPQA on the first 40 questions: 38/40, 1 run; needs 34/40",
+                            tolerance=0.10,
+                        ),
+                    },
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -12930,8 +12963,9 @@ _eval_config_list = [
                     "top_p": 0.95,
                     "top_k": 20,
                 },
-                # All 198 questions in every mode but smoke-test.
+                # ci-nightly: the first 40 questions; all 198 without a limit mode.
                 limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 40,
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
@@ -13075,11 +13109,21 @@ _eval_config_list = [
             EvalTask(
                 task_name="r1_gpqa_diamond",
                 score=EvalTaskScore(
-                    # Graded against the model card at the task tolerance (0.95 x card).
+                    # Without a limit mode: graded against the card at 0.95 x card.
                     published_score=75.44,
                     published_score_ref="https://huggingface.co/nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16",
                     gpu_reference_score=None,
                     gpu_reference_score_ref=None,
+                    # ci-nightly runs the first 80 questions (lm-eval --limit, dataset order)
+                    # against the local QB2 accuracy on exactly those questions; tolerance
+                    # 0.10 keeps P(fail) under 5% for a binomial at the local rate.
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=81.7,
+                            ref="local QB2 GPQA on the first 80 questions: 196/240 over 3 runs; needs 58/80",
+                            tolerance=0.10,
+                        ),
+                    },
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -13103,8 +13147,9 @@ _eval_config_list = [
                     "temperature": 1.0,
                     "top_p": 0.95,
                 },
-                # All 198 questions in every mode but smoke-test.
+                # ci-nightly: the first 80 questions; all 198 without a limit mode.
                 limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 80,
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
