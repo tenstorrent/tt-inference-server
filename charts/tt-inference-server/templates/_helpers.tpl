@@ -32,6 +32,16 @@ Validate required values and that model/engine/device/impl resolves.
   {{- fail (printf "No impl '%s' for model '%s' on engine '%s' device '%s'. Available impls: %s" $impl .Values.model $engine .Values.device $available) }}
 {{- end }}
 
+{{- if .Values.runtimeModelSpecJson }}
+  {{- if ne $engine "vllm" }}
+    {{- fail (printf "runtimeModelSpecJson is only read by the vllm engine, not '%s'." $engine) }}
+  {{- end }}
+  {{- $parsed := fromJson .Values.runtimeModelSpecJson }}
+  {{- if hasKey $parsed "Error" }}
+    {{- fail (printf "runtimeModelSpecJson is not valid JSON: %s" $parsed.Error) }}
+  {{- end }}
+{{- end }}
+
 {{/*
 media/forge fall back to a well-known built-in key when API_KEY is unset, which
 looks authenticated but is not, so make the operator pick. vLLM needs no gate:
@@ -173,6 +183,13 @@ or a shape the map does not cover), which drops the request entirely.
 {{- $chips := index (.Values.deviceChipCounts | default dict) (.Values.device | lower) -}}
 {{- if $chips -}}{{- printf "%dGi" (int $chips) -}}{{- end -}}
 {{- end -}}
+{{- end -}}
+
+{{/*
+Where the container reads a chart-supplied runtime model spec (runtimeModelSpecJson).
+*/}}
+{{- define "tt-inference-server.runtimeModelSpecPath" -}}
+/home/container_app_user/model_specs/runtime_model_spec.json
 {{- end -}}
 
 {{- define "tt-inference-server.cacheRoot" -}}
