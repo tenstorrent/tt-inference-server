@@ -563,3 +563,15 @@ MINIMAX_H3_REF2VA_HYPERFLOW = GenerationModel(
     ),
     example=_REF2VA_EXAMPLE,
 )
+MINIMAX_H3_REF2VA_FASTH3_OMNI = GenerationModel(
+    id="tenstorrent/minimax-h3-ref2va-fasth3-omni",
+    request=MiniMaxH3Ref2VARequest,
+    title="MiniMax-H3 Ref2VA FastH3-Omni",
+    summary="Submit a MiniMax-H3 Ref2VA FastH3-Omni job",
+    description=(
+        "MiniMax-H3 Ref2VA with FastVideo's FastH3 OmniRef PDD export: the same "
+        "request as `minimaxai/minimax-h3-ref2va`, generated in 8 fused forwards "
+        "under video sparse attention, so faster, with somewhat different output."
+    ),
+    example=_REF2VA_EXAMPLE,
+)

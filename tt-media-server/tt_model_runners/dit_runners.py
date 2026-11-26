@@ -102,6 +102,7 @@ dit_runner_log_map = {
     ModelRunners.TT_MINIMAX_H3_FL2VA_HYPERFLOW.value: "MiniMaxH3-FL2VA-HyperFlow",
     ModelRunners.TT_MINIMAX_H3_REF2VA_HYPERFLOW.value: "MiniMaxH3-Ref2VA-HyperFlow",
     ModelRunners.TT_MINIMAX_H3_FL2VA_FASTH3.value: "MiniMaxH3-FL2VA-FastH3",
+    ModelRunners.TT_MINIMAX_H3_REF2VA_FASTH3_OMNI.value: "MiniMaxH3-Ref2VA-FastH3-Omni",
     ModelRunners.TT_QWEN_IMAGE.value: "Qwen-Image",
     ModelRunners.TT_QWEN_IMAGE_2512.value: "Qwen-Image-2512",
     ModelRunners.TT_QWEN_IMAGE_EDIT_2511.value: "Qwen-Image-Edit-2511",

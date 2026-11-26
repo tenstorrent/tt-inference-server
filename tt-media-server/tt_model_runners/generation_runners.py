@@ -993,6 +993,33 @@ class TTMiniMaxH3HyperFlowRef2VARunner(
     """MiniMax-H3 Ref2VA with a HyperFlow 8-step adapter; it must target ``transformer_ref/``."""
 
 
+class TTMiniMaxH3FastOmniRef2VARunner(TTMiniMaxH3Ref2VARunner):
+    """MiniMax-H3 Ref2VA with FastVideo's FastH3 OmniRef PDD export in ``MINIMAX_H3_PDD_EXPORT``.
+    The export fixes the shifts and the forward count; VSA defaults to its trained sparsity."""
+
+    num_inference_steps = None
+
+    def _pipeline_factory(self):
+        from models.tt_dit.pipelines.minimax_h3.pipeline_minimax_h3_pdd import (
+            MiniMaxH3PDDPipeline,
+        )
+
+        return MiniMaxH3PDDPipeline
+
+    def _create_pipeline_kwargs(self) -> dict:
+        export = os.environ.get("MINIMAX_H3_PDD_EXPORT")
+        if not export or not os.path.isdir(export):
+            raise ValueError(
+                f"{type(self).__name__} needs MINIMAX_H3_PDD_EXPORT set to the PDD export "
+                f"directory; got {export!r}"
+            )
+        trained = self._pipeline_factory().export_vsa_config(export).sparsity
+        return {
+            "pdd_export_dir": export,
+            "vsa_config": _minimax_h3_vsa_config(trained),
+        }
+
+
 class TTIdeogram4Runner(_GenerationRunner):
     def create_pipeline(self):
         from models.tt_dit.pipelines.ideogram4.pipeline_ideogram4 import (

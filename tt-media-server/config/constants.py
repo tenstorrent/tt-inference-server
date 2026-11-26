@@ -41,6 +41,7 @@ class SupportedModels(Enum):
     MINIMAX_H3_FL2VA_HYPERFLOW = "MiniMaxAI/MiniMax-H3"
     MINIMAX_H3_REF2VA_HYPERFLOW = "MiniMaxAI/MiniMax-H3"
     MINIMAX_H3_FL2VA_FASTH3 = "MiniMaxAI/MiniMax-H3"
+    MINIMAX_H3_REF2VA_FASTH3_OMNI = "MiniMaxAI/MiniMax-H3"
     DISTIL_WHISPER_LARGE_V3 = "distil-whisper/distil-large-v3"
     OPENAI_WHISPER_LARGE_V3 = "openai/whisper-large-v3"
     PYANNOTE_SPEAKER_DIARIZATION = "pyannote/speaker-diarization-3.0"
@@ -103,6 +104,7 @@ class ModelNames(Enum):
     MINIMAX_H3_FL2VA_HYPERFLOW = "MiniMax-H3-FL2VA-HyperFlow"
     MINIMAX_H3_REF2VA_HYPERFLOW = "MiniMax-H3-Ref2VA-HyperFlow"
     MINIMAX_H3_FL2VA_FASTH3 = "MiniMax-H3-FL2VA-FastH3"
+    MINIMAX_H3_REF2VA_FASTH3_OMNI = "MiniMax-H3-Ref2VA-FastH3-Omni"
     DISTIL_WHISPER_LARGE_V3 = "distil-large-v3"
     OPENAI_WHISPER_LARGE_V3 = "whisper-large-v3"
     MICROSOFT_RESNET_50 = "resnet-50"
@@ -167,6 +169,7 @@ class ModelRunners(Enum):
     TT_MINIMAX_H3_FL2VA_HYPERFLOW = "tt-minimax-h3-fl2va-hyperflow"
     TT_MINIMAX_H3_REF2VA_HYPERFLOW = "tt-minimax-h3-ref2va-hyperflow"
     TT_MINIMAX_H3_FL2VA_FASTH3 = "tt-minimax-h3-fl2va-fasth3"
+    TT_MINIMAX_H3_REF2VA_FASTH3_OMNI = "tt-minimax-h3-ref2va-fasth3-omni"
     TT_WHISPER = "tt-whisper"
     VLLMForge = "vllm_forge"
     TT_YOLOV4 = "tt-yolov4"
@@ -226,6 +229,7 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.TT_MINIMAX_H3_FL2VA_HYPERFLOW,
         ModelRunners.TT_MINIMAX_H3_REF2VA_HYPERFLOW,
         ModelRunners.TT_MINIMAX_H3_FL2VA_FASTH3,
+        ModelRunners.TT_MINIMAX_H3_REF2VA_FASTH3_OMNI,
         ModelRunners.TT_IDEOGRAM_4,
     },
     ModelServices.IMAGE: {
@@ -324,6 +328,8 @@ MINIMAX_H3_LIGHTX2V_NUM_INFERENCE_STEPS = 5
 MINIMAX_H3_HYPERFLOW_NUM_INFERENCE_STEPS = 9
 # FastH3 was distilled on a 5-point DMD ladder (4 forwards).
 MINIMAX_H3_FASTH3_NUM_INFERENCE_STEPS = 5
+# FastH3 OmniRef PDD-8: 8 fused forwards; the pipeline reads the count from the export.
+MINIMAX_H3_FASTH3_OMNI_NUM_INFERENCE_STEPS = 9
 # The generations API takes no step count: these models run their reference
 # defaults.
 WAN22_I2V_A14B_NUM_STEPS = 40
@@ -336,6 +342,7 @@ _MINIMAX_H3_FORWARDS = MINIMAX_H3_NUM_INFERENCE_STEPS - 1
 _MINIMAX_H3_LIGHTX2V_FORWARDS = MINIMAX_H3_LIGHTX2V_NUM_INFERENCE_STEPS - 1
 _MINIMAX_H3_HYPERFLOW_FORWARDS = MINIMAX_H3_HYPERFLOW_NUM_INFERENCE_STEPS - 1
 _MINIMAX_H3_FASTH3_FORWARDS = MINIMAX_H3_FASTH3_NUM_INFERENCE_STEPS - 1
+_MINIMAX_H3_FASTH3_OMNI_FORWARDS = MINIMAX_H3_FASTH3_OMNI_NUM_INFERENCE_STEPS - 1
 
 VIDEO_FORCED_INFERENCE_STEPS_BY_RUNNER = {
     ModelRunners.TT_WAN_2_2_I2V_DISTILL: WAN22_DISTILL_NUM_STEPS,
@@ -350,6 +357,7 @@ VIDEO_FORCED_INFERENCE_STEPS_BY_RUNNER = {
     ModelRunners.TT_MINIMAX_H3_FL2VA_HYPERFLOW: _MINIMAX_H3_HYPERFLOW_FORWARDS,
     ModelRunners.TT_MINIMAX_H3_REF2VA_HYPERFLOW: _MINIMAX_H3_HYPERFLOW_FORWARDS,
     ModelRunners.TT_MINIMAX_H3_FL2VA_FASTH3: _MINIMAX_H3_FASTH3_FORWARDS,
+    ModelRunners.TT_MINIMAX_H3_REF2VA_FASTH3_OMNI: _MINIMAX_H3_FASTH3_OMNI_FORWARDS,
 }
 
 
@@ -407,6 +415,9 @@ INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
         ModelNames.MINIMAX_H3_REF2VA_HYPERFLOW
     },
     ModelRunners.TT_MINIMAX_H3_FL2VA_FASTH3: {ModelNames.MINIMAX_H3_FL2VA_FASTH3},
+    ModelRunners.TT_MINIMAX_H3_REF2VA_FASTH3_OMNI: {
+        ModelNames.MINIMAX_H3_REF2VA_FASTH3_OMNI
+    },
     ModelRunners.TT_WHISPER: {
         ModelNames.OPENAI_WHISPER_LARGE_V3,
         ModelNames.DISTIL_WHISPER_LARGE_V3,
@@ -1272,6 +1283,22 @@ ModelConfigs = {
         "download_weights_from_service": False,
         "request_processing_timeout_seconds": 5000,
     },
+    (ModelRunners.TT_MINIMAX_H3_REF2VA_FASTH3_OMNI, DeviceTypes.GALAXY): {
+        "device_mesh_shape": (4, 8),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+        "download_weights_from_service": False,
+        "request_processing_timeout_seconds": 5000,
+    },
+    (ModelRunners.TT_MINIMAX_H3_REF2VA_FASTH3_OMNI, DeviceTypes.BLACKHOLE_GALAXY): {
+        "device_mesh_shape": (4, 8),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+        "download_weights_from_service": False,
+        "request_processing_timeout_seconds": 5000,
+    },
     (ModelRunners.TT_WAN_2_2, DeviceTypes.P150X4): {
         "device_mesh_shape": (1, 4),
         "is_galaxy": False,
@@ -1441,6 +1468,14 @@ ModelConfigs = {
         "request_processing_timeout_seconds": 5000,
     },
     (ModelRunners.TT_MINIMAX_H3_FL2VA_FASTH3, DeviceTypes.GALAXY_QUAD): {
+        "device_mesh_shape": (4, 32),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+        "download_weights_from_service": False,
+        "request_processing_timeout_seconds": 5000,
+    },
+    (ModelRunners.TT_MINIMAX_H3_REF2VA_FASTH3_OMNI, DeviceTypes.GALAXY_QUAD): {
         "device_mesh_shape": (4, 32),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,

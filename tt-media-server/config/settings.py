@@ -386,6 +386,7 @@ class Settings(BaseSettings):
             ModelRunners.TT_MINIMAX_H3_FL2VA_HYPERFLOW.value,
             ModelRunners.TT_MINIMAX_H3_REF2VA_HYPERFLOW.value,
             ModelRunners.TT_MINIMAX_H3_FL2VA_FASTH3.value,
+            ModelRunners.TT_MINIMAX_H3_REF2VA_FASTH3_OMNI.value,
             ModelRunners.TT_IDEOGRAM_4.value,
         ]:
             self.default_throttle_level = None

@@ -219,6 +219,7 @@ The setup for other supported DiT models is very similar to [Standard SD-3.5 Set
 | MiniMax-H3-FL2VA-HyperFlow | galaxy, galaxy_quad |
 | MiniMax-H3-Ref2VA-HyperFlow | galaxy, galaxy_quad |
 | MiniMax-H3-FL2VA-FastH3 | galaxy, galaxy_quad |
+| MiniMax-H3-Ref2VA-FastH3-Omni | galaxy, galaxy_quad |
 
 ## Basic Single Host Deployment
 
@@ -1071,7 +1072,8 @@ These settings configure VLLM-based model runners and are grouped under `setting
 | `TT_VIDEO_EXPORT_CRF` | `"23"` | x264 CRF used when exporting MP4 (lower = higher quality) |
 | `TT_VIDEO_EXPORT_PRESET` | `"ultrafast"` | x264 preset used when exporting MP4 (e.g. `ultrafast`, `fast`, `medium`) |
 | `MINIMAX_H3_LORA_PATH` | _unset_ | MiniMax-H3 LightX2V, HyperFlow and FastH3 runners: the adapter's `.safetensors` file. Required by those runners |
-| `MINIMAX_H3_VSA_SPARSITY` | _runner default_ | MiniMax-H3 FastH3 runner: video sparse attention sparsity, overriding the adapter's trained 0.9. `0` runs dense attention |
+| `MINIMAX_H3_VSA_SPARSITY` | _runner default_ | MiniMax-H3 FastH3 and FastH3-Omni runners: video sparse attention sparsity, overriding the trained one (FastH3's 0.9, the Omni export's own). `0` runs dense attention |
+| `MINIMAX_H3_PDD_EXPORT` | _unset_ | MiniMax-H3 FastH3-Omni runner: the PDD export directory (with `transformer_ref/`). The export fixes the shifts and the step count. Required by that runner |
 
 ## Image Generation Settings
 

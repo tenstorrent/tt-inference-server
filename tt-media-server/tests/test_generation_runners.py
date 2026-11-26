@@ -1034,6 +1034,59 @@ def test_h3_fasth3_runs_under_vsa(
     assert (vsa_config and vsa_config.sparsity) == sparsity
 
 
+@pytest.fixture
+def pdd_export(tmp_path, monkeypatch, vsa_prepass):
+    """An export whose trained sparsity is 0.85; the PDD pipeline is a Mock."""
+    export = tmp_path / "pdd"
+    export.mkdir()
+    monkeypatch.setenv("MINIMAX_H3_PDD_EXPORT", str(export))
+    pipeline = Mock()
+    pipeline.export_vsa_config.return_value = SimpleNamespace(sparsity=0.85)
+    monkeypatch.setattr(
+        runners.TTMiniMaxH3FastOmniRef2VARunner,
+        "_pipeline_factory",
+        lambda self: pipeline,
+    )
+    return str(export), pipeline
+
+
+def test_h3_fasth3_omni_keeps_ref2va_and_takes_the_exports_steps():
+    cls = runners.TTMiniMaxH3FastOmniRef2VARunner
+    assert issubclass(cls, runners.TTMiniMaxH3Ref2VARunner)
+    assert (cls.pipeline_task, cls.dit_fsdp) == ("ref2va", True)
+    assert cls.num_inference_steps is None
+
+
+@pytest.mark.parametrize("env, sparsity", [(None, 0.85), ("0.9", 0.9), ("0", None)])
+def test_h3_fasth3_omni_gets_the_export_and_its_sparsity(
+    env, sparsity, pdd_export, monkeypatch
+):
+    export, pipeline = pdd_export
+    if env is not None:
+        monkeypatch.setenv("MINIMAX_H3_VSA_SPARSITY", env)
+    _h3_runner("TTMiniMaxH3FastOmniRef2VARunner").create_pipeline()
+    kwargs = pipeline.create_pipeline.call_args.kwargs
+    assert (kwargs["task"], kwargs["pdd_export_dir"]) == ("ref2va", export)
+    assert (kwargs["vsa_config"] and kwargs["vsa_config"].sparsity) == sparsity
+    assert "video_shift" not in kwargs and "audio_shift" not in kwargs
+    pipeline.export_vsa_config.assert_called_once_with(export)
+
+
+@pytest.mark.parametrize("export", [None, "/nonexistent/pdd", "file"])
+def test_h3_fasth3_omni_refuses_to_start_without_an_export_dir(
+    export, tmp_path, monkeypatch
+):
+    if export is None:
+        monkeypatch.delenv("MINIMAX_H3_PDD_EXPORT", raising=False)
+    else:
+        if export == "file":
+            export = tmp_path / "export.safetensors"
+            export.write_bytes(b"")
+        monkeypatch.setenv("MINIMAX_H3_PDD_EXPORT", str(export))
+    with pytest.raises(ValueError, match="MINIMAX_H3_PDD_EXPORT"):
+        _h3_runner("TTMiniMaxH3FastOmniRef2VARunner")._create_pipeline_kwargs()
+
+
 @pytest.mark.parametrize(
     "class_name, l1_small_size",
     [
@@ -1041,6 +1094,7 @@ def test_h3_fasth3_runs_under_vsa(
         ("TTMiniMaxH3Ref2VARunner", 16384),
         ("TTMiniMaxH3TurboRef2VARunner", 16384),
         ("TTMiniMaxH3HyperFlowRef2VARunner", 16384),
+        ("TTMiniMaxH3FastOmniRef2VARunner", 16384),
     ],
 )
 def test_h3_ref2va_keeps_its_l1_pool(class_name, l1_small_size, monkeypatch):

@@ -22,6 +22,7 @@ format or quantization suffixes. Models covered:
 | MiniMax-H3 Ref2VA | `POST /v1/generations/minimaxai/minimax-h3-ref2va` |
 | MiniMax-H3 Ref2VA, LightX2V | `POST /v1/generations/tenstorrent/minimax-h3-ref2va-lightx2v` |
 | MiniMax-H3 Ref2VA, HyperFlow | `POST /v1/generations/tenstorrent/minimax-h3-ref2va-hyperflow` |
+| MiniMax-H3 Ref2VA, FastH3-Omni | `POST /v1/generations/tenstorrent/minimax-h3-ref2va-fasth3-omni` |
 | LTX-2.3 22B distilled | `POST /v1/generations/lightricks/ltx-2.3-22b-distilled` |
 
 When one upstream repo holds several checkpoints, the checkpoint's name is
