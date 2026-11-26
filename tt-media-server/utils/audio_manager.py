@@ -821,6 +821,9 @@ class AudioManager:
             num_channels = struct.unpack("<H", audio_bytes[22:24])[0]
             sample_rate = struct.unpack("<I", audio_bytes[24:28])[0]
             bits_per_sample = struct.unpack("<H", audio_bytes[34:36])[0]
+            if audio_format == 0xFFFE and fmt_size >= 26:
+                # WAVE_FORMAT_EXTENSIBLE: the real format tag leads the SubFormat GUID
+                audio_format = struct.unpack("<H", audio_bytes[44:46])[0]
 
             self._logger.info(
                 f"WAV format: {num_channels} channels, {sample_rate} Hz, {bits_per_sample} bits"
@@ -848,26 +851,16 @@ class AudioManager:
                     / 32768.0
                 )
             elif bits_per_sample == 24:
-                # Handle 24-bit audio
-                audio_ints = []
-                # WAV files are typically little-endian
-                endian = "<"
-                for i in range(0, len(audio_data), 3):
-                    if i + 3 <= len(audio_data):  # Ensure all three bytes are available
-                        # Convert 3 bytes to int24 with proper endianness
-                        if endian == "<":
-                            byte_data = (
-                                audio_data[i : i + 3] + b"\x00"
-                            )  # Pad to 4 bytes (LSB)
-                        else:
-                            byte_data = (
-                                b"\x00" + audio_data[i : i + 3]
-                            )  # Pad to 4 bytes (MSB)
-                        val = (
-                            struct.unpack(endian + "i", byte_data)[0] >> 8
-                        )  # Shift back
-                        audio_ints.append(val)
-                audio_array = np.array(audio_ints, dtype=np.float32) / 8388608.0  # 2^23
+                # Little-endian int24: pad each sample to int32 with a low zero
+                # byte, so the arithmetic shift keeps the sign.
+                samples = np.frombuffer(
+                    audio_data[: len(audio_data) - len(audio_data) % 3], dtype=np.uint8
+                ).reshape(-1, 3)
+                padded = np.zeros((len(samples), 4), dtype=np.uint8)
+                padded[:, 1:] = samples
+                audio_array = (padded.view("<i4").ravel() >> 8).astype(
+                    np.float32
+                ) / 8388608.0  # 2^23
             elif bits_per_sample == 32:
                 if audio_format == 3:  # IEEE float
                     audio_array = np.frombuffer(audio_data, dtype=np.float32)
