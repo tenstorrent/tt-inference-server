@@ -302,6 +302,7 @@ start_prefill_worker() {
         "${DEVICE_ARGS[@]}" "${LOCAL_BUILD_MOUNT[@]}" "${WORKER_ENTRYPOINT[@]}" \
         -e SERVER_MODE=cpp \
         -e MODEL="$HF_MODEL_ID" \
+        -e HF_TOKEN -e HUGGING_FACE_HUB_TOKEN \
         -e LLM_DEVICE_BACKEND="$LLM_DEVICE_BACKEND" \
         -e LLM_MODE=prefill \
         -e DEVICE_IDS="$DEVICE_IDS" \
@@ -400,6 +401,7 @@ docker run -d --name "$WORKER_NAME" --network "$NETWORK_NAME" --shm-size=2g \
     $(dynamo_worker_env "http://${ETCD_NAME}:2379" docker) \
     -e SERVER_MODE=cpp \
     -e MODEL="$HF_MODEL_ID" \
+    -e HF_TOKEN -e HUGGING_FACE_HUB_TOKEN \
     -e LLM_DEVICE_BACKEND="$LLM_DEVICE_BACKEND" \
     -e DEVICE_IDS="$DEVICE_IDS" \
     "${WORKER_ROUTING_ENV[@]}" \
@@ -481,7 +483,9 @@ docker run -d --name "$FRONTEND_NAME" --network "$NETWORK_NAME" -p "${FRONTEND_H
     -e ETCD_ENDPOINTS="http://${ETCD_NAME}:2379" \
     -e DYN_REQUEST_PLANE_CODEC="${DYN_REQUEST_PLANE_CODEC:-json}" \
     -e MODEL_NAME="$MODEL_NAME" \
+    -e MODEL="$HF_MODEL_ID" \
     -e HF_TOKEN="${HF_TOKEN:-}" \
+    -e HUGGING_FACE_HUB_TOKEN \
     -e DYN_CHAT_PROCESSOR="${DYN_CHAT_PROCESSOR:-dynamo}" \
     -e DYN_RUNTIME_NUM_WORKER_THREADS="${DYN_RUNTIME_NUM_WORKER_THREADS:-}" \
     -e DYN_RUNTIME_MAX_BLOCKING_THREADS="${DYN_RUNTIME_MAX_BLOCKING_THREADS:-}" \

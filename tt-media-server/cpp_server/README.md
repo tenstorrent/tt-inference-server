@@ -4,6 +4,47 @@ Production-grade, zero-overhead C++ inference server for AI workloads on
 Tenstorrent hardware. Supports LLM and image models; video, audio,
 and text-to-speech models are on the roadmap.
 
+## Llama-3.2-1B tokenizer assets
+
+Generic images omit the gated `meta-llama/Llama-3.2-1B-Instruct` tokenizer.
+When this model is selected with `MODEL` (or `HF_MODEL_ID`), `run_cpp.sh`
+and the Dynamo frontend entrypoint provision only its tokenizer before
+starting. Supply `HF_TOKEN` or `HUGGING_FACE_HUB_TOKEN` with access to that
+model. `dynamo_frontend/deploy.sh --hf-model-id meta-llama/Llama-3.2-1B-Instruct`
+forwards the model and credentials to both images. Missing assets or failed
+downloads stop startup; other model deployments do not download Llama-1B.
+
+For offline deployment or direct invocation of the C++ binary, prepopulate
+the tokenizer directory before starting:
+
+```bash
+./scripts/fetch_tokenizers.sh ./tokenizers meta-llama/Llama-3.2-1B-Instruct
+```
+
+Run that command from `cpp_server`. Place the same model subdirectory under
+`/home/container_app_user/app/server/cpp_server/tokenizers` in the Dynamo
+frontend image. Complete cached `tokenizer.json`, `tokenizer_config.json`, and
+`config.json` files are reused without credentials or network access.
+
+## Llama-1B rollout endpoint
+
+The C++ `/v1/completions` endpoint is available only when
+`MODEL=meta-llama/Llama-3.2-1B-Instruct`. Other models return HTTP 404.
+Prompt and stop token IDs must be below 128256.
+
+The RL deployment uses this path:
+`trainer -> Blaze weight-control gateway -> C++ server`.
+The gateway forwards generation requests to the loopback C++ backend. It
+also closes admission, drains active requests, and stops the backend before
+weight updates. This deployment does not route generation through Dynamo.
+Dynamo's token-in/token-out frontend remains a separate deployment path;
+this endpoint does not extend its API or add weight-update coordination to it.
+
+The raw `/v1/completions` endpoint rejects `ignore_eos=true` with non-empty
+`stop_token_ids`: the pinned engine disables both model and explicit stop
+tokens in that mode. Use `ignore_eos=false` for explicit stop IDs, or omit
+explicit stops when requesting a fixed output length.
+
 ## Non-Functional Requirements
 
 These requirements drive design decisions in this codebase. They are ordered

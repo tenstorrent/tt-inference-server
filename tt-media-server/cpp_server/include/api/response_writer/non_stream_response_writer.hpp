@@ -62,6 +62,7 @@ class NonStreamResponseWriter : public ResponseWriter {
   ResponseBuilder builder;
 
   std::ostringstream accumulatedAnswer;
+  std::vector<uint32_t> accumulatedTokenIds;
   std::string finishReason = "stop";
 };
 

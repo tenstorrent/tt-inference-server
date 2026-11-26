@@ -246,6 +246,13 @@ struct ChatCompletionRequest : BaseRequest {
     out.full_prompt_tokens_count = static_cast<int>(promptTokens.size());
     out.prompt_tokens_count = out.full_prompt_tokens_count;
     out.prompt = std::move(promptTokens);
+    copyGenerationParams(out);
+    return out;
+  }
+
+  // Shared by chat and raw-token completion requests; never renders a prompt.
+  void copyGenerationParams(LLMRequest& out) const {
+    out.model = model;
     out.echo = echo;
     out.max_tokens = max_tokens;
     out.n = n;
@@ -277,7 +284,6 @@ struct ChatCompletionRequest : BaseRequest {
     out.fast_mode = fast_mode;
     out.sessionId = sessionId;
     out.disaggregation_override = disaggregation_override;
-    return out;
   }
 };
 

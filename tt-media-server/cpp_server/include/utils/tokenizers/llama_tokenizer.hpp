@@ -3,15 +3,20 @@
 
 #pragma once
 
+#include <utility>
+
 #include "utils/tokenizers/tokenizer.hpp"
 
 namespace tt::utils::tokenizers {
 
 class LlamaTokenizer final : public Tokenizer {
  public:
-  using Tokenizer::Tokenizer;
+  explicit LlamaTokenizer(
+      const std::string& path,
+      std::string model = "meta-llama/Llama-3.1-8B-Instruct")
+      : Tokenizer(path), modelId(std::move(model)) {}
 
-  std::string modelName() const { return "meta-llama/Llama-3.1-8B-Instruct"; }
+  std::string modelName() const override { return modelId; }
   std::vector<uint32_t> stopTokenIds() const {
     return {128001, 128008, 128009};
   }
@@ -26,6 +31,9 @@ class LlamaTokenizer final : public Tokenizer {
       const std::vector<tt::domain::llm::ChatMessage>& messages,
       bool addGenerationPrompt, bool enableReasoning = true,
       bool skipApplyChatTemplate = false) const;
+
+ private:
+  std::string modelId;
 };
 
 }  // namespace tt::utils::tokenizers
