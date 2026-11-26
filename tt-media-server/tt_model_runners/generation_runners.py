@@ -863,7 +863,8 @@ class _MiniMaxH3ReferencesRunner(_MiniMaxH3Runner):
 
 
 class _MiniMaxH3TurboMixin:
-    """Binds a lightx2v 4-step Turbo adapter onto an H3 runner's transformer.
+    """Binds the adapter file in ``MINIMAX_H3_LORA_PATH`` (lightx2v Turbo, HyperFlow or FastH3)
+    onto an H3 runner's transformer; each subclass says which adapter it takes.
 
     The FL2VA and Ref2VA adapters are separate files (Ref2VA's targets ``transformer_ref/``), so one
     deployment serves one task with the adapter for that task in ``MINIMAX_H3_LORA_PATH``. The
@@ -871,12 +872,14 @@ class _MiniMaxH3TurboMixin:
     it and defaults to 1.0.
 
     Each adapter was distilled at its own (video, audio) shift. A wrong shift still completes, over
-    the wrong sigma grid, so the shift is pinned per runner to the adapter it serves.
+    the wrong sigma grid, so a runner whose adapter differs from tt-metal's defaults (12 / 3) pins
+    its shift; an unpinned one leaves it to the pipeline, which applies ``MINIMAX_H3_VIDEO_SHIFT`` /
+    ``MINIMAX_H3_AUDIO_SHIFT`` or its defaults.
     """
 
     num_inference_steps = MINIMAX_H3_LIGHTX2V_NUM_INFERENCE_STEPS
-    video_shift: float
-    audio_shift: float
+    video_shift: float | None = None
+    audio_shift: float | None = None
 
     def _pipeline_factory(self):
         from models.tt_dit.pipelines.minimax_h3.pipeline_minimax_h3_turbo import (
@@ -889,18 +892,35 @@ class _MiniMaxH3TurboMixin:
         lora_path = os.environ.get("MINIMAX_H3_LORA_PATH")
         if not lora_path or not os.path.isfile(lora_path):
             raise ValueError(
-                f"{type(self).__name__} needs MINIMAX_H3_LORA_PATH set to the lightx2v Turbo "
-                f"adapter's .safetensors file; got {lora_path!r}"
+                f"{type(self).__name__} needs MINIMAX_H3_LORA_PATH set to its adapter's "
+                f".safetensors file; got {lora_path!r}"
             )
-        return {
-            "lora_path": lora_path,
-            "video_shift": float(
-                os.environ.get("MINIMAX_H3_VIDEO_SHIFT", self.video_shift)
-            ),
-            "audio_shift": float(
-                os.environ.get("MINIMAX_H3_AUDIO_SHIFT", self.audio_shift)
-            ),
-        }
+        kwargs = {"lora_path": lora_path}
+        for name, pinned in (
+            ("video_shift", self.video_shift),
+            ("audio_shift", self.audio_shift),
+        ):
+            if pinned is not None:
+                env = f"MINIMAX_H3_{name.upper()}"
+                kwargs[name] = float(os.environ.get(env, pinned))
+        return kwargs
+
+
+class _MiniMaxH3HyperFlowMixin(_MiniMaxH3TurboMixin):
+    """A HyperFlow adapter in ``MINIMAX_H3_LORA_PATH``. Its header fixes the sigma grid, so the
+    pipeline is called with ``num_inference_steps=None`` and takes the adapter's own. No shift pin:
+    tt-metal's defaults (12 / 3) are the adapter's, and the header asserts them."""
+
+    num_inference_steps = None
+
+    def create_pipeline(self):
+        pipeline = super().create_pipeline()
+        if pipeline.hyperflow is None:
+            raise ValueError(
+                f"{os.environ.get('MINIMAX_H3_LORA_PATH')!r} is not a HyperFlow adapter "
+                "(no `hyperflow` header); use the LightX2V runner for a plain Turbo adapter"
+            )
+        return pipeline
 
 
 class TTMiniMaxH3Runner(_MiniMaxH3KeyframesRunner):
@@ -914,15 +934,17 @@ class TTMiniMaxH3TurboRunner(_MiniMaxH3TurboMixin, TTMiniMaxH3Runner):
     audio_shift = 3.0
 
 
+class TTMiniMaxH3HyperFlowRunner(_MiniMaxH3HyperFlowMixin, TTMiniMaxH3Runner):
+    """MiniMax-H3 FL2VA with a HyperFlow 8-step adapter."""
+
+
 class TTMiniMaxH3Ref2VARunner(_MiniMaxH3ReferencesRunner):
     """MiniMax-H3 Ref2VA."""
 
 
 class TTMiniMaxH3TurboRef2VARunner(_MiniMaxH3TurboMixin, TTMiniMaxH3Ref2VARunner):
-    """MiniMax-H3 Ref2VA with the lightx2v Ref2VA Turbo 4-step v1.0 768p adapter."""
-
-    video_shift = 12.0
-    audio_shift = 3.0
+    """MiniMax-H3 Ref2VA with the lightx2v Ref2VA Turbo 4-step v1.0 768p adapter, distilled at
+    tt-metal's default shifts."""
 
 
 class TTIdeogram4Runner(_GenerationRunner):

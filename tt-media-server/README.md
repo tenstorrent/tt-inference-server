@@ -216,6 +216,7 @@ The setup for other supported DiT models is very similar to [Standard SD-3.5 Set
 | MiniMax-H3-Ref2VA | galaxy, galaxy_quad |
 | MiniMax-H3-FL2VA-LightX2V | galaxy, galaxy_quad |
 | MiniMax-H3-Ref2VA-LightX2V | galaxy, galaxy_quad |
+| MiniMax-H3-FL2VA-HyperFlow | galaxy, galaxy_quad |
 
 ## Basic Single Host Deployment
 
@@ -1067,6 +1068,7 @@ These settings configure VLLM-based model runners and are grouped under `setting
 | `VIDEO_ASYNC_ENCODE` | `False` | When `True`, the device worker encodes MP4s on a background thread so the device starts the next request while ffmpeg runs. Runners that export inside `run()` (Wan Prodia) hand back raw frames instead. Applies to video-service runners only: generation deployments (Wan2.2 I2V A14B, LTX-2.3, MiniMax-H3) encode in the runner and ignore it |
 | `TT_VIDEO_EXPORT_CRF` | `"23"` | x264 CRF used when exporting MP4 (lower = higher quality) |
 | `TT_VIDEO_EXPORT_PRESET` | `"ultrafast"` | x264 preset used when exporting MP4 (e.g. `ultrafast`, `fast`, `medium`) |
+| `MINIMAX_H3_LORA_PATH` | _unset_ | MiniMax-H3 LightX2V and HyperFlow runners: the adapter's `.safetensors` file. Required by those runners |
 
 ## Image Generation Settings
 

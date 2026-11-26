@@ -31,6 +31,7 @@ GENERATIONS_API_SUBMIT_ENDPOINTS = {
     "MiniMax-H3-Ref2VA": "v1/generations/minimaxai/minimax-h3-ref2va",
     "MiniMax-H3-FL2VA-LightX2V": "v1/generations/tenstorrent/minimax-h3-fl2va-lightx2v",
     "MiniMax-H3-Ref2VA-LightX2V": "v1/generations/tenstorrent/minimax-h3-ref2va-lightx2v",
+    "MiniMax-H3-FL2VA-HyperFlow": "v1/generations/tenstorrent/minimax-h3-fl2va-hyperflow",
 }
 FIXTURE_IMAGE_PATH = (
     Path("test_fixtures") / "datasets" / "imagenet_subset" / "imagenet_002_volcano.jpg"

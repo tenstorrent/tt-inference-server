@@ -910,11 +910,13 @@ def test_h3_deep_canary_is_the_shortest_video(class_name, inputs):
     } == inputs
 
 
-# The Turbo runners, with the base runner each extends, its pipeline task and
-# the (video, audio) shift its adapter was distilled at.
+# The adapter runners, with the base runner each extends, its pipeline task,
+# the (video, audio) shift it pins (None: tt-metal's defaults) and the grid
+# points it asks for (None: the adapter's own).
 H3_TURBO_RUNNERS = [
-    ("TTMiniMaxH3TurboRunner", "TTMiniMaxH3Runner", "t2va", (6.0, 3.0)),
-    ("TTMiniMaxH3TurboRef2VARunner", "TTMiniMaxH3Ref2VARunner", "ref2va", (12.0, 3.0)),
+    ("TTMiniMaxH3TurboRunner", "TTMiniMaxH3Runner", "t2va", (6.0, 3.0), 5),
+    ("TTMiniMaxH3TurboRef2VARunner", "TTMiniMaxH3Ref2VARunner", "ref2va", None, 5),
+    ("TTMiniMaxH3HyperFlowRunner", "TTMiniMaxH3Runner", "t2va", None, None),
 ]
 
 
@@ -928,46 +930,58 @@ def adapter(tmp_path, monkeypatch):
     return str(path)
 
 
-@pytest.mark.parametrize("name, base, task, shifts", H3_TURBO_RUNNERS)
-def test_h3_turbo_keeps_the_base_task_and_runs_five_grid_points(
-    name, base, task, shifts
+@pytest.fixture
+def adapter_pipeline(monkeypatch):
+    pipeline = Mock()
+    monkeypatch.setattr(
+        runners._MiniMaxH3TurboMixin, "_pipeline_factory", lambda self: pipeline
+    )
+    return pipeline
+
+
+@pytest.mark.parametrize("name, base, task, shifts, steps", H3_TURBO_RUNNERS)
+def test_h3_turbo_keeps_the_base_task_and_its_step_count(
+    name, base, task, shifts, steps
 ):
     cls, base_cls = getattr(runners, name), getattr(runners, base)
     assert issubclass(cls, base_cls)
     assert cls.pipeline_task == task
     assert cls.dit_fsdp == base_cls.dit_fsdp
-    assert cls.num_inference_steps == 5
+    assert cls.num_inference_steps == steps
 
 
-@pytest.mark.parametrize("name, base, task, shifts", H3_TURBO_RUNNERS)
+@pytest.mark.parametrize("name, base, task, shifts, steps", H3_TURBO_RUNNERS)
 def test_h3_turbo_pipeline_gets_the_adapter_and_its_shift(
-    name, base, task, shifts, adapter, monkeypatch
+    name, base, task, shifts, steps, adapter, adapter_pipeline
 ):
-    turbo = Mock()
-    monkeypatch.setattr(
-        runners._MiniMaxH3TurboMixin, "_pipeline_factory", lambda self: turbo
-    )
     _h3_runner(name).create_pipeline()
-    kwargs = turbo.create_pipeline.call_args.kwargs
+    kwargs = adapter_pipeline.create_pipeline.call_args.kwargs
     assert kwargs["task"] == task
     assert kwargs["lora_path"] == adapter
-    assert (kwargs["video_shift"], kwargs["audio_shift"]) == shifts
+    if shifts is None:
+        assert "video_shift" not in kwargs and "audio_shift" not in kwargs
+    else:
+        assert (kwargs["video_shift"], kwargs["audio_shift"]) == shifts
 
 
-@pytest.mark.parametrize("name, base, task, shifts", H3_TURBO_RUNNERS)
-def test_h3_turbo_shift_env_overrides_the_default(
-    name, base, task, shifts, adapter, monkeypatch
+@pytest.mark.parametrize("name, base, task, shifts, steps", H3_TURBO_RUNNERS)
+def test_h3_turbo_shift_env_overrides_only_a_pinned_shift(
+    name, base, task, shifts, steps, adapter, monkeypatch
 ):
+    # An unpinned runner leaves the env to the pipeline's own resolution.
     monkeypatch.setenv("MINIMAX_H3_VIDEO_SHIFT", "12")
     monkeypatch.setenv("MINIMAX_H3_AUDIO_SHIFT", "2.5")
     kwargs = _h3_runner(name)._create_pipeline_kwargs()
-    assert (kwargs["video_shift"], kwargs["audio_shift"]) == (12.0, 2.5)
+    if shifts is None:
+        assert "video_shift" not in kwargs and "audio_shift" not in kwargs
+    else:
+        assert (kwargs["video_shift"], kwargs["audio_shift"]) == (12.0, 2.5)
 
 
-@pytest.mark.parametrize("name, base, task, shifts", H3_TURBO_RUNNERS)
+@pytest.mark.parametrize("name, base, task, shifts, steps", H3_TURBO_RUNNERS)
 @pytest.mark.parametrize("lora_path", [None, "/nonexistent/turbo.safetensors"])
 def test_h3_turbo_refuses_to_start_without_an_adapter_file(
-    name, base, task, shifts, lora_path, monkeypatch
+    name, base, task, shifts, steps, lora_path, monkeypatch
 ):
     if lora_path is None:
         monkeypatch.delenv("MINIMAX_H3_LORA_PATH", raising=False)
@@ -975,6 +989,15 @@ def test_h3_turbo_refuses_to_start_without_an_adapter_file(
         monkeypatch.setenv("MINIMAX_H3_LORA_PATH", lora_path)
     with pytest.raises(ValueError, match="MINIMAX_H3_LORA_PATH"):
         _h3_runner(name)._create_pipeline_kwargs()
+
+
+@pytest.mark.parametrize("name", ["TTMiniMaxH3HyperFlowRunner"])
+def test_h3_hyperflow_refuses_an_adapter_without_its_header(
+    name, adapter, adapter_pipeline
+):
+    adapter_pipeline.create_pipeline.return_value.hyperflow = None
+    with pytest.raises(ValueError, match="not a HyperFlow adapter"):
+        _h3_runner(name).create_pipeline()
 
 
 @pytest.mark.parametrize(
