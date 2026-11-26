@@ -1,0 +1,26 @@
+# Humanity's Last Exam (cais/hle, 2500 questions, ~14% with an image), no tools:
+# the official answer-format instructions, then an LLM judge with the official judge
+# prompt decides each answer (see utils.py). hle_accuracy is the percent judged correct.
+task: hle_no_tools
+dataset_path: cais/hle
+dataset_kwargs:
+  token: True
+test_split: test
+output_type: generate_until
+process_docs: !function utils.process_docs
+doc_to_visual: !function utils.doc_to_visual
+doc_to_text: !function utils.doc_to_text
+doc_to_target: answer
+process_results: !function utils.process_results
+generation_kwargs:
+  max_new_tokens: 32768
+  temperature: 1.0
+metric_list:
+  - metric: hle_accuracy
+    aggregation: !function utils.aggregate_accuracy
+    higher_is_better: true
+  - metric: hle_judge_failures
+    aggregation: !function utils.aggregate_judge_failures
+    higher_is_better: false
+metadata:
+  version: 1.0

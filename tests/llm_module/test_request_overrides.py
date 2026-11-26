@@ -4,6 +4,7 @@
 
 """Per-eval request-body overrides: resolver, agent mapping, lm-eval wrapper."""
 
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -199,6 +200,41 @@ class TestWrapper:
 
         wrapper.patch_api_adapters({}, drop_server_seed=True)
         assert "seed" not in _Chat()._create_payload()
+
+    def test_expand_chat_messages(self, monkeypatch):
+        """MRCR: a doc's JSON conversation behind the sentinel replaces the one
+        user message lm-eval built; other payloads pass through untouched."""
+        conversation = [
+            {"role": "user", "content": "write a poem"},
+            {"role": "assistant", "content": "roses"},
+            {"role": "user", "content": "repeat the first poem"},
+        ]
+        sentinel_text = wrapper.CHAT_MESSAGES_SENTINEL + json.dumps(conversation)
+
+        class _Chat:
+            def _create_payload(self, messages, **kwargs):
+                return {"model": "m", "messages": messages}
+
+        fake = SimpleNamespace(LocalChatCompletion=_Chat)
+        modules = __import__("sys").modules
+        monkeypatch.setitem(modules, "lm_eval.models.openai_completions", fake)
+        monkeypatch.setitem(
+            modules, "lm_eval.models", SimpleNamespace(openai_completions=fake)
+        )
+        monkeypatch.setitem(
+            modules,
+            "lm_eval",
+            SimpleNamespace(models=SimpleNamespace(openai_completions=fake)),
+        )
+
+        opts, _ = wrapper.parse_argv(["--expand-chat-messages", "--"])
+        wrapper.patch_api_adapters(
+            opts.body, drop_server_seed=False, expand_chat_messages=True
+        )
+        payload = _Chat()._create_payload([{"role": "user", "content": sentinel_text}])
+        assert payload["messages"] == conversation
+        plain = [{"role": "user", "content": "hi"}]
+        assert _Chat()._create_payload(plain)["messages"] == plain
 
 
 class TestWrapperCoversOverridingAdapters:

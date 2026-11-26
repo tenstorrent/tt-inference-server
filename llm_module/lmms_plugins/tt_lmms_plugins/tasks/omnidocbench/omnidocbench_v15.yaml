@@ -1,0 +1,42 @@
+# OmniDocBench v1.5 (1355 pages; opendatalab/OmniDocBench at the last commit before
+# v1.6), end-to-end page parsing: the page image goes in, Markdown comes out, and each
+# element type is scored by normalized edit distance against the annotations (see
+# utils.py). omnidocbench_edit is the card's "overall edit distance" (lower is better);
+# omnidocbench_edit_score = (1 - omnidocbench_edit) * 100 is the higher-is-better form
+# the release report grades.
+task: omnidocbench_v15
+dataset_path: json
+dataset_kwargs:
+  data_files:
+    test: hf://datasets/opendatalab/OmniDocBench@91fe284bbfacfa687959ae3eb00846ca852aa907/OmniDocBench.json
+test_split: test
+output_type: generate_until
+process_docs: !function utils.process_docs
+doc_to_visual: !function utils.doc_to_visual
+doc_to_text: !function utils.doc_to_text
+doc_to_target: !function utils.doc_to_target
+process_results: !function utils.process_results
+generation_kwargs:
+  max_new_tokens: 16384
+  temperature: 0
+metric_list:
+  - metric: omnidocbench_edit_score
+    aggregation: !function utils.aggregate_overall_edit_score
+    higher_is_better: true
+  - metric: omnidocbench_edit
+    aggregation: !function utils.aggregate_overall_edit
+    higher_is_better: false
+  - metric: text_edit
+    aggregation: !function utils.aggregate_text_edit
+    higher_is_better: false
+  - metric: formula_edit
+    aggregation: !function utils.aggregate_formula_edit
+    higher_is_better: false
+  - metric: table_edit
+    aggregation: !function utils.aggregate_table_edit
+    higher_is_better: false
+  - metric: reading_order_edit
+    aggregation: !function utils.aggregate_reading_order_edit
+    higher_is_better: false
+metadata:
+  version: 1.0

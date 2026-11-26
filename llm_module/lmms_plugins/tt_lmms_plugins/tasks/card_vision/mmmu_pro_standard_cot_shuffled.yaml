@@ -1,0 +1,26 @@
+# lmms-eval's mmmu_pro_standard_cot (MMMU/MMMU_Pro "standard (10 options)", 1730
+# questions, CoT prompt with an "Answer: $LETTER" last line) in a fixed shuffled
+# order, so a --limit prefix spans the 30 subjects.
+task: mmmu_pro_standard_cot_shuffled
+dataset_path: MMMU/MMMU_Pro
+dataset_name: standard (10 options)
+test_split: test
+output_type: generate_until
+process_docs: !function utils.process_docs
+doc_to_visual: !function utils.mmmu_pro_doc_to_visual
+doc_to_text: !function utils.mmmu_pro_doc_to_text
+doc_to_target: "{{answer}}"
+process_results: !function utils.mmmu_pro_process_results
+generation_kwargs:
+  max_new_tokens: 16384
+metric_list:
+  - metric: mmmu_acc
+    aggregation: !function utils.mmmu_pro_aggregate_results
+    higher_is_better: true
+lmms_eval_specific_kwargs:
+  default:
+    pre_prompt: ""
+    post_prompt: "Answer the following multiple choice question. The last line of your response should be of the following format: 'Answer: $LETTER' (without quotes) where LETTER is one of options. Think step by step before answering."
+metadata:
+  version: 0.0
+  interleaved_format: false

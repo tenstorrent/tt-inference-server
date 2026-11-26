@@ -1,0 +1,3 @@
+include: _mmmlu_cot_template_yaml
+task: mmmlu_cot_pt_br
+dataset_name: PT_BR
