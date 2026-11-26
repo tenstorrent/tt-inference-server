@@ -355,3 +355,33 @@ def test_on_block_exception_does_not_abort_the_sweep() -> None:
     # Both points still ran and both Blocks are still in the result.
     assert len(driver.run_calls) == 2
     assert len(result.blocks) == 2
+
+
+def test_per_run_timeout_scales_with_the_point_token_volume() -> None:
+    """A 32 x 1 M sweep point prefills for hours: its per-run timeout follows its token volume
+    (the default 2 h stays for the standard points)."""
+    from llm_module.config import sweep_point_timeout_s
+
+    driver = FakeDriver([_ok(), _ok()])
+    timeouts: List[Optional[float]] = []
+    run = driver.run
+
+    def capture(config, server, context):
+        timeouts.append(context.per_run_timeout_s)
+        return run(config, server, context)
+
+    driver.run = capture
+    long_point = LLMRunConfig(isl=1047612, osl=160, max_concurrency=32, num_prompts=32)
+    result = _runner(driver).run(
+        [_cfg(), long_point], _SERVER, _CTX, skip_trace_capture=True
+    )
+    assert result.ok
+    assert timeouts[0] == _CTX.per_run_timeout_s == 7200.0
+    assert timeouts[1] == sweep_point_timeout_s(long_point, 7200.0)
+    assert (
+        timeouts[1] >= 1047612 * 32 / 1000 + 600
+    )  # prefill at 1000 tok/s aggregate + headroom
+    assert timeouts[1] > 4 * 3600  # the capstone's measured prefill runs ~4 h
+    # No timeout stays no timeout, and an explicit larger base is kept.
+    assert sweep_point_timeout_s(long_point, None) is None
+    assert sweep_point_timeout_s(_cfg(), 99999.0) == 99999.0

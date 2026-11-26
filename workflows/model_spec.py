@@ -488,6 +488,65 @@ muse_glimmer_30b_qb2_impl = ImplSpec(
     code_path="models/demos/muse_glimmer_30b_qb2",
 )
 
+# --- GLM-5.3-Flash on the Blackhole Galaxy: six serving profiles, one code path ---
+#
+# Same profile pattern as above: every profile points at models/demos/glm53_flash
+# (the persistent stack, tt-metal PR #64931). Each fixes the stack's slot
+# geometry (decode slots x context per slot) and its decode features, which one
+# (model_name, device) spec cannot express (dev/llm.yaml has the details):
+#   glm53-flash (default)  1 M x 8 users on the B 16 build, plain decode
+#   glm53-flash-mtp        1 M x 4 users, the lone-user MTP speculative step
+#   glm53-flash-mtp-mu     1 M x 16 users, the multi-user MTP steps
+#   glm53-flash-1m         1 M x 8 users on the B 16 build: narrow width 4, exact
+#                          prefix snapshots + host tier, the multi-user MTP
+#                          steps, 4 device steps per verify
+#   glm53-flash-128k       128 K x 16 users, plain decode, packed short prefills
+#   glm53-flash-128k-mm    glm53-flash-128k with image input
+# Selectable via --impl <impl_name>.
+glm53_flash_impl = ImplSpec(
+    impl_id="glm53_flash",
+    impl_name="glm53-flash",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/glm53_flash",
+)
+glm53_flash_128k_impl = ImplSpec(
+    impl_id="glm53_flash_128k",
+    impl_name="glm53-flash-128k",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/glm53_flash",
+)
+# the 128 K profile with image input (the adapter's multimodal class): --impl glm53-flash-128k-mm
+glm53_flash_128k_mm_impl = ImplSpec(
+    impl_id="glm53_flash_128k_mm",
+    impl_name="glm53-flash-128k-mm",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/glm53_flash",
+)
+# the 1 M profile with the stack's MTP speculative step (a lone greedy request; synchronous scheduling)
+glm53_flash_mtp_impl = ImplSpec(
+    impl_id="glm53_flash_mtp",
+    impl_name="glm53-flash-mtp",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/glm53_flash",
+)
+
+# the B 16 1 M build with the multi-user MTP step (G users x (K + 1) verify rows in one launch; synchronous)
+glm53_flash_mtp_mu_impl = ImplSpec(
+    impl_id="glm53_flash_mtp_mu",
+    impl_name="glm53-flash-mtp-mu",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/glm53_flash",
+)
+
+# the 1 M agentic-loop profile: the B 16 1 M build with narrow width 4, exact prefix snapshots + the host tier, and the
+# sparse multi-user MTP steps (4 x 3, 8 x 1, a lone user's 1 x 3; the MTP state in the snapshots; synchronous)
+glm53_flash_1m_impl = ImplSpec(
+    impl_id="glm53_flash_1m",
+    impl_name="glm53-flash-1m",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/glm53_flash",
+)
+
 _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "quetzal": quetzal_impl,
     "tt_transformers": tt_transformers_impl,
@@ -499,6 +558,12 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "kolibri_1_qb2": kolibri_1_qb2_impl,
     "k2_horizon_7b_qb2": k2_horizon_7b_qb2_impl,
     "muse_glimmer_30b_qb2": muse_glimmer_30b_qb2_impl,
+    "glm53_flash": glm53_flash_impl,
+    "glm53_flash_128k": glm53_flash_128k_impl,
+    "glm53_flash_128k_mm": glm53_flash_128k_mm_impl,
+    "glm53_flash_mtp": glm53_flash_mtp_impl,
+    "glm53_flash_mtp_mu": glm53_flash_mtp_mu_impl,
+    "glm53_flash_1m": glm53_flash_1m_impl,
     "llama3_70b_galaxy": llama3_70b_galaxy_impl,
     "llama31_8b_qb2": llama31_8b_qb2_impl,
     "qwen3_32b_galaxy": qwen3_32b_galaxy_impl,
