@@ -79,7 +79,7 @@ RUN if [ -z "${RUSTUP_HOME}" ] || [ -z "${CARGO_HOME}" ]; then echo "RUSTUP_HOME
     chown -R ${CONTAINER_APP_UID}:${CONTAINER_APP_UID} "${RUSTUP_HOME}" "${CARGO_HOME}" && \
     chmod -R 775 "${RUSTUP_HOME}" "${CARGO_HOME}"
 
-RUN /bin/bash -c "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --no-modify-path \
+RUN /bin/bash -c "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal --no-modify-path \
     && . ${CARGO_HOME}/env \
     && rustup update"
 
@@ -111,6 +111,9 @@ RUN /bin/bash -c "git clone --depth 1 https://github.com/tenstorrent-metal/tt-me
     && grep -rhE --include=requirements.txt '^tt[-_]transformers[[:space:]]*[@=<>~!]' models | sort -u > /tmp/tt-transformers-requirements.txt \
     && if [ -s /tmp/tt-transformers-requirements.txt ]; then uv pip install --no-deps -r /tmp/tt-transformers-requirements.txt; fi \
     && rm -rf ${TT_METAL_HOME}/.git \
+    && rm -rf ${TT_METAL_HOME}/.cpmcache \
+    && find ${TT_METAL_HOME}/build_Release -type d -name CMakeFiles -prune -exec rm -rf {} + \
+    && find ${TT_METAL_HOME}/build_Release -type f \( -name '*.o' -o -name '*.a' \) -delete \
     && { uv cache clean || echo 'WARN: uv cache clean failed'; true; }"
 
 # Build vllm-tt-plugin - clone with minimal history and clean.
@@ -154,6 +157,11 @@ RUN --mount=type=bind,from=quetzal_source,source=.,target=/tmp/quetzal-source-ro
     else \
       echo 'Building native-only image (TT_QUETZAL_COMMIT_SHA unset)'; \
     fi
+
+COPY vllm-tt-metal/requirements.txt /tmp/app-requirements.txt
+RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
+    && uv pip install --no-cache-dir -r /tmp/app-requirements.txt \
+    && { uv cache clean || echo 'WARN: uv cache clean failed'; true; }"
 
 # Build tt-smi in separate venv to avoid conflicts with tt-metal venv
 RUN /bin/bash -c "git clone https://github.com/tenstorrent/tt-smi.git ${TT_SMI_DIR} \
@@ -258,15 +266,12 @@ COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
 COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
     "VERSION" "${APP_DIR}/VERSION"
 
-# Fix venv symlinks after copy and install additional app requirements
+# Fix venv symlinks after copy
 RUN cd ${PYTHON_ENV_DIR}/bin \
     && rm -f python python3 \
     && ln -s /usr/bin/python3 python3 \
     && ln -s python3 python \
-    && /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
-    && uv pip install --no-cache-dir -r ${APP_DIR}/requirements.txt \
-    && uv cache clean" \
-    && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${PYTHON_ENV_DIR}
+    && chown -h ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} python python3
 
 # Prove the plugin survived the builder-to-runtime copy and final requirements install.
 RUN if [ -n "${TT_QUETZAL_COMMIT_SHA}" ]; then \
