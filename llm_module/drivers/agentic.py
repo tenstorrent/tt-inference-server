@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import copy
 import fnmatch
 import json
 import logging
@@ -226,6 +227,45 @@ def _n_concurrent_trials(cfg: Any) -> int:
     return capped
 
 
+def _fit_to_server_context(agent: str, agent_kwargs: Any) -> Any:
+    """Fit the agent's context bookkeeping to the served context when ``AGENTIC_SERVER_CONTEXT`` is set.
+
+    The configs size ``model_info`` (and ``llm_kwargs.max_tokens``) for the GPU reference server, e.g. 896K input
+    and 128K output for a 1M-context model. On a server with a shorter context, terminus-2 then never summarizes
+    (it believes it has room) and a long conversation's request (prompt + max_tokens) is rejected outright. With
+    the served context N, the per-turn output is capped at N // 4 and the input limit at N minus that, so every
+    request fits and the agent summarizes before the limit. Only keys the config sets are changed."""
+    raw = os.environ.get("AGENTIC_SERVER_CONTEXT")
+    if not raw or agent != "terminus-2":
+        return agent_kwargs
+    try:
+        context = int(raw)
+    except ValueError:
+        context = 0
+    if context < 4096:
+        raise ValueError(f"AGENTIC_SERVER_CONTEXT must be an integer >= 4096, got {raw!r}")
+    kwargs = copy.deepcopy(dict(agent_kwargs))
+    info = kwargs.get("model_info")
+    llm = kwargs.get("llm_kwargs")
+    configured_out = [v for v in ((llm or {}).get("max_tokens"), (info or {}).get("max_output_tokens")) if v]
+    out = min([context // 4] + [int(v) for v in configured_out])
+    changed = []
+    if isinstance(llm, dict) and llm.get("max_tokens") and int(llm["max_tokens"]) > out:
+        changed.append(f"llm_kwargs.max_tokens {llm['max_tokens']} -> {out}")
+        llm["max_tokens"] = out
+    if isinstance(info, dict):
+        if info.get("max_output_tokens") and int(info["max_output_tokens"]) > out:
+            changed.append(f"model_info.max_output_tokens {info['max_output_tokens']} -> {out}")
+            info["max_output_tokens"] = out
+        if info.get("max_input_tokens") and int(info["max_input_tokens"]) > context - out:
+            changed.append(f"model_info.max_input_tokens {info['max_input_tokens']} -> {context - out}")
+            info["max_input_tokens"] = context - out
+    if changed:
+        logger.info("[agentic] fitted to the served context %s (AGENTIC_SERVER_CONTEXT): %s", context,
+                    "; ".join(changed))
+    return kwargs
+
+
 def build_harbor_config(
     task: Any,
     server: ServerConnection,
@@ -256,7 +296,9 @@ def build_harbor_config(
         n_attempts=cfg.n_attempts,
         environment_type=cfg.environment_type,
         agent_kwargs=agent_kwargs_with_request_body(
-            cfg.agent, cfg.agent_kwargs, resolve_request_body(task)
+            cfg.agent,
+            _fit_to_server_context(cfg.agent, cfg.agent_kwargs),
+            resolve_request_body(task),
         ),
         n_tasks=n_tasks if n_tasks is not None else cfg.n_tasks,
         override_cpus=cfg.override_cpus,
