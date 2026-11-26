@@ -694,14 +694,24 @@ _K2_HORIZON_LM_EVAL_TASKS = os.path.join(
 QWQ_R1_REQUEST_TIMEOUT_S = 3 * 60 * 60
 
 # The five-task Terminal-Bench 2.1 and five-instance SWE-bench Verified subsets the QB2
-# agentic-models configs (Qwen3.6-27B, Qwen3.6-35B-A3B, Ornith-1.5-9B, Ornith-1.5-35B-A3B,
-# Nemotron-3.5-Lightning) run in every mode, each gated at 1 of 5 in CI.
+# agentic-models configs (Qwen3.6-27B, Qwen3.6-35B-A3B, Ornith-1.5-9B, Ornith-1.5-35B-A3B;
+# Nemotron-3.5-Lightning runs the SWE-bench subset and its own Terminal-Bench tasks below)
+# run in every mode, each gated at 1 of 5 in CI.
 _QB2_TERMINAL_BENCH_2_1_SUBSET = (
     "terminal-bench/openssl-selfsigned-cert",
     "terminal-bench/sqlite-db-truncate",
     "terminal-bench/fix-git",
     "terminal-bench/nginx-request-logging",
     "terminal-bench/overfull-hbox",
+)
+# Nemotron-3.5-Lightning's own five Terminal-Bench 2.1 tasks: the set its bring-up ran
+# locally (2/5 in both rounds, fix-git and crack-7z-hash solved each time).
+_QB2_NEMOTRON_TERMINAL_BENCH_2_1_SUBSET = (
+    "terminal-bench/fix-git",
+    "terminal-bench/crack-7z-hash",
+    "terminal-bench/overfull-hbox",
+    "terminal-bench/db-wal-recovery",
+    "terminal-bench/regex-log",
 )
 _QB2_SWE_BENCH_VERIFIED_SUBSET = (
     "django__django-11099",
@@ -13183,32 +13193,42 @@ _eval_config_list = [
                     n_concurrent_trials=5,
                     n_attempts=1,
                     n_tasks=5,
-                    task_names=list(_QB2_TERMINAL_BENCH_2_1_SUBSET),
+                    # Nemotron runs its own five tasks, the set its bring-up ran
+                    # locally: 2/5 in both rounds (fix-git and crack-7z-hash solved
+                    # each time, 0 timeouts, about 2 h for all five run one at a time).
+                    # On the shared subset with Ornith sampling it solved 0/5 (run
+                    # 45834526097: three near misses, two 2 h timeouts).
+                    task_names=list(_QB2_NEMOTRON_TERMINAL_BENCH_2_1_SUBSET),
                     # 2 h per task, as on IFM/K2-Horizon-7B: the 5 tasks run as one
                     # wave, so the slowest task sets the wall time.
                     agent_timeout_sec=2 * 60 * 60,
-                    # Sampling as on ornith-ai/Ornith-1.5-9B (temperature 0.6, top_p 0.95,
-                    # top_k 20, presence 0), thinking on (the server defaults it off).
+                    # Model-card sampling as in the local runs (temperature 1.0,
+                    # top_p 0.95, top_k unset), thinking on (the server defaults it
+                    # off) and force_nonempty_content so a turn never ends with only
+                    # reasoning and no JSON for terminus-2 to parse.
                     agent_kwargs={
                         "parser_name": "json",
-                        "temperature": 0.6,
+                        "temperature": 1.0,
                         "model_info": {
-                            "max_input_tokens": 224 * 1024,
-                            "max_output_tokens": 32 * 1024,
+                            "max_input_tokens": 192 * 1024,
+                            "max_output_tokens": 64 * 1024,
                         },
                         "llm_kwargs": {
                             "top_p": 0.95,
-                            "presence_penalty": 0.0,
-                            "max_tokens": 32 * 1024,
+                            "max_tokens": 64 * 1024,
                             "timeout": 60 * 60,
                             "extra_body": {
-                                "top_k": 20,
-                                "chat_template_kwargs": {"enable_thinking": True},
+                                "chat_template_kwargs": {
+                                    "enable_thinking": True,
+                                    "force_nonempty_content": True,
+                                },
                             },
                         },
                     },
                     task_names_map={
-                        EvalLimitMode.CI_NIGHTLY: list(_QB2_TERMINAL_BENCH_2_1_SUBSET),
+                        EvalLimitMode.CI_NIGHTLY: list(
+                            _QB2_NEMOTRON_TERMINAL_BENCH_2_1_SUBSET
+                        ),
                     },
                 ),
                 limit_samples_map={
