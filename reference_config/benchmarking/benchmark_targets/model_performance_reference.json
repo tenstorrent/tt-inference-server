@@ -8560,9 +8560,7 @@
                     "acceptance on random prompts). Gated points: 128 / 128 x 1 and x 8 (the profile's max users), 2,048 x 1, 8,192 x 1,",
                     "32,768 x 1 and 1,040,000 / 896 x 1. The 1 M row's tput is the request's output rate over its TTFT + decode (3.8",
                     "tok/s), not users x tput_user: one cold 1 M request spends ~229 s of its ~235 s in the prefill."
-                ]
-            },
-            {
+                ],
                 "impl": "glm53_flash",
                 "isl": 128,
                 "osl": 128,

@@ -12,7 +12,11 @@ import json
 
 import pytest
 
-from workflows.model_spec import load_templates_from_yaml, resolve_model_spec
+from workflows.model_spec import (
+    get_perf_reference_map,
+    load_templates_from_yaml,
+    resolve_model_spec,
+)
 from workflows.utils import get_repo_root_path
 from workflows.workflow_types import DeviceTypes
 
@@ -57,6 +61,15 @@ def test_every_glm53_profile_is_listed_once_with_one_default():
         specs, model=GLM53_REPO, device="blackhole_galaxy", catalog_name="dev"
     )
     assert resolved.impl.impl_id == defaults[0]
+    # every reference row a GLM-5.3 profile gets is a benchmark point: a list item without isl / osl (e.g. a
+    # comment-only entry) would come back as a row of None values for every profile
+    for impl_id in GLM53_IMPLS:
+        rows = get_perf_reference_map(GLM53_REPO, {}, impl_id=impl_id).get(
+            DeviceTypes.BLACKHOLE_GALAXY, []
+        )
+        assert all(r.isl and r.osl and r.max_concurrency for r in rows), impl_id
+        if impl_id in ("glm53_flash", "glm53_flash_128k", "glm53_flash_1m"):
+            assert rows, impl_id  # these profiles carry reference rows
 
 
 @pytest.mark.parametrize("impl_id", GLM53_IMPLS)
