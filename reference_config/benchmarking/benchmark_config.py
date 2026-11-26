@@ -113,6 +113,7 @@ BENCHMARK_ISL_OSL_PAIRS = [
 SUPER_CLUSTER_EXTRA_ISL_OSL_PAIRS = [
     (196608, 128),  # 192K
     (256000 - 128, 128),  # 240K
+    (1048576 - 128, 128),  # 1M
 ]
 # Remote SUPER_CLUSTER endpoints serve high-ISL sweep points at full
 # concurrency, but get_num_prompts scales prompts as a small multiple of
@@ -140,6 +141,10 @@ MODEL_EXTRA_ISL_OSL_PAIRS = {
     ],
 }
 SMOKE_TEST_BENCHMARK_PAIR = (16, 4)
+# Caps the sweep's concurrency below the spec's max_concurrency, e.g. 1 for an
+# endpoint that serves one user at a time. Unset keeps the spec's value; a value
+# above it is ignored.
+BENCHMARK_MAX_CONCURRENCY_ENV = "BENCHMARK_MAX_CONCURRENCY"
 
 
 # Image resolution pairs for multimodal benchmarks
@@ -357,6 +362,22 @@ def get_benchmark_max_concurrency(
 
     # Return the minimum of context-limited and model-limited concurrency
     return min(max_concurrency_by_context, model_max_concurrency)
+
+
+def benchmark_max_concurrency(spec_max_concurrency: int) -> int:
+    """The sweep's top concurrency: the spec's, capped by BENCHMARK_MAX_CONCURRENCY."""
+    value = os.getenv(BENCHMARK_MAX_CONCURRENCY_ENV, "").strip()
+    if not value:
+        return spec_max_concurrency
+    try:
+        cap = int(value)
+    except ValueError:
+        cap = 0
+    if cap < 1:
+        raise ValueError(
+            f"{BENCHMARK_MAX_CONCURRENCY_ENV} must be a positive integer, got {value!r}"
+        )
+    return min(cap, spec_max_concurrency)
 
 
 def powers_of_two_up_to(max_value: int) -> List[int]:
@@ -600,7 +621,9 @@ def build_benchmark_config(model_spec) -> BenchmarkConfig:
 
     # Since each ModelConfig now represents a single device, use that device and its max_concurrency
     device = model_spec.device_type
-    model_max_concurrency = model_spec.device_model_spec.max_concurrency
+    model_max_concurrency = benchmark_max_concurrency(
+        model_spec.device_model_spec.max_concurrency
+    )
     max_context = model_spec.device_model_spec.max_context
     max_tokens_all_users = model_spec.device_model_spec.max_tokens_all_users
     perf_reference = model_spec.device_model_spec.perf_reference
@@ -743,6 +766,37 @@ def build_benchmark_config(model_spec) -> BenchmarkConfig:
         )
 
     return BenchmarkConfig(model_id=model_spec.model_id, tasks=tasks)
+
+
+def apply_concurrency_sweeps(
+    config: BenchmarkConfig, model_spec, device
+) -> BenchmarkConfig:
+    """``config`` for ``--concurrency-sweeps``: each sweep point also runs at every
+    power of two up to the largest concurrency its ISL/OSL allows. The first task,
+    the perf reference targets, is left as it is."""
+    device_model_spec = model_spec.device_model_spec
+    model_max_concurrency = benchmark_max_concurrency(device_model_spec.max_concurrency)
+    min_num_prompts = (
+        SUPER_CLUSTER_MIN_NUM_PROMPTS_BATCH_MULTIPLE * model_max_concurrency
+        if device == DeviceTypes.SUPER_CLUSTER
+        else 0
+    )
+    tasks = list(config.tasks[:1])
+    for task in config.tasks[1:]:
+        if device not in task.param_map:
+            tasks.append(task)
+            continue
+        expanded = expand_concurrency_sweep_params(
+            task.param_map[device],
+            max_context=device_model_spec.max_context,
+            max_tokens_all_users=device_model_spec.max_tokens_all_users,
+            model_max_concurrency=model_max_concurrency,
+            model_name=model_spec.model_name,
+            candidate_concurrencies=powers_of_two_up_to(model_max_concurrency),
+            min_num_prompts=min_num_prompts,
+        )
+        tasks.append(replace(task, param_map={**task.param_map, device: expanded}))
+    return replace(config, tasks=tasks)
 
 
 def get_benchmark_config(model_spec) -> BenchmarkConfig:

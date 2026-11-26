@@ -63,9 +63,9 @@ Warmup happens at three levels, and none of it should be measured.
 
 Defined in [`benchmark_config.py`](benchmark_config.py) and built per model from its spec's `max_context`, `max_concurrency` (the batch size) and `max_tokens_all_users` (the KV-cache token budget).
 
-**ISL/OSL pairs** (`BENCHMARK_ISL_OSL_PAIRS`): 128/128, 128/1024, 1024/128, 2048/128, 4096/128, 8192/128, 8192/1024, 10000/1024, 16384/128, 32768/128, 65536/128, 131072/128. A pair is kept only if ISL + OSL ≤ the model's `max_context`. `SUPER_CLUSTER` endpoints add 196608/128 and 255872/128.
+**ISL/OSL pairs** (`BENCHMARK_ISL_OSL_PAIRS`): 128/128, 128/1024, 1024/128, 2048/128, 4096/128, 8192/128, 8192/1024, 10000/1024, 16384/128, 32768/128, 65536/128, 131072/128. A pair is kept only if ISL + OSL ≤ the model's `max_context`. `SUPER_CLUSTER` endpoints add 196608/128, 255872/128 and 1048448/128 (1M).
 
-**Concurrency.** Each pair runs at concurrency 1 and at the largest concurrency the KV budget allows, `min(max_concurrency, max_tokens_all_users // (ISL + OSL))`. `--concurrency-sweeps` adds every power of two in between.
+**Concurrency.** Each pair runs at concurrency 1 and at the largest concurrency the KV budget allows, `min(max_concurrency, max_tokens_all_users // (ISL + OSL))`. `--concurrency-sweeps` adds every power of two in between. `BENCHMARK_MAX_CONCURRENCY=<n>` caps `max_concurrency` for the run (for example `1` for an endpoint that serves one user at a time); a value above the spec's is ignored.
 
 **Requests per point** (`get_num_prompts`): 8× concurrency for 128-token sequences, 4× up to ISL 4096 or OSL 1024, 2× up to ISL 16384, and 1× beyond. These counts track regressions; they are too small for stable tail percentiles (see [acceptance runs](#recommended-procedure-for-acceptance-runs)).
 

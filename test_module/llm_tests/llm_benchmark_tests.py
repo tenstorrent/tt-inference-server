@@ -118,7 +118,12 @@ def run_llm_bench(
         from llm_module.benchmark_configs import get_llm_configs
 
         configs = get_llm_configs(
-            ctx.model_spec, ctx.device, limit_samples_mode=limit_samples_mode
+            ctx.model_spec,
+            ctx.device,
+            limit_samples_mode=limit_samples_mode,
+            concurrency_sweeps=bool(
+                getattr(ctx.runtime_config, "concurrency_sweeps", False)
+            ),
         )
     if not configs:
         logger.error(

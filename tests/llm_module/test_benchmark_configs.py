@@ -349,3 +349,28 @@ def test_unknown_benchmark_protocol_fails_before_running():
     spec.metadata["benchmark_protocol"] = "fixed_worklaod"
     with pytest.raises(ValueError, match="Unknown benchmark protocol"):
         get_llm_configs(spec, spec.device_type)
+
+
+def _multi_user_spec():
+    return next(
+        s
+        for s in MODEL_SPECS.values()
+        if s.model_type == ModelType.LLM and s.device_model_spec.max_concurrency >= 8
+    )
+
+
+def test_concurrency_sweeps_widen_the_sweep_and_smoke_test_ignores_them():
+    spec = _multi_user_spec()
+    dev = spec.device_type
+
+    plain = get_llm_configs(spec, dev)
+    swept = get_llm_configs(spec, dev, concurrency_sweeps=True)
+    assert {c.max_concurrency for c in plain} < {c.max_concurrency for c in swept}
+    assert 2 in {c.max_concurrency for c in swept}
+
+    smoke = get_llm_configs(
+        spec, dev, limit_samples_mode="smoke-test", concurrency_sweeps=True
+    )
+    assert _cfg_keys(smoke) == _cfg_keys(
+        get_llm_configs(spec, dev, limit_samples_mode="smoke-test")
+    )

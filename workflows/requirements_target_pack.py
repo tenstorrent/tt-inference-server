@@ -824,6 +824,13 @@ class RequirementsTargetPack(TargetPack):
         _warn_on_duplicate_shapes(scenario)
         return params
 
+    def concurrency_sweep_benchmark_config(
+        self, config: Any, model_spec: Any, device: Any
+    ) -> Any:
+        # The document lists every point it wants measured.
+        logger.info("Requirements document sweeps ignore --concurrency-sweeps.")
+        return config
+
     def smoke_test_benchmark_config(self, config: Any, device: Any) -> Any:
         from reference_config.benchmarking.benchmark_config import (
             BenchmarkConfig,

@@ -458,3 +458,80 @@ def test_vision_tokens_per_image_follow_the_model_family():
         "google/gemma-4-26B-A4B-it",
     ):
         assert calculate_vision_tokens(896, 896, 2, repo) == 560, repo
+
+
+def _super_cluster_spec(max_context: int, max_concurrency: int = 64):
+    _, spec = _make_super_cluster_runtime_spec()
+    return replace(
+        spec,
+        device_model_spec=replace(
+            spec.device_model_spec,
+            max_context=max_context,
+            max_concurrency=max_concurrency,
+        ),
+    )
+
+
+def _text_sweep(config):
+    return [
+        p
+        for p in config.tasks[1].param_map[DeviceTypes.SUPER_CLUSTER]
+        if getattr(p, "task_type", "text") == "text"
+    ]
+
+
+def test_super_cluster_sweep_reaches_1m_only_with_a_1m_context(monkeypatch):
+    benchmark_config = _import_benchmark_config(monkeypatch)
+    one_m = 1048576 - 128
+
+    full = _text_sweep(
+        benchmark_config.get_benchmark_config(_super_cluster_spec(1048576))
+    )
+    assert max(p.isl for p in full) == one_m
+
+    short = _text_sweep(
+        benchmark_config.get_benchmark_config(_super_cluster_spec(262144))
+    )
+    assert max(p.isl for p in short) == 256000 - 128
+
+
+def test_max_concurrency_env_caps_the_sweep(monkeypatch):
+    benchmark_config = _import_benchmark_config(monkeypatch)
+    spec = _super_cluster_spec(1048576)
+
+    monkeypatch.setenv("BENCHMARK_MAX_CONCURRENCY", "1")
+    sweep = _text_sweep(benchmark_config.get_benchmark_config(spec))
+    assert sweep
+    assert {p.max_concurrency for p in sweep} == {1}
+    assert {p.isl for p in sweep} >= {128, 131072, 1048576 - 128}
+
+    # A cap above the spec's max_concurrency leaves the spec's value.
+    monkeypatch.setenv("BENCHMARK_MAX_CONCURRENCY", "1000")
+    sweep = _text_sweep(benchmark_config.get_benchmark_config(spec))
+    assert max(p.max_concurrency for p in sweep) == 64
+
+
+@pytest.mark.parametrize("value", ["0", "-2", "one"])
+def test_max_concurrency_env_rejects_non_positive_values(monkeypatch, value):
+    benchmark_config = _import_benchmark_config(monkeypatch)
+    monkeypatch.setenv("BENCHMARK_MAX_CONCURRENCY", value)
+    with pytest.raises(ValueError, match="BENCHMARK_MAX_CONCURRENCY"):
+        benchmark_config.get_benchmark_config(_super_cluster_spec(262144))
+
+
+def test_concurrency_sweeps_add_powers_of_two_under_the_cap(monkeypatch):
+    benchmark_config = _import_benchmark_config(monkeypatch)
+    spec = _super_cluster_spec(262144, max_concurrency=64)
+    monkeypatch.setenv("BENCHMARK_MAX_CONCURRENCY", "8")
+
+    config = benchmark_config.get_benchmark_config(spec)
+    swept = benchmark_config.apply_concurrency_sweeps(
+        config, spec, DeviceTypes.SUPER_CLUSTER
+    )
+
+    assert swept.tasks[0] == config.tasks[0]
+    by_shape = {}
+    for p in _text_sweep(swept):
+        by_shape.setdefault((p.isl, p.osl), set()).add(p.max_concurrency)
+    assert by_shape[(128, 128)] == {1, 2, 4, 8}
+    assert all(max(c) <= 8 for c in by_shape.values())
