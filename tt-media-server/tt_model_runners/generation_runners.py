@@ -37,11 +37,20 @@ from config.constants import (
     generation_job_dir,
 )
 from config.settings import get_settings
+from domain.flux3_image_klein_request import (
+    FLUX3_KLEIN_STEPS,
+    Flux3ImageKleinRequest,
+    upsampler_frozen,
+)
+from domain.flux2_klein_4b_request import KLEIN_STEPS, Flux2klein4bRequest
 from domain.generation_request import GenerationRequest
+from domain.ideogram4_request import IDEOGRAM_PRESETS, Ideogram4Request
 from domain.ltx23_distilled_request import Ltx23DistilledRequest
 from domain.minimax_h3_request import _MiniMaxH3Request
+from domain.qwen_image_edit_2511_request import QwenImageEdit2511Request
 from domain.wan22_i2v_a14b_request import Wan22i2vA14bRequest
 from models.common.utility_functions import is_blackhole
+from models.tt_dit.pipelines.ideogram4.policy import validate_prompt
 from models.tt_dit.pipelines.minimax_h3.pipeline_minimax_h3 import (
     MiniMaxH3Pipeline,
     resolve_mesh_preset,
@@ -50,9 +59,11 @@ from models.tt_dit.pipelines.minimax_h3.policy import MINIMAX_H3_SHORT_EDGE
 from models.tt_dit.pipelines.wan.pipeline_wan_i2v import ImagePrompt, WanPipelineI2V
 from models.tt_dit.pipelines.wan.policy import served_resolutions
 from PIL import Image
+from telemetry.image_metrics import ImageStageRecorder, sampler_name
 from telemetry.telemetry_client import TelemetryEvent
 from tt_model_runners.dit_runners import (
     TTDiTRunner,
+    TTQwenImageRunner,
     TTWan22I2VRunner,
     _wan22_dit_device_params,
     dit_runner_log_map,
@@ -94,6 +105,8 @@ _WARMUP_STEPS = 2
 
 WAN_GUIDANCE_SCALES = (3.5, 3.5)
 WAN_SHIFT = 5.0
+QWEN_STEPS = 40
+QWEN_GUIDANCE_SCALE = 4.0
 # Per spatial bucket traced, each expert has one trace without DBCache and three
 # with it. tt-metal's test_pipeline_wan_resolutions.py fits a bucket's in 256 MiB.
 WAN_TRACE_REGION_BYTES_PER_BUCKET = 256 * 1024 * 1024
@@ -148,9 +161,22 @@ class _GenerationRunner(TTDiTRunner):
         return request
 
     @staticmethod
-    def _images(request: GenerationRequest, name: str) -> list[Image.Image]:
-        """The images of the media field ``name``, decoded from their files."""
-        return [decode_image(data) for data in request._files.get(name, [])]
+    def _images(
+        request: GenerationRequest, name: str, *, rgb: bool = True
+    ) -> list[Image.Image]:
+        """The images of the media field ``name``, decoded from their files, in
+        RGB unless ``rgb`` is false."""
+        return [decode_image(data, rgb=rgb) for data in request._files.get(name, [])]
+
+    def _image_stage_recorder(self) -> ImageStageRecorder | None:
+        if self._warming_up:
+            return None
+        return ImageStageRecorder(
+            model_type=self.settings.model_runner,
+            device_id=self.device_id,
+            sampler=sampler_name(self.pipeline),
+            batch=1,
+        )
 
 
 class TTWan22I2VA14BRunner(_GenerationRunner, TTWan22I2VRunner):
@@ -257,6 +283,66 @@ class TTWan22I2VA14BRunner(_GenerationRunner, TTWan22I2VRunner):
         return [_move_into_job_dir(encoded, request, "wan.mp4")]
 
 
+class TTQwenImageEdit2511Runner(_GenerationRunner, TTQwenImageRunner):
+    def create_pipeline(self):
+        from models.tt_dit.pipelines.qwenimage.pipeline_qwenimage import (
+            DEFAULT_DBCACHE,
+            QwenImagePipeline,
+            QwenImagePipelineConfig,
+        )
+
+        # With DBCache step skipping, cache-dit's Qwen-Image settings.
+        try:
+            config = QwenImagePipelineConfig.default(
+                mesh_shape=self.ttnn_device.shape,
+                checkpoint_name=self.settings.model_weights_path,
+                dbcache=DEFAULT_DBCACHE,
+            )
+            return QwenImagePipeline(device=self.ttnn_device, config=config)
+        except Exception as e:
+            log_exception_chain(
+                self.logger,
+                self.device_id,
+                "Qwen-Image-Edit pipeline creation failed",
+                e,
+            )
+            raise
+
+    def get_pipeline_device_params(self):
+        # Per-chip trace region for every resolution of the mesh's preset, with
+        # DBCache's separate leading-block and epilogue traces, from tt-metal's
+        # models/tt_dit/tests/models/qwenimage/device_params.py
+        # (DBCACHE_MESH_DEVICE_PARAMS).
+        return {"l1_small_size": 32768, "trace_region_size": 869_000_000}
+
+    def warmup_requests(self) -> list[GenerationRequest]:
+        # The pipeline compiles and traces every resolution of its preset when
+        # it is created.
+        return []
+
+    @_inference_timer
+    def run(self, requests: list[QwenImageEdit2511Request]):
+        request = requests[0]
+        recorder = self._image_stage_recorder()
+        images = None
+        try:
+            images = self.pipeline(
+                prompts=[request._prompt],
+                negative_prompts=[request.negative_prompt],
+                image=self._images(request, "images"),
+                num_inference_steps=QWEN_STEPS,
+                cfg_scale=QWEN_GUIDANCE_SCALE,
+                seed=request._seed,
+                width=request._width,
+                height=request._height,
+                on_event=recorder,
+            )
+        finally:
+            if recorder is not None:
+                recorder.flush(images)
+        return images
+
+
 class TTLtx23DistilledRunner(_GenerationRunner):
     def create_pipeline(self):
         from models.tt_dit.pipelines.ltx.pipeline_ltx_distilled import (
@@ -352,6 +438,191 @@ MINIMAX_H3_L1_SMALL_SIZE_DEFAULT_BH_GALAXY = 65536
 MINIMAX_H3_L1_SMALL_SIZE_DEFAULT_WH_GALAXY = 32768
 MINIMAX_H3_MAX_PAYLOAD_BYTES_BH_GALAXY = 8192
 MINIMAX_H3_MAX_PAYLOAD_BYTES_WH_GALAXY = 4096
+
+
+FLUX3_WARMUP_REFERENCE_SHAPES = "FLUX3_WARMUP_REFERENCE_SHAPES"
+
+
+def _flux3_warmup_reference_shapes() -> list[tuple[int, int]]:
+    """Extra reference shapes to warm up (``WxH,WxH``); each compiles the VAE
+    encoder for its canvas."""
+    raw = os.environ.get(FLUX3_WARMUP_REFERENCE_SHAPES, "")
+    shapes = []
+    for item in filter(None, (item.strip() for item in raw.split(","))):
+        try:
+            width, height = (int(v) for v in item.lower().split("x"))
+        except ValueError:
+            raise ValueError(
+                f"{FLUX3_WARMUP_REFERENCE_SHAPES}={raw!r} must be WxH shapes "
+                "separated by commas"
+            ) from None
+        shapes.append((width, height))
+    return shapes
+
+
+class TTFlux3ImageKleinRunner(_GenerationRunner):
+    def create_pipeline(self):
+        from models.tt_dit.pipelines.flux3_klein.pipeline_flux3_klein import (
+            Flux3KleinPipeline,
+        )
+        from models.tt_dit.pipelines.flux3_klein.weights_flux3_klein import (
+            resolve_weights_dir,
+        )
+
+        weights = self.settings.model_weights_path
+        snapshot = (
+            Path(weights)
+            if os.path.isdir(weights)
+            else resolve_weights_dir("distilled")
+        )
+        try:
+            pipeline = Flux3KleinPipeline(
+                self.ttnn_device,
+                snapshots={"distilled": snapshot},
+                upsample=not upsampler_frozen(),
+            )
+            pipeline.warmup(
+                sizes=tuple(width for width, _ in Flux3ImageKleinRequest.warmup_sizes())
+            )
+            return pipeline
+        except Exception as e:
+            log_exception_chain(
+                self.logger, self.device_id, "FLUX.3 pipeline creation failed", e
+            )
+            raise
+
+    def get_pipeline_device_params(self):
+        from models.tt_dit.pipelines.flux3_klein.upsampler_flux3_klein import (
+            SHARED_MESH_PARAMS,
+        )
+
+        # as tt-metal's test_serving_flux3_klein; SHARED_MESH_PARAMS for the
+        # resident upsampler
+        router = ttnn.FabricRouterConfig()
+        router.max_packet_payload_size_bytes = 8192
+        return {
+            "fabric_config": ttnn.FabricConfig.FABRIC_1D_RING,
+            "fabric_router_config": router,
+            "l1_small_size": 65536,
+            **({} if upsampler_frozen() else SHARED_MESH_PARAMS),
+        }
+
+    def warmup_requests(self) -> list[GenerationRequest]:
+        # the pipeline warmed its own shapes; only extra reference shapes are left
+        return [
+            _warmup_request(
+                Flux3ImageKleinRequest.model_construct(prompt=_WARMUP_PROMPT),
+                1024,
+                1024,
+                {"images": [_png(width, height)]},
+            )
+            for width, height in _flux3_warmup_reference_shapes()
+        ]
+
+    def _build_warmup_video_request(self) -> GenerationRequest:
+        """A multi-host deep canary's request: the smallest text-to-image."""
+        request = _warmup_request(
+            Flux3ImageKleinRequest.model_construct(prompt=_WARMUP_PROMPT), 1024, 1024
+        )
+        request._task_id = CANARY_DEEP_TASK_ID
+        return request
+
+    @_inference_timer
+    def run(self, requests: list[Flux3ImageKleinRequest]):
+        from models.tt_dit.pipelines.flux3_klein.pipeline_flux3_klein import (
+            Flux3KleinRequest,
+        )
+
+        request = requests[0]
+        try:
+            # keep alpha: the upsampler composites it over white
+            images = tuple(self._images(request, "images", rgb=False))
+        except ValueError:
+            raise
+        except Exception as e:
+            # fail the job, not the worker
+            raise ValueError(f"an input could not be decoded: {e}") from e
+        recorder = self._image_stage_recorder()
+        output = None
+        try:
+            result = self.pipeline.generate(
+                Flux3KleinRequest(
+                    prompt=request._prompt,
+                    width=request._width,
+                    height=request._height,
+                    seed=request._seed,
+                    steps=self._steps(FLUX3_KLEIN_STEPS, request),
+                    images=images,
+                )
+            )
+            result.image.info["prompt"] = result.prompt
+            output = [result.image]
+            if recorder is not None:
+                timings = result.timings
+                recorder.engine_seconds = sum(timings.values())
+                recorder.denoise_seconds = timings.get("denoise")
+                recorder.vae_seconds = timings.get("decode")
+                recorder.conditioning_seconds = {
+                    "all": sum(
+                        timings.get(stage, 0.0)
+                        for stage in ("upsample", "encode", "encode_reference")
+                    )
+                }
+        finally:
+            # A failed run is recorded too, as a run with no output.
+            if recorder is not None:
+                recorder.flush(output)
+        return output
+
+
+class TTFlux2Klein4BRunner(_GenerationRunner):
+    def create_pipeline(self):
+        from models.tt_dit.pipelines.flux2.pipeline_flux2 import Flux2Pipeline
+
+        # trace_warmup: the pipeline compiles and traces every size, with and
+        # without a reference image, when it is created, so the server sends no
+        # warmup requests.
+        try:
+            return Flux2Pipeline.create_pipeline(
+                mesh_device=self.ttnn_device,
+                checkpoint_name=self.settings.model_weights_path,
+                trace_warmup=True,
+            )
+        except Exception as e:
+            log_exception_chain(
+                self.logger, self.device_id, "FLUX.2 pipeline creation failed", e
+            )
+            raise
+
+    def get_pipeline_device_params(self):
+        # From tt-metal's models/tt_dit/tests/models/flux2/device_params.py: the
+        # VAE's conv2d needs L1_SMALL. The pipeline captures a denoising trace
+        # per size and reference image, plus the VAE traces, when it is created;
+        # they take 42.2 MB on BH 2x2 (KLEIN_TRACE_REGION_SIZE).
+        return {"l1_small_size": 65536, "trace_region_size": 50_000_000}
+
+    def warmup_requests(self) -> list[GenerationRequest]:
+        # The pipeline compiles and traces every size, with and without a
+        # reference image, when it is created.
+        return []
+
+    @_inference_timer
+    def run(self, requests: list[Flux2klein4bRequest]):
+        request = requests[0]
+        recorder = self._image_stage_recorder()
+        images = self.pipeline(
+            prompts=[request._prompt],
+            images=self._images(request, "images") or None,
+            num_inference_steps=self._steps(KLEIN_STEPS),
+            seed=request._seed,
+            width=request._width,
+            height=request._height,
+            traced=True,
+            on_event=recorder,
+        )
+        if recorder is not None:
+            recorder.flush(images)
+        return images
 
 
 def _minimax_h3_env_bool(name: str) -> bool | None:
@@ -652,3 +923,67 @@ class TTMiniMaxH3TurboRef2VARunner(_MiniMaxH3TurboMixin, TTMiniMaxH3Ref2VARunner
 
     video_shift = 12.0
     audio_shift = 3.0
+
+
+class TTIdeogram4Runner(_GenerationRunner):
+    def create_pipeline(self):
+        from models.tt_dit.pipelines.ideogram4.pipeline_ideogram4 import (
+            Ideogram4Pipeline,
+        )
+
+        try:
+            return Ideogram4Pipeline.create_pipeline(
+                mesh_device=self.ttnn_device,
+                weights_dir=self.settings.model_weights_path,
+            )
+        except Exception as e:
+            log_exception_chain(
+                self.logger, self.device_id, "Ideogram 4 pipeline creation failed", e
+            )
+            raise
+
+    def get_pipeline_device_params(self):
+        # The pipeline's 4x8 preset runs ring CCLs, its 2x4 preset linear ones.
+        # The pipeline keeps one step trace per warmed 2K size. 128 MB is
+        # tt-metal's required_trace_region_size((4, 8))
+        # (tenstorrent/tt-metal#63894); the four traces allocate ~87 MB.
+        fabric = ttnn.FabricConfig.FABRIC_1D
+        if tuple(self.settings.device_mesh_shape) == (4, 8):
+            fabric = ttnn.FabricConfig.FABRIC_1D_RING
+        return {
+            "fabric_config": fabric,
+            "l1_small_size": 32768,
+            "trace_region_size": 128_000_000,
+        }
+
+    def warmup_requests(self) -> list[GenerationRequest]:
+        # The pipeline warms its sizes at load, compiling every program and
+        # keeping one step trace per size; these requests replay those kept
+        # traces. The presets differ only in step count and the per-step
+        # guidance weight, an input of the same step program, so the fastest
+        # preset covers all three; it fixes its step count, so warmup can't
+        # shorten it.
+        return [
+            _warmup_request(
+                Ideogram4Request.model_construct(rendering_speed="turbo"), width, height
+            )
+            for width, height in Ideogram4Request.warmup_sizes()
+        ]
+
+    @_inference_timer
+    def run(self, requests: list[Ideogram4Request]):
+        request = requests[0]
+        validate_prompt(request._prompt, self.pipeline.count_text_tokens)
+        recorder = self._image_stage_recorder()
+        images = self.pipeline(
+            prompts=[request._prompt],
+            preset=IDEOGRAM_PRESETS[request.rendering_speed],
+            seed=request._seed,
+            width=request._width,
+            height=request._height,
+            traced=True,
+            on_event=recorder,
+        )
+        if recorder is not None:
+            recorder.flush(images)
+        return images

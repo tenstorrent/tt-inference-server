@@ -40,6 +40,10 @@ GENERATION_MODELS: Mapping[str, GenerationModel] = _GenerationModels(
             "domain.wan22_i2v_a14b_request",
             "WAN22_I2V_A14B",
         ),
+        ModelRunners.TT_QWEN_IMAGE_EDIT_2511.value: (
+            "domain.qwen_image_edit_2511_request",
+            "QWEN_IMAGE_EDIT_2511",
+        ),
         ModelRunners.TT_LTX_2_3_DISTILLED.value: (
             "domain.ltx23_distilled_request",
             "LTX_2_3_22B_DISTILLED",
@@ -52,6 +56,14 @@ GENERATION_MODELS: Mapping[str, GenerationModel] = _GenerationModels(
             "domain.minimax_h3_request",
             "MINIMAX_H3_FL2VA_LIGHTX2V",
         ),
+        ModelRunners.TT_FLUX_3_IMAGE_KLEIN.value: (
+            "domain.flux3_image_klein_request",
+            "FLUX3_IMAGE_KLEIN",
+        ),
+        ModelRunners.TT_FLUX_2_KLEIN_4B.value: (
+            "domain.flux2_klein_4b_request",
+            "FLUX2_KLEIN_4B",
+        ),
         ModelRunners.TT_MINIMAX_H3_REF2VA.value: (
             "domain.minimax_h3_request",
             "MINIMAX_H3_REF2VA",
@@ -59,6 +71,10 @@ GENERATION_MODELS: Mapping[str, GenerationModel] = _GenerationModels(
         ModelRunners.TT_MINIMAX_H3_REF2VA_LIGHTX2V.value: (
             "domain.minimax_h3_request",
             "MINIMAX_H3_REF2VA_LIGHTX2V",
+        ),
+        ModelRunners.TT_IDEOGRAM_4.value: (
+            "domain.ideogram4_request",
+            "IDEOGRAM_4",
         ),
     }
 )

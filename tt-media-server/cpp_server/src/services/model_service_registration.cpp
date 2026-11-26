@@ -338,6 +338,10 @@ void registerVideo() {
                        "Cancel a video job");
   routes.registerRoute(video, "DELETE", "/v1/videos/generations/{job_id}",
                        "Delete a finished video job and its mp4");
+  // Browser console (VideoUiController). Only the static page is exempt from
+  // the bearer check; the API calls the page makes still send the key.
+  routes.registerAlwaysExempt("/");
+  routes.registerAlwaysExempt("/ui");
 }
 
 void registerTts() {

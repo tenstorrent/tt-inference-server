@@ -43,9 +43,8 @@ done
 if (( ready == 0 )); then
   echo "model_ready did not become true at $BASE/tt-liveness"
   echo "start the server from tt-media-server/cpp_server:"
-  echo "  MODEL_SERVICE=video MODEL_RUNNER=tt-wan2.2 DEVICE=n150 \\"
-  echo "  MODEL_WEIGHTS_PATH=<repo-or-local-dir> \\"
-  echo "  TT_METAL_HOME=<tt-metal> TT_PYTHON_PATH=<tt-media-server> \\"
+  echo "  MODEL_SERVICE=video MODEL=Wan2.2-T2V-A14B-Diffusers MODEL_RUNNER=tt-wan2.2 \\"
+  echo "  DEVICE=t3k DEVICE_IDS=\"(0,1,2,3)\" TT_METAL_HOME=<tt-metal> \\"
   echo "  ./build/tt_media_server_cpp -p 8000"
   exit 1
 fi

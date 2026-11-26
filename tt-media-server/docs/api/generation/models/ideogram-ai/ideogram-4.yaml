@@ -22,14 +22,14 @@ paths:
               $ref: "#/components/schemas/Ideogram4Request"
             examples:
               plain:
-                summary: Plain prompt, expanded by the prompt enhancer
+                summary: Plain prompt; needs the prompt enhancer, which is off by default
                 value:
                   prompt: >-
                     A neon sign reading "OPEN LATE" on a rainy brick wall at
                     night
                   aspect_ratio: "2:3"
               structured:
-                summary: Structured caption, sent to the model as is
+                summary: Structured caption, served with the prompt enhancer on or off
                 value:
                   structured_prompt:
                     high_level_description: A neon sign reading "OPEN LATE" on a 
@@ -98,7 +98,8 @@ components:
             structured caption, so the server first rewrites the prompt into
             one with a prompt enhancer (an LLM), adding detail on composition,
             style, lighting and any text, for the requested `aspect_ratio`.
-            Each output reports the caption the model received as its
+            A deployment with the prompt enhancer off answers a `prompt` with
+            422. Each output reports the caption the model received as its
             `prompt`. To skip the enhancer, send `structured_prompt` instead.
         structured_prompt:
           $ref: "#/components/schemas/Ideogram4Caption"
@@ -146,34 +147,31 @@ components:
     Ideogram4Caption:
       type: object
       additionalProperties: false
-      required: [compositional_deconstruction]
+      required: [high_level_description, compositional_deconstruction]
       description: |
-        A structured caption in the format Ideogram 4 was trained on, sent to
-        the model as is. Key order does not matter: the server writes it out in
-        the model's order. Each output reports it as its `prompt`.
+        A structured caption in the format Ideogram 4 was trained on. The server
+        writes it out in the model's key order, with colors in uppercase; key
+        order in the request does not matter. Each output reports it as its
+        `prompt`.
 
         Use this to bypass the prompt enhancer, e.g. with a caption written by
         your own LLM.
 
-        Format: `docs/prompting.md` in `ideogram-oss/ideogram4`.
+        Schema: `V4JsonPrompt` of Ideogram's hosted API, with two stricter rules:
+        unknown keys are rejected, and a `bbox` needs exactly four values with
+        `ymin <= ymax` and `xmin <= xmax`.
+        Prompting guide: `docs/prompting.md` in `ideogram-oss/ideogram4`.
       properties:
         high_level_description:
           type: string
-          description: One or two sentences summing up the image. Recommended.
+          description: One or two sentences summing up the image.
         style_description:
           type: object
           additionalProperties: false
-          required: [aesthetics, lighting, medium]
-          oneOf:
-            - required: [photo]
-              not:
-                required: [art_style]
-            - required: [art_style]
-              not:
-                required: [photo]
           description: |
-            Visual style. Exactly one of `photo` (photographs) or `art_style`
-            (everything else).
+            Visual style. Every field is optional. The open model's prompting
+            guide gives `aesthetics`, `lighting` and `medium`, with `photo` for
+            photographs or `art_style` for everything else.
           properties:
             aesthetics:
               type: string
@@ -229,7 +227,7 @@ components:
     Ideogram4TextElement:
       type: object
       additionalProperties: false
-      required: [type, text]
+      required: [type, text, desc]
       properties:
         type:
           const: text
@@ -255,16 +253,14 @@ components:
         `ymin <= ymax` and `xmin <= xmax`.
     Ideogram4Palette:
       type: array
-      maxItems: 16
       items:
         type: string
-        pattern: "^#[0-9A-F]{6}$"
-      description: Dominant colors as uppercase `#RRGGBB`.
+        pattern: "^#[0-9A-Fa-f]{6}$"
+      description: Dominant colors as `#RRGGBB`, either case; sent to the model in uppercase.
     Ideogram4ElementPalette:
       type: array
-      maxItems: 5
       items:
         type: string
-        pattern: "^#[0-9A-F]{6}$"
-      description: The element's colors as uppercase `#RRGGBB`.
+        pattern: "^#[0-9A-Fa-f]{6}$"
+      description: The element's colors as `#RRGGBB`, either case; sent to the model in uppercase.
 

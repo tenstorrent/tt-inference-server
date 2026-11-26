@@ -7527,6 +7527,207 @@
             }
         ]
     },
+    "Qwen/Qwen3.6-35B-A3B": {
+        "p300x2": [
+            {
+                "_comment": [
+                    "One gated point, 128/128 at 1 user, like the K2-Horizon-7B and Muse-Glimmer entries; the release sweep is reported ungated.",
+                    "Theoretical: bf16 weight-streaming roofline on the 4-chip mesh at ~560 GB/s per chip, the P300X2 convention, over the decoder plus the untied LM head (input embedding, vision tower and MTP head excluded); config.json arithmetic:",
+                    "decode reads the per-token active weights: attention 1.28B (30 Gated DeltaNet layers x 33.7M + 10 gated full-attention x 27.3M)",
+                    "+ MoE 1.15B (40 layers x [8 of 256 routed experts 25.2M + shared expert 3.1M + router 0.5M]) + LM head 0.51B = 2.95B params",
+                    "= 5.89 GB bf16, 1.47 GB per chip = 2.6 ms per step = 380 t/s/u. TTFT is MoE-aware (the K2-Horizon-MoVA convention): a 127-token",
+                    "prompt makes 1016 picks over 256 experts per layer (~98% hit), so prefill streams every weight, 34.15B params = 68.3 GB bf16,",
+                    "17.1 GB per chip = ~31 ms; prefill emits the first token, so no extra step.",
+                    "theoretical sets the functional (10% decode, 10x TTFT) and complete (50%, 2x) tiers; the measured block gates acceptance (tolerance 0.3, the runner-spread cap of the Kolibri-1 and Muse-Glimmer entries).",
+                    "Measured: placeholder until tt-shield release run 45731816040 (in progress) reports; vllm bench serve at the agentic-models pins",
+                    "(QB2, 2026-11-25, two fresh instances): TTFT mean 207-213 ms, 43.1-44.6 t/s/u, 40.6-41.8 t/s; TTFT 210 ms, throughput the lower ends.",
+                    "Tier: FUNCTIONAL (43.1 t/s/u >= 38 functional, < 190 complete; TTFT 210 ms <= 310 functional, > 62 complete)."
+                ],
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "impl": "qwen36_35b_a3b_qb2",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 31,
+                        "tput_user": 380,
+                        "tput": 380
+                    },
+                    "measured": {
+                        "ttft_ms": 210,
+                        "tput_user": 43.1,
+                        "tput": 40.6,
+                        "tolerance": 0.3
+                    }
+                }
+            }
+        ]
+    },
+    "ornith-ai/Ornith-1.5-9B": {
+        "p300x2": [
+            {
+                "_comment": [
+                    "One gated point, 128/128 at 1 user, like the K2-Horizon-7B and Muse-Glimmer entries; the release sweep is reported ungated.",
+                    "Theoretical: bf16 weight-streaming roofline on the 4-chip mesh at ~560 GB/s per chip, the P300X2 convention, over the decoder plus the untied LM head (input embedding, vision tower and MTP head excluded); config.json arithmetic:",
+                    "attention 2.09B (24 Gated DeltaNet layers x 67.4M + 8 gated full-attention x 58.7M) + MLP 4.83B (32 x 151.0M) + LM head 1.02B",
+                    "= 7.94B params (HF total 9.65B incl. the 1.02B embedding table and 0.70B vision tower + MTP head) = 15.9 GB bf16, 3.97 GB per",
+                    "chip = 7.1 ms per step = 141 t/s/u; TTFT floor two step-times = 14 ms. The deployed BFP8 precision streams fewer bytes.",
+                    "theoretical sets the functional (10% decode, 10x TTFT) and complete (50%, 2x) tiers; the measured block gates acceptance (tolerance 0.3, the runner-spread cap of the Kolibri-1 and Muse-Glimmer entries).",
+                    "Measured: tt-shield release run 45719516469 (2026-11-26, BH-Quietbox-2) at 128/128 c1 n=8: TTFT 59.1 ms, TPOT 9.8 ms",
+                    "(102.2 t/s/u), 98.3 tok/s.",
+                    "Tier: COMPLETE on decode (102.2 >= 70.5 t/s/u); TTFT 59.1 ms is within functional (<= 140) but not complete (<= 28), so FUNCTIONAL overall."
+                ],
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "impl": "ornith15_9b_qb2",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 14,
+                        "tput_user": 141,
+                        "tput": 141
+                    },
+                    "measured": {
+                        "ttft_ms": 59.1,
+                        "tput_user": 102.2,
+                        "tput": 98.3,
+                        "tolerance": 0.3
+                    }
+                }
+            }
+        ]
+    },
+    "Qwen/Qwen3.6-27B": {
+        "p300x2": [
+            {
+                "_comment": [
+                    "One gated point, 128/128 at 1 user, like the K2-Horizon-7B and Muse-Glimmer entries; the release sweep is reported ungated.",
+                    "Theoretical: bf16 weight-streaming roofline on the 4-chip mesh at ~560 GB/s per chip, the P300X2 convention, over the decoder plus the untied LM head (input embedding, vision tower and MTP head excluded); config.json arithmetic:",
+                    "attention 7.24B (48 Gated DeltaNet layers x 115.9M + 16 gated full-attention x 104.9M) + MLP 17.11B (64 x 267.4M) + LM head",
+                    "1.27B = 25.63B params (HF total 27.78B incl. the 1.27B embedding table and 0.89B vision tower + MTP head) = 51.3 GB bf16,",
+                    "12.8 GB per chip = 22.9 ms per step = 44 t/s/u; TTFT floor two step-times = 46 ms. The deployed BFP8 weights and MTP (K=3)",
+                    "put measured decode above this ceiling.",
+                    "theoretical sets the functional (10% decode, 10x TTFT) and complete (50%, 2x) tiers; the measured block gates acceptance (tolerance 0.3, the runner-spread cap of the Kolibri-1 and Muse-Glimmer entries).",
+                    "Measured: tt-shield release run 45729168002 (2026-11-26, BH-Quietbox-2; the job later failed on the runner, after the",
+                    "benchmarks) at 128/128 c1 n=8: TTFT 182.3 ms (mean of the 8 prompts' first tokens), TPOT 19.6 ms (50.9 t/s/u), 47.8 tok/s.",
+                    "Tier: COMPLETE on decode (50.9 >= 22 t/s/u); TTFT 182 ms is within functional (<= 460) but not complete (<= 92), so FUNCTIONAL overall."
+                ],
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "impl": "qwen36_27b_qb2",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 46,
+                        "tput_user": 44,
+                        "tput": 44
+                    },
+                    "measured": {
+                        "ttft_ms": 182.3,
+                        "tput_user": 50.9,
+                        "tput": 47.8,
+                        "tolerance": 0.3
+                    }
+                }
+            }
+        ]
+    },
+    "ornith-ai/Ornith-1.5-35B-A3B": {
+        "p300x2": [
+            {
+                "_comment": [
+                    "One gated point, 128/128 at 1 user, like the K2-Horizon-7B and Muse-Glimmer entries; the release sweep is reported ungated.",
+                    "Theoretical: bf16 weight-streaming roofline on the 4-chip mesh at ~560 GB/s per chip, the P300X2 convention, over the decoder plus the untied LM head (input embedding, vision tower and MTP head excluded); config.json arithmetic:",
+                    "the same architecture as Qwen3.6-35B-A3B: 2.95B active params per token (attention 1.28B + MoE 1.15B + LM head 0.51B)",
+                    "= 5.89 GB bf16, 1.47 GB per chip = 2.6 ms per step = 380 t/s/u; TTFT streams all 34.15B params (68.3 GB, 17.1 GB per chip)",
+                    "= ~31 ms, as for Qwen3.6-35B-A3B.",
+                    "theoretical sets the functional (10% decode, 10x TTFT) and complete (50%, 2x) tiers; the measured block gates acceptance (tolerance 0.3, the runner-spread cap of the Kolibri-1 and Muse-Glimmer entries).",
+                    "Measured: tt-shield release run 45731830018 (2026-11-26, BH-Quietbox-2) at 128/128 c1 n=8: TTFT 92.3 ms, TPOT 81.2 ms",
+                    "(12.3 t/s/u), 12.3 tok/s. Decode is a fixed 32-row trace (~67-81 ms per step at any concurrency).",
+                    "Tier: BELOW FUNCTIONAL on decode (12.3 < 38 t/s/u); TTFT 92 ms is within functional (<= 310). Acceptance passes only on the",
+                    "measured block, as for Kolibri-1."
+                ],
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "impl": "ornith15_35b_a3b_qb2",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 31,
+                        "tput_user": 380,
+                        "tput": 380
+                    },
+                    "measured": {
+                        "ttft_ms": 92.3,
+                        "tput_user": 12.3,
+                        "tput": 12.3,
+                        "tolerance": 0.3
+                    }
+                }
+            }
+        ]
+    },
+    "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16": {
+        "p300x2": [
+            {
+                "_comment": [
+                    "One gated point, 128/128 at 1 user, like the K2-Horizon-7B and Muse-Glimmer entries; the release sweep is reported ungated.",
+                    "Theoretical: bf16 weight-streaming roofline on the 4-chip mesh at ~560 GB/s per chip, the P300X2 convention, over the decoder plus the untied LM head (input embedding, vision tower and MTP head excluded); config.json arithmetic:",
+                    "decode reads the per-token active weights: 23 Mamba-2 layers x 38.7M = 0.89B + 6 GQA attention layers x 23.4M = 0.14B + 23 MoE",
+                    "layers x 80.2M (6 of 128 routed relu2 experts 59.9M + shared expert 20.0M + router 0.3M) = 1.84B + LM head 0.35B = 3.23B params",
+                    "= 6.46 GB bf16, 1.61 GB per chip = 2.9 ms per step = 347 t/s/u. TTFT is MoE-aware (the K2-Horizon-MoVA convention): a 127-token",
+                    "prompt makes 762 picks over 128 experts per layer (~99.8% hit), so prefill streams every weight, 31.23B params = 62.5 GB bf16,",
+                    "15.6 GB per chip = ~28 ms; prefill emits the first token, so no extra step.",
+                    "theoretical sets the functional (10% decode, 10x TTFT) and complete (50%, 2x) tiers; the measured block gates acceptance (tolerance 0.3, the runner-spread cap of the Kolibri-1 and Muse-Glimmer entries).",
+                    "Measured: tt-shield release run 45742995602 (2026-11-26, BH-Quietbox-2) at 128/128 c1 n=8: TTFT 86.5 ms, TPOT 14.4 ms",
+                    "(69.4 t/s/u), 66.8 tok/s.",
+                    "Tier: FUNCTIONAL (69.4 t/s/u >= 34.7 functional, < 173.5 complete; TTFT 86.5 ms <= 280 functional, > 56 complete)."
+                ],
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "impl": "nemotron35_lightning_qb2",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 28,
+                        "tput_user": 347,
+                        "tput": 347
+                    },
+                    "measured": {
+                        "ttft_ms": 86.5,
+                        "tput_user": 69.4,
+                        "tput": 66.8,
+                        "tolerance": 0.3
+                    }
+                }
+            }
+        ]
+    },
     "google/gemma-4-26B-A4B-it": {
         "p300x2": [
             {

@@ -28,11 +28,13 @@ except ImportError:
     HAS_VALIDATOR = False
 
 # Routes registered in code but intentionally absent from the spec
-# (infrastructure / Swagger UI endpoints).
+# (infrastructure / Swagger UI endpoints and the video browser console page).
 SPEC_ALLOWLIST = {
     ("GET", "/openapi.json"),
     ("GET", "/docs"),
     ("GET", "/swagger"),
+    ("GET", "/"),
+    ("GET", "/ui"),
 }
 
 DROGON_METHOD_MAP = {

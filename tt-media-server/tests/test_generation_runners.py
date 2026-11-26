@@ -16,11 +16,15 @@ from unittest.mock import Mock
 
 import numpy as np
 import pytest
+from domain.flux3_image_klein_request import Flux3ImageKleinRequest
+from domain.flux2_klein_4b_request import Flux2klein4bRequest
 from domain.ltx23_distilled_request import Ltx23DistilledRequest
+from domain.ideogram4_request import Ideogram4Request
 from domain.minimax_h3_request import (
     MiniMaxH3FL2VARequest,
     MiniMaxH3Ref2VARequest,
 )
+from domain.qwen_image_edit_2511_request import QwenImageEdit2511Request
 from domain.wan22_i2v_a14b_request import (
     WAN_NEGATIVE_PROMPT,
     WAN_SIZES,
@@ -120,6 +124,9 @@ class _Pipeline:
         self.calls.append(kwargs)
         return ["output"]
 
+    def count_text_tokens(self, prompt):
+        return 1
+
     def generate(self, prompt, **kwargs):
         self.calls.append({"prompt": prompt, **kwargs})
         pathlib.Path(kwargs["output_path"]).write_bytes(b"mp4")
@@ -131,6 +138,7 @@ def _runner(class_name: str, warming_up: bool = False):
     runner = cls.__new__(cls)
     runner.device_id = "0"
     runner._warming_up = warming_up
+    runner._image_stage_recorder = lambda: None
     runner._video_stage_recorder = lambda resolution: None
     runner.logger = Mock()
     runner.settings = SimpleNamespace(model_runner="tt-wan2.2-i2v")
@@ -304,6 +312,273 @@ def test_wan_warmup_conditions_the_last_frame(monkeypatch):
     assert frame_positions == {(0,), (0, 80)}
 
 
+class _Flux3Pipeline:
+    def __init__(self):
+        self.calls = []
+        self.warmed = 0
+
+    def warmup(self, sizes=None):
+        self.warmed += 1
+        self.warmed_sizes = sizes
+
+    def generate(self, request):
+        self.calls.append(request)
+        return SimpleNamespace(
+            image=Image.new("RGB", (request.width, request.height)),
+            prompt=f"a detailed caption of {request.prompt}",
+            timings={
+                "upsample": 1.0,
+                "encode": 0.5,
+                "encode_reference": 0.25,
+                "denoise": 2.0,
+                "decode": 0.5,
+                "to_host": 0.1,
+            },
+        )
+
+
+class _StageRecorder:
+    flushed = "never"
+
+    def flush(self, images=None, resolution=None):
+        self.flushed = images
+
+
+@pytest.fixture
+def flux3_runner(monkeypatch):
+    pipeline_module = ModuleType("pipeline_flux3_klein")
+    pipeline_module.Flux3KleinRequest = SimpleNamespace
+    monkeypatch.setitem(
+        sys.modules,
+        "models.tt_dit.pipelines.flux3_klein.pipeline_flux3_klein",
+        pipeline_module,
+    )
+    # the deployment's own settings do not reach the tests
+    monkeypatch.delenv("FLUX3_PROMPT_UPSAMPLER_FROZEN", raising=False)
+    monkeypatch.delenv("FLUX3_WARMUP_REFERENCE_SHAPES", raising=False)
+    runner = _runner("TTFlux3ImageKleinRunner")
+    runner.pipeline = _Flux3Pipeline()
+    return runner
+
+
+@pytest.mark.parametrize("with_image", [False, True])
+def test_flux3_passes_the_reference_as_it_is(flux3_runner, with_image):
+    request = _resolved(Flux3ImageKleinRequest(prompt="a cat"), 2048, 2048)
+    # The runner decodes FLUX.3's reference from its file, at its own size.
+    request._files = {"images": [_png(3000, 1000)]} if with_image else {}
+    (image,) = flux3_runner.run([request])
+    (call,) = flux3_runner.pipeline.calls
+    assert (call.prompt, call.width, call.height, call.seed) == ("a cat", 2048, 2048, 5)
+    assert call.steps == 16
+    assert [reference.size for reference in call.images] == (
+        [(3000, 1000)] if with_image else []
+    )
+    assert image.size == (2048, 2048)
+    assert image.info["prompt"] == "a detailed caption of a cat"
+
+
+def test_flux3_passes_a_transparent_reference_with_its_alpha(flux3_runner):
+    # The prompt upsampler composites it over white, not over its hidden pixels.
+    buffer = BytesIO()
+    Image.new("RGBA", (64, 64), (0, 0, 0, 0)).save(buffer, "PNG")
+    request = _resolved(Flux3ImageKleinRequest(prompt="a cat"), 1024, 1024)
+    request._files = {"images": [buffer.getvalue()]}
+    flux3_runner.run([request])
+    (call,) = flux3_runner.pipeline.calls
+    (reference,) = call.images
+    assert reference.mode == "RGBA"
+    assert reference.getpixel((0, 0)) == (0, 0, 0, 0)
+
+
+def test_flux3_records_the_pipeline_stage_times(flux3_runner):
+    recorder = _StageRecorder()
+    flux3_runner._image_stage_recorder = lambda: recorder
+    request = _resolved(Flux3ImageKleinRequest(prompt="a cat"), 1024, 1024)
+    (image,) = flux3_runner.run([request])
+    assert recorder.flushed == [image]
+    assert recorder.engine_seconds == pytest.approx(4.35)
+    assert (recorder.denoise_seconds, recorder.vae_seconds) == (2.0, 0.5)
+    assert recorder.conditioning_seconds == {"all": 1.75}
+
+
+def test_flux3_records_a_failed_run_too(flux3_runner):
+    recorder = _StageRecorder()
+    flux3_runner._image_stage_recorder = lambda: recorder
+    flux3_runner.pipeline.generate = Mock(side_effect=RuntimeError("device"))
+    request = _resolved(Flux3ImageKleinRequest(prompt="a cat"), 1024, 1024)
+    with pytest.raises(RuntimeError):
+        flux3_runner.run([request])
+    assert recorder.flushed is None
+
+
+def test_flux3_fails_the_job_not_the_worker_on_a_corrupt_reference(flux3_runner):
+    request = _resolved(Flux3ImageKleinRequest(prompt="a cat"), 1024, 1024)
+    request._files = {"images": [_png(64, 64)[:40]]}
+    with pytest.raises(ValueError, match="an input could not be decoded: "):
+        flux3_runner.run([request])
+    assert flux3_runner.pipeline.calls == []
+
+
+@pytest.mark.parametrize("frozen", [None, "0", "1"])
+def test_flux3_creates_the_pipeline_warmed_up_with_its_upsampler_unless_frozen(
+    flux3_runner, monkeypatch, frozen
+):
+    if frozen is not None:
+        monkeypatch.setenv("FLUX3_PROMPT_UPSAMPLER_FROZEN", frozen)
+    pipeline, built = _Flux3Pipeline(), {}
+
+    def create(device, **kwargs):
+        built.update(device=device, **kwargs)
+        return pipeline
+
+    monkeypatch.setattr(
+        sys.modules["models.tt_dit.pipelines.flux3_klein.pipeline_flux3_klein"],
+        "Flux3KleinPipeline",
+        create,
+        raising=False,
+    )
+    weights = ModuleType("weights_flux3_klein")
+    weights.resolve_weights_dir = lambda model: f"/weights/{model}"
+    monkeypatch.setitem(
+        sys.modules, "models.tt_dit.pipelines.flux3_klein.weights_flux3_klein", weights
+    )
+    flux3_runner.ttnn_device = "mesh"
+    flux3_runner.settings = SimpleNamespace(model_weights_path="not-a-dir")
+    assert flux3_runner.create_pipeline() is pipeline
+    assert built == {
+        "device": "mesh",
+        "snapshots": {"distilled": "/weights/distilled"},
+        "upsample": frozen != "1",
+    }
+    assert pipeline.warmed == 1
+    # resident, 4K is not served, so not warmed
+    assert pipeline.warmed_sizes == (
+        (1024, 2048, 4096) if frozen == "1" else (1024, 2048)
+    )
+
+
+def _flux3_upsampler_module(monkeypatch, shared_mesh_params):
+    module = ModuleType("upsampler_flux3_klein")
+    module.SHARED_MESH_PARAMS = shared_mesh_params
+    monkeypatch.setitem(
+        sys.modules, "models.tt_dit.pipelines.flux3_klein.upsampler_flux3_klein", module
+    )
+
+
+def test_flux3_opens_the_mesh_as_its_upsampler_needs(flux3_runner, monkeypatch):
+    shared = {"num_command_queues": 2, "trace_region_size": 7}
+    _flux3_upsampler_module(monkeypatch, shared)
+    params = flux3_runner.get_pipeline_device_params()
+    assert params["l1_small_size"] == 65536
+    assert {name: params[name] for name in shared} == shared
+    # frozen: the upsampler's command queue and trace region are not reserved
+    monkeypatch.setenv("FLUX3_PROMPT_UPSAMPLER_FROZEN", "true")
+    params = flux3_runner.get_pipeline_device_params()
+    assert params["l1_small_size"] == 65536
+    assert not shared.keys() & params.keys()
+    monkeypatch.setenv("FLUX3_PROMPT_UPSAMPLER_FROZEN", "maybe")
+    with pytest.raises(ValueError, match="FLUX3_PROMPT_UPSAMPLER_FROZEN"):
+        flux3_runner.get_pipeline_device_params()
+
+
+def test_flux3_frozen_prompt_is_rendered_and_reported_as_sent(
+    flux3_runner, monkeypatch
+):
+    """Without its upsampler the pipeline renders the prompt as sent and
+    reports it; the runner passes it through unchanged and reports what the
+    pipeline rendered from."""
+    monkeypatch.setenv("FLUX3_PROMPT_UPSAMPLER_FROZEN", "1")
+    caption = "A long caption, upsampled ahead of the deployment."
+    flux3_runner.pipeline.generate = lambda request: SimpleNamespace(
+        image=Image.new("RGB", (request.width, request.height)),
+        prompt=request.prompt,
+        timings={},
+    )
+    request = _resolved(Flux3ImageKleinRequest(prompt=caption), 1024, 1024)
+    (image,) = flux3_runner.run([request])
+    assert image.info["prompt"] == caption
+
+
+def test_flux3_warms_only_the_extra_reference_shapes_it_is_given(
+    flux3_runner, monkeypatch
+):
+    assert flux3_runner.warmup_requests() == []
+    monkeypatch.setenv("FLUX3_WARMUP_REFERENCE_SHAPES", "1600x912, 3000x2000")
+    flux3_runner._warming_up = True
+    for request in flux3_runner.warmup_requests():
+        flux3_runner.run([request])
+    assert [
+        (call.width, call.height, call.steps, [image.size for image in call.images])
+        for call in flux3_runner.pipeline.calls
+    ] == [(1024, 1024, 2, [(1600, 912)]), (1024, 1024, 2, [(3000, 2000)])]
+    monkeypatch.setenv("FLUX3_WARMUP_REFERENCE_SHAPES", "1600")
+    with pytest.raises(ValueError, match="FLUX3_WARMUP_REFERENCE_SHAPES"):
+        flux3_runner.warmup_requests()
+
+
+def test_flux3_deep_canary_is_the_smallest_size_at_warmup_steps(flux3_runner):
+    flux3_runner.run([flux3_runner._build_warmup_video_request()])
+    (call,) = flux3_runner.pipeline.calls
+    assert (call.width, call.height, call.steps, call.images) == (1024, 1024, 2, ())
+
+
+def test_flux3_serves_the_shapes_the_pipeline_warms(
+    tt_metal_flux3, flux3_runner, monkeypatch
+):
+    """The server's copies of tt-metal's constants, against tt-metal."""
+    pipeline = tt_metal_flux3[
+        "models.tt_dit.pipelines.flux3_klein.pipeline_flux3_klein"
+    ]
+    upsampler = tt_metal_flux3[
+        "models.tt_dit.pipelines.flux3_klein.upsampler_flux3_klein"
+    ]
+    # Every size the schema accepts is one the pipeline serves and warms; with
+    # the upsampler resident, all but the largest.
+    monkeypatch.setenv("FLUX3_PROMPT_UPSAMPLER_FROZEN", "1")
+    assert Flux3ImageKleinRequest.warmup_sizes() == [
+        (side, side) for side in pipeline.SIZES
+    ]
+    monkeypatch.setenv("FLUX3_PROMPT_UPSAMPLER_FROZEN", "0")
+    assert Flux3ImageKleinRequest.warmup_sizes() == [
+        (side, side) for side in pipeline.SIZES if side < max(pipeline.SIZES)
+    ]
+    assert runners.FLUX3_KLEIN_STEPS == pipeline.STEPS["distilled"]
+    _flux3_upsampler_module(monkeypatch, upsampler.SHARED_MESH_PARAMS)
+    params = flux3_runner.get_pipeline_device_params()
+    assert {
+        name: params[name] for name in upsampler.SHARED_MESH_PARAMS
+    } == upsampler.SHARED_MESH_PARAMS
+
+
+@pytest.mark.parametrize("with_images", [False, True])
+def test_klein_edits_only_with_images(with_images):
+    runner = _runner("TTFlux2Klein4BRunner")
+    files = {"images": [_png(8, 16)]} if with_images else {}
+    request = _resolved(Flux2klein4bRequest(prompt="a cat"), 1024, 1024, files)
+    runner.run([request])
+    (call,) = runner.pipeline.calls
+    if with_images:
+        assert [image.size for image in call["images"]] == [(8, 16)]
+    else:
+        assert call["images"] is None
+    assert call["num_inference_steps"] == 4
+
+
+def test_klein_pipeline_warms_itself_up(monkeypatch):
+    module = Mock()
+    monkeypatch.setitem(
+        sys.modules, "models.tt_dit.pipelines.flux2.pipeline_flux2", module
+    )
+    runner = _runner("TTFlux2Klein4BRunner")
+    runner.ttnn_device = Mock()
+    runner.settings = SimpleNamespace(
+        model_weights_path="black-forest-labs/FLUX.2-klein-4B"
+    )
+    runner.create_pipeline()
+    assert module.Flux2Pipeline.create_pipeline.call_args.kwargs["trace_warmup"] is True
+    assert runner.warmup_requests() == []
+
+
 @pytest.fixture
 def ltx_remuxes(monkeypatch, tmp_path):
     """The (input, output) of each faststart remux the runner makes."""
@@ -362,6 +637,65 @@ def test_ltx_does_not_bring_back_a_deleted_jobs_directory(ltx_remuxes, tmp_path)
         runner.run([request])
     assert list(tmp_path.iterdir()) == []
     assert ltx_remuxes == []
+
+
+def test_qwen_passes_the_input_images():
+    runner = _runner("TTQwenImageEdit2511Runner")
+    request = _resolved(
+        QwenImageEdit2511Request(
+            prompt="add a hat", negative_prompt="blurry", images=["https://x/a.png"] * 2
+        ),
+        1376,
+        768,
+        {"images": [_png(8, 16), _png(24, 12)]},
+    )
+    runner.run([request])
+    (call,) = runner.pipeline.calls
+    assert [image.size for image in call["image"]] == [(8, 16), (24, 12)]
+    assert (call["width"], call["height"], call["cfg_scale"]) == (1376, 768, 4.0)
+    assert call["negative_prompts"] == ["blurry"]
+    assert call["num_inference_steps"] == 40
+
+
+def test_qwen_records_the_stages_of_a_failed_edit():
+    runner = _runner("TTQwenImageEdit2511Runner")
+    recorder = Mock()
+    runner._image_stage_recorder = lambda: recorder
+    runner.pipeline = Mock(side_effect=RuntimeError("device error"))
+    request = _resolved(
+        QwenImageEdit2511Request(prompt="add a hat", images=["https://x/a.png"]),
+        1376,
+        768,
+        {"images": [_png(8, 8)]},
+    )
+    with pytest.raises(RuntimeError):
+        runner.run([request])
+    recorder.flush.assert_called_once_with(None)
+
+
+def test_qwen_pipeline_warms_itself_up():
+    assert _runner("TTQwenImageEdit2511Runner").warmup_requests() == []
+
+
+def test_qwen_pipeline_runs_with_dbcache(monkeypatch):
+    module = Mock()
+    monkeypatch.setitem(
+        sys.modules, "models.tt_dit.pipelines.qwenimage.pipeline_qwenimage", module
+    )
+    runner = _runner("TTQwenImageEdit2511Runner")
+    runner.ttnn_device = SimpleNamespace(shape=(4, 8))
+    runner.settings = SimpleNamespace(model_weights_path="Qwen/Qwen-Image-Edit-2511")
+    assert runner.create_pipeline() is module.QwenImagePipeline.return_value
+    kwargs = module.QwenImagePipelineConfig.default.call_args.kwargs
+    assert kwargs == {
+        "mesh_shape": (4, 8),
+        "checkpoint_name": "Qwen/Qwen-Image-Edit-2511",
+        "dbcache": module.DEFAULT_DBCACHE,
+    }
+    module.QwenImagePipeline.assert_called_once_with(
+        device=runner.ttnn_device,
+        config=module.QwenImagePipelineConfig.default.return_value,
+    )
 
 
 class _H3Pipeline:
@@ -526,7 +860,7 @@ def test_h3_ref2va_packs_images_then_videos_then_audio(monkeypatch):
         "videos": [b"v0", b"v1"],
         "audios": [b"a0"],
     }
-    (image, *clips) = runner._inputs(request)["references"]
+    image, *clips = runner._inputs(request)["references"]
     assert image["image"].size == (48, 64)
     assert clips == [
         {"video": b"v0"},
@@ -661,3 +995,88 @@ def test_h3_ref2va_keeps_its_l1_pool(class_name, l1_small_size, monkeypatch):
     monkeypatch.setattr(runners, "_minimax_h3_device_params", fake_params)
     _h3_runner(class_name).get_pipeline_device_params()
     assert captured["l1_small_size"] == l1_small_size
+
+
+def test_ideogram_gets_the_caption_and_preset():
+    runner = _runner("TTIdeogram4Runner")
+    request = Ideogram4Request(
+        structured_prompt={
+            "high_level_description": "h",
+            "compositional_deconstruction": {"background": "b", "elements": []},
+        },
+        rendering_speed="quality",
+    )
+    request = _resolved(request, 1024, 1024, prompt=request.model_prompt())
+    runner.run([request])
+    (call,) = runner.pipeline.calls
+    assert call["prompts"] == [
+        '{"high_level_description":"h",'
+        '"compositional_deconstruction":{"background":"b","elements":[]}}'
+    ]
+    assert call["preset"] == "V4_QUALITY_48"
+
+
+def _ideogram_runner_and_request(tokens):
+    runner = _runner("TTIdeogram4Runner")
+    runner.pipeline.count_text_tokens = lambda prompt: tokens
+    request = Ideogram4Request(
+        structured_prompt={
+            "high_level_description": "h",
+            "compositional_deconstruction": {"background": "b", "elements": []},
+        }
+    )
+    return runner, _resolved(request, 2048, 2048, prompt=request.model_prompt())
+
+
+@pytest.mark.requires_tt_metal_policy
+def test_ideogram_runs_a_caption_at_the_token_limit():
+    runner, request = _ideogram_runner_and_request(2048)
+    runner.run([request])
+    assert len(runner.pipeline.calls) == 1
+
+
+@pytest.mark.requires_tt_metal_policy
+def test_ideogram_fails_an_over_long_caption():
+    runner, request = _ideogram_runner_and_request(2049)
+    with pytest.raises(
+        ValueError, match="prompt is 2049 tokens, over the 2048-token limit"
+    ):
+        runner.run([request])
+    assert runner.pipeline.calls == []
+
+
+def test_ideogram_warmup_covers_every_size():
+    # 4 sizes; one preset compiles all three.
+    runner = _runner("TTIdeogram4Runner", warming_up=True)
+    requests = runner.warmup_requests()
+    assert len(requests) == 4
+    for request in requests:
+        runner.pipeline.calls.clear()
+        runner.run([request])
+        (call,) = runner.pipeline.calls
+        assert (call["width"], call["height"]) == (request._width, request._height)
+
+
+@pytest.mark.parametrize(
+    ("mesh_shape", "fabric"), [((4, 8), "FABRIC_1D_RING"), ((2, 4), "FABRIC_1D")]
+)
+def test_ideogram_fabric_follows_the_pipeline_preset(mesh_shape, fabric):
+    runner = _runner("TTIdeogram4Runner")
+    runner.settings.device_mesh_shape = mesh_shape
+    params = runner.get_pipeline_device_params()
+    assert params["fabric_config"] is getattr(runners.ttnn.FabricConfig, fabric)
+
+
+def test_ideogram_pipeline_gets_the_weights_path_as_is(monkeypatch):
+    # The pipeline resolves a repo id itself, from tenstorrent/tt-metal#63894 on.
+    pipeline = ModuleType("pipeline_ideogram4")
+    pipeline.Ideogram4Pipeline = Mock()
+    monkeypatch.setitem(
+        sys.modules, "models.tt_dit.pipelines.ideogram4.pipeline_ideogram4", pipeline
+    )
+    runner = _runner("TTIdeogram4Runner")
+    runner.settings.model_weights_path = "ideogram-ai/ideogram-4-fp8"
+    runner.ttnn_device = Mock()
+    runner.create_pipeline()
+    kwargs = pipeline.Ideogram4Pipeline.create_pipeline.call_args.kwargs
+    assert kwargs["weights_dir"] == "ideogram-ai/ideogram-4-fp8"

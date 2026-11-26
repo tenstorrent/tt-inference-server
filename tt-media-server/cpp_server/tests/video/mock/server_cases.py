@@ -75,7 +75,19 @@ def check_auth(base, token):
     note(status == 200, "200 with a valid token", f"status={status}")
 
 
+def task_counts(base):
+    """(ok, error) from tt_video_tasks_total on /metrics."""
+    status, _, content = cc.http_call(base, "GET", "/metrics", None, {}, timeout=30)
+    counts = {"ok": 0.0, "error": 0.0}
+    for line in content.decode().splitlines():
+        for outcome in counts:
+            if line.startswith(f'tt_video_tasks_total{{outcome="{outcome}"'):
+                counts[outcome] = float(line.rsplit(" ", 1)[1])
+    return counts["ok"], counts["error"]
+
+
 def check_queue_cancel_delete(base, token):
+    before = task_counts(base)
     ids = []
     for i in range(3):
         status, _, job = raw(base, "POST", GEN, {"prompt": f"p{i}", "seed": i}, token)
@@ -128,6 +140,15 @@ def check_queue_cancel_delete(base, token):
         done,
         "the running job ends as cancelled",
         f"status={job_status(base, token, first)}",
+    )
+
+    # a cancelled job is neither an "ok" nor an "error" task: the discarded result
+    # of the running one and the skipped queued ones are not counted
+    after = task_counts(base)
+    note(
+        after == before,
+        "cancelled jobs are not counted in tt_video_tasks_total",
+        f"ok/error before={before} after={after}",
     )
 
     # nothing of the three produced an error; cancelled queued jobs stay cancelled

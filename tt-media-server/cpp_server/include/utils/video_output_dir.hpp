@@ -3,8 +3,15 @@
 
 #pragma once
 
+#include <unistd.h>
+
+#include <atomic>
+#include <cerrno>
+#include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <string>
 #include <system_error>
 
@@ -23,6 +30,39 @@ inline std::filesystem::path resolveVideoOutputDir() {
   std::error_code ec;
   const fs::path exe = fs::read_symlink("/proc/self/exe", ec);
   return ec ? fs::path("videos") : exe.parent_path().parent_path() / "videos";
+}
+
+/**
+ * Empty when files can be created in `dir`, else a short reason. Creates the
+ * directory if it is missing, writes one byte to a probe file and removes it.
+ * The runner writes the mp4 only after the whole generation, so a directory
+ * that cannot be written to would otherwise cost a full run before the job
+ * fails. Cheap enough to call for every request (a few syscalls).
+ */
+inline std::string checkDirWritable(const std::filesystem::path& dir) {
+  namespace fs = std::filesystem;
+  std::error_code ec;
+  fs::create_directories(dir, ec);
+  if (ec) return "cannot create '" + dir.string() + "': " + ec.message();
+  static std::atomic<uint64_t> counter{0};
+  const fs::path probe = dir / (".write-check-" + std::to_string(::getpid()) +
+                                "-" + std::to_string(counter.fetch_add(1)));
+  errno = 0;
+  {
+    std::ofstream out(probe, std::ios::binary);
+    if (!out) {
+      return "cannot write in '" + dir.string() +
+             "': " + std::strerror(errno != 0 ? errno : EACCES);
+    }
+    out << 'x';
+    out.flush();
+    if (!out) {
+      return "cannot write in '" + dir.string() +
+             "': " + std::strerror(errno != 0 ? errno : EIO);
+    }
+  }
+  fs::remove(probe, ec);
+  return {};
 }
 
 /**

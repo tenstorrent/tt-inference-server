@@ -16,6 +16,7 @@ from typing import Any, Optional
 
 from config.constants import JobTypes, generation_job_dir
 from config.settings import settings
+from domain.generation_models import GENERATION_MODELS
 from domain.generation_request import (
     MAX_INLINE_MEDIA_CHARS,
     MAX_SEED,
@@ -26,6 +27,7 @@ from fastapi import HTTPException
 from fastapi.exceptions import RequestValidationError
 from model_services.base_job_service import BaseJobService
 from PIL import UnidentifiedImageError
+from telemetry.image_request_metrics import observe_generation_image_request
 from telemetry.telemetry_client import (
     VIDEO_REQUEST_TYPE_I2V,
     VIDEO_REQUEST_TYPE_T2V,
@@ -49,10 +51,29 @@ from utils.media_probe import (
     media_format_error,
     probe_reference_media,
 )
+from utils.prompt_enhancer import (
+    UNAVAILABLE,
+    UNUSABLE,
+    PromptEnhancementError,
+    get_prompt_enhancer,
+)
 from utils.video_manager import probe_video
 
 # The file in a job's directory listing its outputs.
 MANIFEST = "outputs.json"
+
+IMAGE_FORMATS = {
+    "png": ("PNG", "image/png"),
+    "jpeg": ("JPEG", "image/jpeg"),
+    "webp": ("WEBP", "image/webp"),
+}
+# PIL's defaults, JPEG at quality 75 and lossy WebP at 80, are noticeably lossy
+# for a generated image. JPEG also keeps full-resolution color (4:4:4), which
+# keeps colored edges and small text sharp.
+IMAGE_SAVE_OPTIONS = {
+    "JPEG": {"quality": 95, "subsampling": 0},
+    "WEBP": {"quality": 90},
+}
 
 
 def _too_large(kind: str, max_bytes: int) -> HTTPException:
@@ -110,6 +131,10 @@ def _video_request_type(request: GenerationRequest) -> str:
     return VIDEO_REQUEST_TYPE_T2V
 
 
+# Captions asked of the prompt enhancer before an unusable one fails the job.
+_ENHANCER_CAPTION_ATTEMPTS = 2
+
+
 def _cancel_requested(request: GenerationRequest) -> bool:
     """Whether the job was cancelled; False when that can't be told, so a
     metrics check never fails a job."""
@@ -144,11 +169,19 @@ def read_manifest(result_path: str) -> list[dict]:
     return json.loads((Path(result_path) / MANIFEST).read_text())
 
 
-# Serves the generations API: one job per submitted request, producing a video,
-# written to the job's own directory.
+# Serves the generations API: one job per submitted request, producing an image
+# or a video, written to the job's own directory.
 class GenerationService(BaseJobService):
     # The pipelines load their own weights.
     DOWNLOADS_WEIGHTS = False
+
+    def __init__(self):
+        # Before the workers start: a model whose prompt enhancer is on but has
+        # no API key fails at startup rather than on its first request.
+        model = GENERATION_MODELS.get(settings.model_runner)
+        if model is not None and model.request.PROMPT_ENHANCER is not None:
+            get_prompt_enhancer(model.request.PROMPT_ENHANCER)
+        super().__init__()
 
     async def submit(self, request: GenerationRequest, model_id: str) -> dict:
         """Validate what the request schema can't, fetch its media, and queue it
@@ -174,6 +207,22 @@ class GenerationService(BaseJobService):
                     f"Inline media totals {total} characters, over the "
                     f"{MAX_INLINE_MEDIA_CHARS}-character cap; send large assets by URL"
                 ),
+            )
+        if (
+            request.needs_prompt_enhancement()
+            and get_prompt_enhancer(request.PROMPT_ENHANCER) is None
+        ):
+            raise RequestValidationError(
+                [
+                    {
+                        "loc": ("body", "prompt"),
+                        "msg": (
+                            "This deployment doesn't run the prompt enhancer; "
+                            "send structured_prompt instead"
+                        ),
+                        "type": "value_error",
+                    }
+                ]
             )
         await self._load_media(request)
         request._width, request._height = request.output_size()
@@ -326,13 +375,15 @@ class GenerationService(BaseJobService):
                 setattr(request, name, _without_data(value))
 
     async def process_request(self, input_request: GenerationRequest) -> str:
-        """Run one job; a video job is reported to the video metric family, as
-        VideoService does on /v1/videos.
+        """Run one job. An image job records its request shape, as ImageService
+        does on /v1/images. A video job is reported to the video metric family,
+        as VideoService does on /v1/videos.
 
         Timing uses ``monotonic``: the wall clock can step during a generation
         that runs for minutes.
         """
         if input_request.OUTPUT_TYPE != "video":
+            observe_generation_image_request(input_request, settings.model_runner)
             return await super().process_request(input_request)
         model_type = settings.model_runner
         request_type = _video_request_type(input_request)
@@ -423,13 +474,45 @@ class GenerationService(BaseJobService):
             self.logger.warning(f"Failed to record video generation telemetry: {e}")
 
     async def pre_process(self, request: GenerationRequest) -> GenerationRequest:
-        request._prompt = request.model_prompt()
+        # The job is still queued here and no worker can claim it yet, so the
+        # prompt enhancer's call never holds a device.
+        if request.needs_prompt_enhancement():
+            request._prompt = await self._enhanced_prompt(request)
+        else:
+            request._prompt = request.model_prompt()
         return request
+
+    async def _enhanced_prompt(self, request: GenerationRequest) -> str:
+        """The model's prompt from the prompt enhancer. A caption that fails
+        the request's check is asked for again, up to
+        _ENHANCER_CAPTION_ATTEMPTS in all."""
+        enhancer = get_prompt_enhancer(request.PROMPT_ENHANCER)
+        if enhancer is None:
+            raise PromptEnhancementError(UNAVAILABLE)
+        prompt, aspect_ratio = request.enhancer_arguments()
+        start = time.monotonic()
+        for attempt in range(1, _ENHANCER_CAPTION_ATTEMPTS + 1):
+            caption = await enhancer.enhance(prompt, aspect_ratio)
+            try:
+                model_prompt = request.prompt_from_enhancer(caption)
+            except ValueError as e:
+                self.logger.warning(
+                    f"Job {request._task_id}: unusable prompt enhancer caption "
+                    f"(attempt {attempt}): {e}"
+                )
+                continue
+            self.logger.info(
+                f"Job {request._task_id}: prompt enhanced in "
+                f"{time.monotonic() - start:.1f} s"
+            )
+            return model_prompt
+        raise PromptEnhancementError(UNUSABLE)
 
     async def post_process(self, result, input_request: GenerationRequest) -> str:
         """Write the output to the job's directory; returns the directory.
 
-        A job has one output.
+        ``count`` is 1, so a job has one output. More will come from one
+        batched pipeline call, not from one request per output.
         """
         writing = asyncio.ensure_future(
             asyncio.to_thread(self._write_outputs, input_request, [result])
@@ -466,8 +549,23 @@ class GenerationService(BaseJobService):
         output = {
             "type": request.OUTPUT_TYPE,
             "seed": request._seed,
-            "prompt": request._prompt,
+            # the caption, when the runner rewrote the prompt
+            "prompt": getattr(result, "info", {}).get("prompt", request._prompt),
         }
+        if request.OUTPUT_TYPE == "image":
+            pil_format, content_type = IMAGE_FORMATS[request.format]
+            path = directory / f"{index}.{request.format}"
+            image = result.convert("RGB") if pil_format == "JPEG" else result
+            options = IMAGE_SAVE_OPTIONS.get(pil_format, {})
+            image.save(path, format=pil_format, **options)
+            return {
+                **output,
+                "file": path.name,
+                "content_type": content_type,
+                "width": image.width,
+                "height": image.height,
+            }
+
         path = directory / f"{index}.mp4"
         _write_video(result, path)
         probe = probe_video(str(path))

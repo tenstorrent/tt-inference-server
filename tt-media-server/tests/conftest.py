@@ -32,7 +32,7 @@ except ImportError:
 # Only then import pytest
 import pytest
 
-# tt-metal's Wan and MiniMax-H3 policies, for real where tt-metal is
+# tt-metal's Wan, MiniMax-H3 and Ideogram 4 policies, for real where tt-metal is
 # importable. They load before the mocks below; the torch, ttnn and `models`
 # modules they import are then dropped again, so the other tests see the same
 # mocks as without tt-metal.
@@ -41,9 +41,11 @@ _TT_METAL_POLICY_MODULES = (
     "models.tt_dit.pipelines.minimax_h3.policy",
     "models.tt_dit.pipelines.minimax_h3.packing",
     "models.tt_dit.pipelines.minimax_h3.packing_ref2va",
+    "models.tt_dit.pipelines.ideogram4.policy",
 )
 _modules_before_tt_metal = set(sys.modules)
 try:
+    import models.tt_dit.pipelines.ideogram4.policy  # noqa: F401
     import models.tt_dit.pipelines.minimax_h3.policy  # noqa: F401
     import models.tt_dit.pipelines.wan.policy  # noqa: F401
 
@@ -56,6 +58,19 @@ else:
     from tests.fake_tt_metal_policy import placeholder_policies
 
     _tt_metal_policies = placeholder_policies()
+
+# tt-metal's FLUX.3 pipeline where importable, for the constants drift test
+_TT_METAL_FLUX3_MODULES = (
+    "models.tt_dit.pipelines.flux3_klein.pipeline_flux3_klein",
+    "models.tt_dit.pipelines.flux3_klein.upsampler_flux3_klein",
+)
+try:
+    import models.tt_dit.pipelines.flux3_klein.pipeline_flux3_klein  # noqa: F401
+    import models.tt_dit.pipelines.flux3_klein.upsampler_flux3_klein  # noqa: F401
+
+    _tt_metal_flux3 = {name: sys.modules[name] for name in _TT_METAL_FLUX3_MODULES}
+except ImportError:
+    _tt_metal_flux3 = None
 
 # Mock modules that are not available in test environment
 mock_modules = [
@@ -811,7 +826,7 @@ forge_runners_module.ForgeVitRunner = create_mock_runner_class("ForgeVitRunner")
 def pytest_configure(config):
     config.addinivalue_line(
         "markers",
-        "requires_tt_metal_policy: needs tt-metal's Wan/H3 policy; skipped "
+        "requires_tt_metal_policy: needs tt-metal's Wan/H3/Ideogram 4 policy; skipped "
         "where only the placeholder loads",
     )
 
@@ -819,7 +834,7 @@ def pytest_configure(config):
 def pytest_collection_modifyitems(config, items):
     if TT_METAL_POLICY_IS_REAL:
         return
-    skip = pytest.mark.skip(reason="needs tt-metal's Wan/H3 policy")
+    skip = pytest.mark.skip(reason="needs tt-metal's Wan/H3/Ideogram 4 policy")
     for item in items:
         if "requires_tt_metal_policy" in item.keywords:
             item.add_marker(skip)
@@ -891,3 +906,11 @@ def pytest_generate_tests(metafunc):
                 metafunc.parametrize(
                     "runner_name,expected_class_name", [("mock", "MockRunner")]
                 )
+
+
+@pytest.fixture
+def tt_metal_flux3() -> dict:
+    """tt-metal's FLUX.3 pipeline and upsampler modules, by name."""
+    if _tt_metal_flux3 is None:
+        pytest.skip("needs tt-metal's FLUX.3 pipeline")
+    return _tt_metal_flux3

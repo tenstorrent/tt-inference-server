@@ -13,9 +13,10 @@ waiting for a worker that is gone.
 
   A. kill -9 of the worker while a job runs and another one waits in the queue:
      the server exits with code 1 and says why in its log.
-  B. warmup failure of the device runner (a wrong TT_PYTHON_PATH, no chip is
-     opened): the worker process must exit, so that the service sees the dead
-     worker and shuts the server down with code 1. Before the fix the worker
+  B. warmup failure of the device runner (a wrong TT_VIDEO_PYTHON_DIR, so the
+     cpp_dit_adapters package is not found and no chip is opened): the worker
+     process must exit, so that the service sees the dead worker and shuts the
+     server down with code 1. Before the fix the worker
      logged "exiting after fatal error" but hung on exit (the Python GIL was
      still held), and the server kept running with `model_ready=true`. A second
      defect hid behind it: `stop()` called `attr()` on null Python handles and the
@@ -186,9 +187,10 @@ def case_a(workdir):
 def case_b(workdir):
     print("=== B. the device runner fails its warmup: the worker must exit ===")
     port = 18151
-    # MODEL_RUNNER_TYPE is removed so that the real VideoDeviceRunner is used; the
-    # import of the Python runner fails first, so no device is touched.
-    env = dict(TT_PYTHON_PATH="/nonexistent", MODEL_RUNNER_TYPE=None)
+    # MODEL_RUNNER_TYPE is removed so that the real VideoDeviceRunner is used. The
+    # runner looks for the cpp_dit_adapters package before importing anything, so
+    # with a wrong directory it fails before any device is touched.
+    env = dict(TT_VIDEO_PYTHON_DIR="/nonexistent", MODEL_RUNNER_TYPE=None)
     proc, log = start(port, "b", workdir, env)
     try:
         t0 = time.time()

@@ -1,0 +1,17 @@
+# runner device rows cols: the mesh the C++ runners open per device.
+# Checked by dit_runner_test (C++ table) and tests/video/python (Python server config).
+tt-wan2.2	bh-galaxy	4	8
+tt-wan2.2	galaxy	4	8
+tt-wan2.2	galaxy_quad	4	32
+tt-wan2.2	n150	1	1
+tt-wan2.2	p150x4	1	4
+tt-wan2.2	p150x8	2	4
+tt-wan2.2	p300x2	2	2
+tt-wan2.2	t3k	2	4
+tt-wan2.2-i2v	bh-galaxy	4	8
+tt-wan2.2-i2v	galaxy	4	8
+tt-wan2.2-i2v	galaxy_quad	4	32
+tt-wan2.2-i2v	p150x4	1	4
+tt-wan2.2-i2v	p150x8	2	4
+tt-wan2.2-i2v	p300x2	2	2
+tt-wan2.2-i2v	t3k	2	4

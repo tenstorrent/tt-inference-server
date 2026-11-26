@@ -4,6 +4,7 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cstdint>
 #include <cstdio>
@@ -110,6 +111,17 @@ class VideoJobStore {
     return activeCountLocked();
   }
 
+  /** Jobs per status, indexed like `JobStatus` (queued, in_progress,
+   *  completed, failed, cancelled, cancelling). For the telemetry gauges. */
+  std::array<size_t, 6> countByStatus() const {
+    std::array<size_t, 6> counts{};
+    std::lock_guard<std::mutex> lock(mutex_);
+    for (const auto& kv : jobs_) {
+      ++counts[static_cast<size_t>(kv.second.status)];
+    }
+    return counts;
+  }
+
   /** Drops a job that never reached the worker (submit threw). */
   void erase(uint32_t taskId) {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -172,10 +184,16 @@ class VideoJobStore {
    * Final result from the worker. If the job was cancelled meanwhile the
    * result is discarded (and the produced file removed). A result path outside
    * the output root (see setOutputRoot) fails the job.
+   *
+   * Returns what the job ended as, for the task metrics: true = COMPLETED,
+   * false = FAILED, nullopt = the result was discarded (cancelled, already
+   * failed by sweep(), or the job is gone), which is neither a success nor a
+   * failure of the task.
    */
-  void complete(uint32_t taskId, const std::string& videoPath,
-                const std::string& error) {
+  std::optional<bool> complete(uint32_t taskId, const std::string& videoPath,
+                               const std::string& error) {
     std::string orphanFile;
+    std::optional<bool> outcome;
     {
       std::lock_guard<std::mutex> lock(mutex_);
       auto it = jobs_.find(taskId);
@@ -198,6 +216,7 @@ class VideoJobStore {
           job.status = domain::video::JobStatus::FAILED;
           job.errorCode = "processing_error";
           job.errorMessage = error;
+          outcome = false;
         } else if (!resultPathAllowed(videoPath)) {
           // The runner reported a file outside the result root. Storing it
           // would let /download serve it, so the job fails instead. The file is
@@ -210,15 +229,18 @@ class VideoJobStore {
           job.status = domain::video::JobStatus::FAILED;
           job.errorCode = "processing_error";
           job.errorMessage = "Result file is outside the output directory";
+          outcome = false;
         } else {
           job.completedAt = domain::video::nowSeconds();
           job.status = domain::video::JobStatus::COMPLETED;
           job.resultPath = videoPath;
+          outcome = true;
         }
       }
     }
     std::lock_guard<std::mutex> lock(mutex_);
     removeResultLocked(orphanFile);
+    return outcome;
   }
 
   /**
