@@ -7401,13 +7401,13 @@ templates:
         - python3
         - /home/container_app_user/app/src/run_qwen_tt.py
   env_vars:
-    QWEN_TT_PACKAGE: tt-lab-f14a1ec0
+    QWEN_TT_PACKAGE: tt-lab-9397c06f
     QWEN_TT_TTQ: Qwen3.8-27B-bfp4-gptq-bfp8ah.ttq
     QWEN_TT_VOCAB: Qwen3.8-27B-vocab.gguf
     QWEN_TT_DFLASH2: dflash2/Qwen3.8-27B-DFlash2-bfp4.ttq
     QWEN_TT_VISION: Qwen3.8-27B-vision-bf16.ttq
     QWEN_TT_MAX_TOKENS: "262144"  # as vLLM: a turn still stops at the context
-    QWEN_TT_EXTRA_ARGS: --fetch-image-urls
+    QWEN_TT_EXTRA_ARGS: --fetch-image-urls --session-positions 65536 --session-ram-gb 100 --session-ttl 1800
   metadata:
     Qwen/Qwen3.8-27B:
       reasoning_parser_name: qwen3
@@ -7417,8 +7417,8 @@ templates:
         - Qwen3.8-27B-vocab.gguf
         - dflash2/Qwen3.8-27B-DFlash2-bfp4.ttq
         - Qwen3.8-27B-vision-bf16.ttq
-        - tt-lab-f14a1ec0/SHA256SUMS
-        - tt-lab-f14a1ec0/bin/tt-lab
-        - tt-lab-f14a1ec0/runtime/ld-linux-x86-64.so.2
+        - tt-lab-9397c06f/SHA256SUMS
+        - tt-lab-9397c06f/bin/tt-lab
+        - tt-lab-9397c06f/runtime/ld-linux-x86-64.so.2
   status: EXPERIMENTAL
   docker_image: ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22.04-amd64@sha256:26cdfb7ce851936c694c339b5b9db4addb70072a90345eb630072f842673c2af
