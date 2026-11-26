@@ -460,7 +460,8 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help=(
             "Comma-separated agentic benchmark(s) to run. Aliases: tau3, "
-            "tb2.0 (terminal_bench_2), tb2.1 (terminal_bench_2_1), swebench "
+            "tb2.0 (terminal_bench_2), tb2.1 (terminal_bench_2_1), tb4 "
+            "(terminal_bench_4), automationbench (automation_bench), swebench "
             "(swe_bench_*). Raw task names accepted. Unset/'all' runs every "
             "configured EVALS_AGENTIC task."
         ),
