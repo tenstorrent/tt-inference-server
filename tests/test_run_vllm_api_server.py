@@ -1261,6 +1261,17 @@ def test_quetzal_fetches_only_pinned_metadata(
         pattern.endswith((".pt", ".bin", ".safetensors", ".py")) or pattern == "*"
         for pattern in kwargs["allow_patterns"]
     )
+    # tokenizer vocab files that are not named tokenizer.model / spiece.model
+    # (e.g. a tiktoken tokenizer's tiktoken.model) are fetched too
+    assert {"*.model", "*.tiktoken"} <= set(kwargs["allow_patterns"])
+    import fnmatch
+
+    for weight in (
+        "model-00001-of-00020.safetensors",
+        "pytorch_model.bin",
+        "consolidated.pth",
+    ):
+        assert not any(fnmatch.fnmatch(weight, p) for p in kwargs["allow_patterns"])
     transformers.AutoConfig.from_pretrained.assert_called_once_with(
         path, local_files_only=True, trust_remote_code=False
     )

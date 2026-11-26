@@ -102,6 +102,9 @@
       "Qwen/Qwen3-14B-Base",
       "Qwen/QwQ-32B",
       "Qwen/Qwen3.5-9B-Base",
+      "mistralai/Devstral-Small-2-24B-Instruct-2512",
+      "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
+      "IFM/K2-Horizon-MoVA-36B-A4B",
       "IFM/K2-Horizon-7B"
     ]
   },
@@ -1089,6 +1092,36 @@
       "id_name": "Qwen--Qwen3.5-9B-Base",
       "weights": [
         "Qwen/Qwen3.5-9B-Base"
+      ]
+    },
+    "mistralai/Devstral-Small-2-24B-Instruct-2512": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "mistralai--Devstral-Small-2-24B-Instruct-2512",
+      "weights": [
+        "mistralai/Devstral-Small-2-24B-Instruct-2512"
+      ]
+    },
+    "deepseek-ai/DeepSeek-R1-Distill-Llama-70B": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "deepseek-ai--DeepSeek-R1-Distill-Llama-70B",
+      "weights": [
+        "deepseek-ai/DeepSeek-R1-Distill-Llama-70B"
+      ]
+    },
+    "IFM/K2-Horizon-MoVA-36B-A4B": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "IFM--K2-Horizon-MoVA-36B-A4B",
+      "weights": [
+        "IFM/K2-Horizon-MoVA-36B-A4B"
       ]
     },
     "IFM/K2-Horizon-7B": {

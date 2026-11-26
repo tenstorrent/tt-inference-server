@@ -628,6 +628,12 @@ def _ensure_quetzal_metadata(model_spec: dict) -> Path:
         "tokenizer_config.json",
         "tokenizer.model",
         "spiece.model",
+        # Vocab files a tokenizer may name otherwise (SentencePiece "*.model",
+        # tiktoken "*.model" / "*.tiktoken"): a vendored tiktoken tokenizer such as
+        # Kimi-Linear's reads its vocab from tiktoken.model. Tokenizer-sized only;
+        # weights, code and archives stay excluded.
+        "*.model",
+        "*.tiktoken",
         "special_tokens_map.json",
         "added_tokens.json",
         "vocab.json",
