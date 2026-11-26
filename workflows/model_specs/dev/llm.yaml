@@ -1936,7 +1936,9 @@ templates:
         reasoning_parser: qwen3
         enable_auto_tool_choice: true
         tool_call_parser: qwen3_coder
-  status: FUNCTIONAL
+  # EXPERIMENTAL: decode is 12.3 t/s/u at 128/128, 1 user, under the FUNCTIONAL tier's 38
+  # (10% of the 380 t/s/u roofline; run 45834552320). Evals still run and are reported.
+  status: EXPERIMENTAL
   has_builtin_warmup: true
   metadata:
     ornith-ai/Ornith-1.5-35B-A3B:
