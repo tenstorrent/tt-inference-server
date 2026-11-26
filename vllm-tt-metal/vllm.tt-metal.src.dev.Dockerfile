@@ -87,6 +87,12 @@ RUN /bin/bash -c "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 # raise uv's HTTP retry count (default 3) for every uv invocation in create_venv.sh.
 ENV UV_HTTP_RETRIES=10
 
+# Check out vllm-tt-plugin before tt-metal: its requires-python decides the Python version of
+# the tt-metal venv below. The plugin is installed into that venv after tt-metal is built.
+RUN git clone https://github.com/tenstorrent/vllm-tt-plugin.git ${vllm_tt_plugin_dir} \
+    && cd ${vllm_tt_plugin_dir} \
+    && git checkout ${TT_VLLM_COMMIT_SHA_OR_TAG}
+
 # Build tt-metal - clone with minimal history, build, and clean
 # uv's cache grows to ~3G here and ~11G after the vLLM install; the builder stage is
 # discarded, but its layers still fill the container storage fs during image export.
@@ -99,13 +105,26 @@ ENV UV_HTTP_RETRIES=10
 # tt-transformers declares a released ttnn, and a resolving install would replace the ttnn
 # built here. Two models pinning different commits fail the build instead of leaving one of
 # them on the other's version.
-RUN /bin/bash -c "git clone --depth 1 https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME} \
+# Python version: create_venv.sh defaults to 3.10 on Ubuntu 22.04, and a plugin that allows 3.10
+# builds exactly that way. A plugin whose requires-python lower bound is 3.11 or above (vLLM
+# >= 0.32) gets a Python 3.12 venv instead: the venv is created first and ttnn is built with it
+# active, because build_metal.sh compiles the bindings for the python3 on PATH (otherwise the base
+# image's 3.10 /opt/venv). --bundle-python copies the uv-managed interpreter into the venv
+# (_python/), so the runtime stage, which copies only TT_METAL_HOME, still has it.
+RUN set -e; \
+    plugin_python_minor=$(sed -nE 's/^requires-python[[:space:]]*=[[:space:]]*"[^"]*>=[[:space:]]*3\.([0-9]+).*/\1/p' "${vllm_tt_plugin_dir}/pyproject.toml" 2>/dev/null | head -n 1); \
+    venv_python_args=""; \
+    if [ "${plugin_python_minor:-10}" -ge 11 ]; then \
+      venv_python_args="--python-version 3.12 --bundle-python"; \
+      echo "vllm-tt-plugin requires Python >= 3.${plugin_python_minor}: building the tt-metal venv and ttnn on Python 3.12"; \
+    fi; \
+    /bin/bash -c "git clone --depth 1 https://github.com/tenstorrent-metal/tt-metal.git ${TT_METAL_HOME} \
     && cd ${TT_METAL_HOME} \
     && git fetch --depth 1 origin ${TT_METAL_COMMIT_SHA_OR_TAG} \
     && git checkout ${TT_METAL_COMMIT_SHA_OR_TAG} \
     && git submodule update --init --recursive \
-    && bash ./build_metal.sh \
-    && ( for i in 1 2 3 4 5; do CXX=clang++-17 CC=clang-17 bash ./create_venv.sh && exit 0; echo 'create_venv.sh failed, retrying in 30s'; sleep 30; done; exit 1 ) \
+    && create_venv() { for i in 1 2 3 4 5; do CXX=clang++-17 CC=clang-17 bash ./create_venv.sh ${venv_python_args} && return 0; echo 'create_venv.sh failed, retrying in 30s'; sleep 30; done; return 1; } \
+    && if [ -n '${venv_python_args}' ]; then create_venv && source ${PYTHON_ENV_DIR}/bin/activate && bash ./build_metal.sh; else bash ./build_metal.sh && create_venv; fi \
     && source ${PYTHON_ENV_DIR}/bin/activate \
     && if [ -f 'models/demos/qwen25_vl/requirements.txt' ]; then uv pip install -r models/demos/qwen25_vl/requirements.txt; fi \
     && grep -rhE --include=requirements.txt '^tt[-_]transformers[[:space:]]*[@=<>~!]' models | sort -u > /tmp/tt-transformers-requirements.txt \
@@ -113,12 +132,10 @@ RUN /bin/bash -c "git clone --depth 1 https://github.com/tenstorrent-metal/tt-me
     && rm -rf ${TT_METAL_HOME}/.git \
     && { uv cache clean || echo 'WARN: uv cache clean failed'; true; }"
 
-# Build vllm-tt-plugin - clone with minimal history and clean.
+# Install vllm-tt-plugin (checked out above) and clean.
 # The plugin owns the vLLM version pin and its dependency overrides, so the
 # install is delegated to its own docs/install-vllm-tt.sh rather than restated here
-RUN /bin/bash -c "git clone https://github.com/tenstorrent/vllm-tt-plugin.git ${vllm_tt_plugin_dir} \
-    && cd ${vllm_tt_plugin_dir} \
-    && git checkout ${TT_VLLM_COMMIT_SHA_OR_TAG} \
+RUN /bin/bash -c "cd ${vllm_tt_plugin_dir} \
     && source ${PYTHON_ENV_DIR}/bin/activate \
     && uv pip install --upgrade pip \
     && source docs/install-vllm-tt.sh \
@@ -258,11 +275,10 @@ COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
 COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
     "VERSION" "${APP_DIR}/VERSION"
 
-# Fix venv symlinks after copy and install additional app requirements
+# Fix venv symlinks after copy and install additional app requirements. A venv that bundles its
+# interpreter (_python/, the Python 3.12 venv) already links to it and keeps those links.
 RUN cd ${PYTHON_ENV_DIR}/bin \
-    && rm -f python python3 \
-    && ln -s /usr/bin/python3 python3 \
-    && ln -s python3 python \
+    && if [ ! -d ../_python ]; then rm -f python python3 && ln -s /usr/bin/python3 python3 && ln -s python3 python; fi \
     && /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && uv pip install --no-cache-dir -r ${APP_DIR}/requirements.txt \
     && uv cache clean" \

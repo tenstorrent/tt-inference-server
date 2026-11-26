@@ -939,6 +939,12 @@ def test_vllm_dockerfile_checks_out_supplied_standalone_plugin_ref():
     assert "git fetch --depth 1 origin ${TT_VLLM_COMMIT_SHA_OR_TAG}" not in dockerfile
     assert "source docs/install-vllm-tt.sh" in dockerfile
     assert "git clone https://github.com/tenstorrent/vllm.git" not in dockerfile
+    # The checked-out plugin's requires-python picks the tt-metal venv Python before
+    # tt-metal is built; the bundled 3.12 interpreter keeps its links at runtime.
+    assert dockerfile.index("vllm-tt-plugin.git") < dockerfile.index("build_metal.sh")
+    assert '"${vllm_tt_plugin_dir}/pyproject.toml"' in dockerfile
+    assert 'venv_python_args="--python-version 3.12 --bundle-python"' in dockerfile
+    assert "if [ ! -d ../_python ]; then" in dockerfile
 
 
 def test_vllm_dockerfile_exposes_tt_metal_device_build_in_both_stages():
