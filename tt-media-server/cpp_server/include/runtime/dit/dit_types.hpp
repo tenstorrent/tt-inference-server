@@ -103,11 +103,15 @@ struct DiTRequest {
   Json::Value toJson() const;
 };
 
-/** What generate() returns: the mp4 path (video) or PNG bytes (image). */
+/** What generate() returns: the mp4 path (video) or PNG bytes (image), and the
+ *  seconds the pipeline spent in its sampling loop and in the VAE decode when
+ *  the adapter timed them (the Wan2.2 adapters do). */
 struct DiTResult {
   OutputKind kind = OutputKind::Video;
   std::string path;
   std::vector<std::string> images;
+  std::optional<double> denoiseSeconds;
+  std::optional<double> vaeSeconds;
 };
 
 /** Wan2.2 I2V rules: at least one image, frame_pos in [-1, numFrames), each

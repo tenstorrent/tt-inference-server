@@ -213,8 +213,65 @@ def test_wan_t2v_creates_and_calls_the_pipeline_with_the_cpp_arguments(monkeypat
     }  # fmt: skip
     args = {"prompts": ["a"], "num_inference_steps": 4, "seed": 1, "traced": False}
     result = adapter.call(args)
-    assert P.created[0][2].calls[0][1] == args
+    kwargs = P.created[0][2].calls[0][1]
+    assert kwargs.pop("on_event") is not None  # the stage timer
+    assert kwargs == args
     assert result["kind"] == "frames" and result["frames"].shape == (1, 2, 4, 6, 3)
+    assert "stages" not in result  # the fake pipeline sent no events
+
+
+class SectionStart:
+    def __init__(self, name):
+        self.name = name
+
+
+class SectionEnd:
+    def __init__(self, name):
+        self.name = name
+
+
+class DenoiseStep:  # carries no name, like the real step event
+    pass
+
+
+def test_stage_timer_times_denoising_and_vae_from_the_event_stream(monkeypatch):
+    clock = iter([10.0, 14.5, 20.0, 22.0])
+    monkeypatch.setattr(_common.time, "monotonic", lambda: next(clock))
+    timer = _common.StageTimer()
+    for event in (
+        SectionStart("t5_encoding"),  # not timed
+        SectionStart("denoising"), DenoiseStep(), SectionEnd("denoising"),
+        SectionEnd("t5_encoding"),
+        SectionStart("vae"), SectionEnd("vae"),
+        SectionEnd("never_started"),
+    ):  # fmt: skip
+        timer(event)
+    assert timer.seconds == {"denoising": 4.5, "vae": 2.0}
+
+
+def test_a_stage_that_never_closed_is_not_reported():
+    timer = _common.StageTimer()
+    timer(SectionStart("denoising"))
+    timer(SectionStart("vae"))
+    timer(SectionEnd("denoising"))  # the decode died: no SectionEnd for vae
+    assert set(timer.seconds) == {"denoising"}
+
+
+def test_wan_adapters_return_the_stage_timings_of_the_call(monkeypatch):
+    class TimedPipeline(FakePipeline):
+        def __call__(self, *args, on_event=None, **kwargs):
+            for event in (
+                SectionStart("denoising"), SectionEnd("denoising"),
+                SectionStart("vae"), SectionEnd("vae"),
+            ):  # fmt: skip
+                on_event(event)
+            return super().__call__(*args, **kwargs)
+
+    P = type("P", (TimedPipeline,), {"result_for_create": FRAMES, "created": []})
+    fake_module(monkeypatch, "models.tt_dit.pipelines.wan.pipeline_wan", WanPipeline=P)
+    result = adapters.create("wan_t2v", "MESH", WAN_OPTIONS).call({"prompts": ["a"]})
+    assert set(result["stages"]) == {"denoising", "vae"}
+    assert all(seconds >= 0 for seconds in result["stages"].values())
 
 
 @dataclass
@@ -236,6 +293,7 @@ def test_wan_i2v_turns_image_prompts_into_pipeline_objects(monkeypatch):
     )
     kwargs = P.created[0][2].calls[0][1]
     assert "image_prompts" not in kwargs
+    assert kwargs["on_event"] is not None  # the stage timer
     (prompt,) = kwargs["image_prompt"]
     assert prompt.frame_pos == -1 and prompt.image.size == (8, 6)
 

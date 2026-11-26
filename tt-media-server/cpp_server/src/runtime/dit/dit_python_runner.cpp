@@ -27,6 +27,18 @@ constexpr int TORCH_THREADS = 1;
 constexpr uint64_t MESSAGE_TAG = 0x7E57;
 constexpr int ROOT_RANK = 0;
 
+// The stage timings an adapter put in its result: {"denoising": s, "vae": s}.
+void readStages(const py::dict& result, DiTResult& out) {
+  if (!result.contains("stages")) return;
+  const py::dict stages = result["stages"].cast<py::dict>();
+  if (stages.contains("denoising")) {
+    out.denoiseSeconds = stages["denoising"].cast<double>();
+  }
+  if (stages.contains("vae")) {
+    out.vaeSeconds = stages["vae"].cast<double>();
+  }
+}
+
 double secondsSince(std::chrono::steady_clock::time_point t) {
   return std::chrono::duration<double>(std::chrono::steady_clock::now() - t)
       .count();
@@ -243,6 +255,15 @@ DiTResult DiTRunner::exportResult(
   } else {
     throw std::runtime_error("adapter returned an unknown result kind '" +
                              kind + "'");
+  }
+  readStages(result, out);
+  if (out.denoiseSeconds) {
+    TT_LOG_INFO("[DiT] {} task {} denoising took {:.1f} s",
+                model_->spec().logName, request.taskId, *out.denoiseSeconds);
+  }
+  if (out.vaeSeconds) {
+    TT_LOG_INFO("[DiT] {} task {} VAE decode took {:.1f} s",
+                model_->spec().logName, request.taskId, *out.vaeSeconds);
   }
   TT_LOG_INFO("[DiT] {} task {} exported in {:.1f} s", model_->spec().logName,
               request.taskId, secondsSince(started));

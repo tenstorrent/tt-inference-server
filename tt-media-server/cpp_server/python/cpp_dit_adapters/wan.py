@@ -7,11 +7,18 @@
 from __future__ import annotations
 
 from . import register
-from ._common import Adapter, decode_image, frames_result
+from ._common import Adapter, StageTimer, decode_image, frames_result
 
 
 def _shape(o: dict) -> dict:
     return {"height": o["height"], "width": o["width"], "num_frames": o["num_frames"]}
+
+
+def _run(pipeline, kwargs: dict) -> dict:
+    """One pipeline call, timing its denoising and VAE stages."""
+    timer = StageTimer()
+    frames = pipeline(**kwargs, on_event=timer)
+    return frames_result(frames, stages=timer.seconds)
 
 
 def _image_prompts(args: dict) -> list:
@@ -29,7 +36,7 @@ def _call_with_images(pipeline):
     def run(args: dict) -> dict:
         kwargs = {k: v for k, v in args.items() if k != "image_prompts"}
         kwargs["image_prompt"] = _image_prompts(args)
-        return frames_result(pipeline(**kwargs))
+        return _run(pipeline, kwargs)
 
     return run
 
@@ -41,7 +48,7 @@ def wan_t2v(mesh, o: dict) -> Adapter:
     pipeline = WanPipeline.create_pipeline(
         mesh_device=mesh, checkpoint_name=o["checkpoint"], **_shape(o)
     )
-    return Adapter(lambda args: frames_result(pipeline(**args)), pipeline)
+    return Adapter(lambda args: _run(pipeline, args), pipeline)
 
 
 @register("wan_i2v")

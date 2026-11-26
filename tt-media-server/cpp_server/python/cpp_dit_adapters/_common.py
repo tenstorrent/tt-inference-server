@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import base64
 import io
+import time
 from typing import Any, Callable
 
 import numpy as np
@@ -25,6 +26,35 @@ class Adapter:
 
     def call(self, args: dict) -> dict:
         return self._run(args)
+
+
+class StageTimer:
+    """Times the stages of one generation from the pipeline's ``on_event``
+    stream.
+
+    The tt_dit Wan2.2 pipelines bracket the sampling loop with a ``denoising``
+    section and the latent-to-pixel decode with a ``vae`` section. Pass the
+    timer as ``on_event``; ``seconds`` holds the stages that closed. Events are
+    matched by class name, so this module imports nothing from tt-metal.
+    """
+
+    SECTIONS = ("denoising", "vae")
+
+    def __init__(self) -> None:
+        self.seconds: dict[str, float] = {}
+        self._open: dict[str, float] = {}
+
+    def __call__(self, event: Any) -> None:
+        name = getattr(event, "name", None)
+        if name not in self.SECTIONS:
+            return  # other sections, and steps, are not timed
+        kind = type(event).__name__
+        if kind == "SectionStart":
+            self._open[name] = time.monotonic()
+        elif kind == "SectionEnd":
+            started = self._open.pop(name, None)
+            if started is not None:
+                self.seconds[name] = time.monotonic() - started
 
 
 def decode_base64(data: str) -> bytes:
@@ -76,8 +106,13 @@ def exportable(array: np.ndarray) -> np.ndarray:
     return np.ascontiguousarray(array)
 
 
-def frames_result(frames: Any) -> dict:
-    return {"kind": "frames", "frames": exportable(to_numpy(frames))}
+def frames_result(frames: Any, stages: dict[str, float] | None = None) -> dict:
+    """The frames for the C++ exporter, and the stage timings (seconds per
+    stage, see StageTimer) when the pipeline reported any."""
+    out = {"kind": "frames", "frames": exportable(to_numpy(frames))}
+    if stages:
+        out["stages"] = dict(stages)
+    return out
 
 
 def path_result(path: Any) -> dict:
