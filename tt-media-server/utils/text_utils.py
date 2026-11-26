@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import re
-from typing import List
+from typing import List, Optional, Tuple
 
 
 class TextUtils:
@@ -53,23 +53,31 @@ class TextUtils:
         return TextUtils.clean_text(" ".join(texts))
 
     @staticmethod
-    def extract_text(chunk) -> str:
+    def extract_text(chunk) -> Tuple[str, Optional[float], Optional[float]]:
+        """Text, start and end of one generator result.
+
+        ``chunk`` is a generator tuple whose first element holds one entry per
+        batch item, or a single item from the batch path. An item is a string,
+        or with ``return_timestamps`` a list of ``{"text", "start", "end"}``
+        segments; the segment texts are joined and the times span the list.
+        """
         text_chunk = chunk
         start = None
         end = None
         if isinstance(text_chunk, tuple):
             text_chunk = text_chunk[0]
-        if isinstance(text_chunk, list) and len(text_chunk) > 0:
+        if (
+            isinstance(text_chunk, list)
+            and len(text_chunk) > 0
+            and not isinstance(text_chunk[0], dict)
+        ):
             text_chunk = text_chunk[0]
-            # we need to check again after getting first element from list
-            if isinstance(text_chunk, list) and len(text_chunk) > 0:
-                text_chunk = text_chunk[0]
-                if "start" in text_chunk:
-                    start = text_chunk["start"]
-                if "end" in text_chunk:
-                    end = text_chunk["end"]
-                if "text" in text_chunk:
-                    text_chunk = text_chunk["text"]
+        if isinstance(text_chunk, list):
+            segments = [s for s in text_chunk if isinstance(s, dict)]
+            if segments:
+                start = segments[0].get("start")
+                end = segments[-1].get("end")
+            text_chunk = " ".join(str(s.get("text", "")).strip() for s in segments)
 
         if not isinstance(text_chunk, str):
             text_chunk = ""
