@@ -295,16 +295,6 @@ templates:
         enable_prompt_tokens_details: true  # usage.prompt_tokens_details.cached_tokens (prefix-cache visibility)
         limit-mm-per-prompt: '{"image": 8, "video": 1}'  # MMMU-Pro items carry up to 7 images
         mm-processor-cache-gb: 0
-      known_issues:
-      - workflow_type: SPEC_TESTS
-        task_name: test_penalties
-        reason: 'test_penalties fails two repeat_trap cases at seed 1234 / temperature 0.1 although every
-          penalty changes the output: repetition_penalty=1.5 raises the unique-word ratio 0.21 -> 0.42
-          (the 446-word robotic story becomes 666 words of prose) but the rule compares the ABSOLUTE
-          most-common-word count (56 -> 79), which grows with length; presence_penalty=1.2 yields a
-          different repetitive story (the prompt asks for one) whose ratio drops 0.211 -> 0.186, past the
-          90%-of-baseline rule. Identical numbers on two tt-shield runs (37495434533, 37560947407); the
-          other 7 cases pass. Same exemption as Llama-3.3-70B P300X2 (#3888). Measured 2026-10-07.'
     # LoudBox (8x P150). Metal policy: unbounded through 64k; auto-bounded at
     # ≥128k (generator_trace). Prefill chunk default 4096; at ≥128k + bounded
     # → 2048. Scheduler tokens stay 2048 to match metal at long ISL. B=32 needs
@@ -390,9 +380,9 @@ templates:
         # of a lone user's long-context decode (13.4 tok/s at 128K against 24.0 unpinned). Dropped
         # 2026-10-30; GEMMA4_SDPA_MAX_CORES_PER_HEAD above is the opposite knob, a cap of 32 that
         # speeds the lone-row long-context step. GEMMA4_SDPA_DECODE_SPLITFREE above makes the sliding
-        # layers batch-invariant; the global layers run the pair split, so a same-seed pair that
-        # decodes in different graphs may still differ in its bits, which test_non_uniform_seeding
-        # records as a known issue below.
+        # layers batch-invariant; the global layers run the pair split, whose bits can still follow the
+        # decode graph, but test_non_uniform_seeding passes on this entry (shield release 45727170736
+        # and a local served check, 2026-11-26), so it carries no known issue.
         GEMMA4_DECODE_WARMUP_BATCHES: "1,4,8,32"
         GEMMA4_ROPE_PERUSER_B1: "1"
         GEMMA4_VLLM_SINGLE_CHUNK: "0"
@@ -431,26 +421,6 @@ templates:
         enable_prompt_tokens_details: true  # usage.prompt_tokens_details.cached_tokens (prefix-cache visibility)
         limit-mm-per-prompt: '{"image": 8, "video": 1}'  # MMMU-Pro items carry up to 7 images
         mm-processor-cache-gb: 0
-      known_issues:
-      - workflow_type: SPEC_TESTS
-        task_name: test_penalties
-        reason: 'test_penalties fails the repetition_penalty=1.5 repeat_trap case at seed 1234 / temperature 0.1 on the
-          Galaxy although the penalty changes the output: the unique-word ratio rises 0.25 -> 0.42 (a 446-word robotic
-          story becomes 598 words of prose) but the rule compares the ABSOLUTE most-common-word count (61 -> 112),
-          which grows with length. Deterministic on two tt-shield runs (41245835164, 41286973846) and reproduced on
-          the box Galaxy, where the PLAIN 31B Galaxy entry fails the same rule the same way today (53 -> 60 at ratio
-          0.30 -> 0.56); the other 8 cases pass. Same exemption as the 31B P300X2 entry (Llama-3.3-70B #3888 class).
-          Measured 2026-11-01.'
-      - workflow_type: SPEC_TESTS
-        task_name: test_non_uniform_seeding
-        reason: 'Same-seed requests that decode in different batch graphs (1, 4, 8 or 32 residents per
-          engine) can differ on the global layers: their decode SDPA is the pair / group split
-          (custom_ops/sdpa_decode_lse, the stock flash-decode core split per padded row, merged across the
-          chips by LSE), which reduces a row in a graph-dependent order (tt-metal#59300). The sliding
-          layers run the batch-invariant GEMMA4_SDPA_DECODE_SPLITFREE op; on the global layers the split
-          takes precedence over it (the engine logs it once). Seeds still give identical outputs within one
-          graph and distinct outputs across seeds; the test''s 32-way burst spans graphs while admission
-          ramps. Closed when the split adopts the split-free op''s position-derived unit order.'
     # GPU (H100 NVL) bring-your-own vLLM server (see docs/gpu_workflows.md); used
     # to collect GPU reference eval scores for GPQA-Diamond, Terminal-Bench 2.0,
     # and SWE-Bench Verified. Dev-only; no tt_metal_commit/version pin needed
@@ -1261,16 +1231,6 @@ templates:
         enable_prompt_tokens_details: true  # usage.prompt_tokens_details.cached_tokens (prefix-cache visibility)
         limit-mm-per-prompt: '{"image": 8, "video": 1, "audio": 1}'  # MMMU-Pro items carry up to 7 images
         mm-processor-cache-gb: 0
-      known_issues:
-      - workflow_type: SPEC_TESTS
-        task_name: test_penalties
-        reason: 'test_penalties[presence_penalty-1.2-repeat_trap] fails the "must not reduce diversity" rule at
-          seed 1234 / temperature 0.1 although the penalty changes the output: the repeat-trap prompt asks for
-          a repetitive story and presence_penalty=1.2 yields a different repetitive story whose unique-token
-          ratio drops 0.0816 -> 0.0630, past the 90%-of-baseline rule (tt-shield run 41376385063 at metal
-          f0044ee454e); the other 8 penalty cases, all evals and the gated rows pass. The same case passed at
-          the previous metal head (41338095912): the fp32-prefill change moved a near-threshold ratio. Same
-          exemption as the 31B P300X2 entry and Llama-3.3-70B P300X2 (#3888). Measured 2026-11-02.'
     # BH Galaxy (32x P150) native, DP=4 (2026-09-03 bring-up): four physical-
     # column (1,8) engines via the plugin's standard-DP discovery (see the 31B
     # BLACKHOLE_GALAXY entry for the mechanism and gates). Config mirrors the
@@ -1357,24 +1317,6 @@ templates:
         enable_prompt_tokens_details: true  # usage.prompt_tokens_details.cached_tokens (prefix-cache visibility)
         limit-mm-per-prompt: '{"image": 8, "video": 1, "audio": 1}'  # MMMU-Pro items carry up to 7 images
         mm-processor-cache-gb: 0
-      known_issues:
-      - workflow_type: SPEC_TESTS
-        task_name: test_penalties
-        reason: 'test_penalties[repetition_penalty-1.5-natural_repetition] fails the "increase diversity"
-          rule at seed 1234 / temperature 0.1: the penalty changes the bananas paragraph but its unique-word
-          ratio moves 0.757 -> 0.741, inside per-seed noise. Identical on tt-shield run 37518281683 and on
-          a local run of the same stack (2026-10-06); the other 8 cases pass and the P300X2 entry passes
-          all 9. Same exemption as Llama-3.3-70B P300X2 (#3888).'
-      - workflow_type: SPEC_TESTS
-        task_name: test_non_uniform_seeding
-        reason: 'Same-seed requests that decode in different batch graphs (1, 4, 8 or 32 residents per
-          engine) can differ on the global layers: their decode SDPA is the pair / group split
-          (custom_ops/sdpa_decode_lse, the stock flash-decode core split per padded row, merged across the
-          chips by LSE), which reduces a row in a graph-dependent order (tt-metal#59300). The sliding
-          layers run the batch-invariant GEMMA4_SDPA_DECODE_SPLITFREE op; on the global layers the split
-          takes precedence over it (the engine logs it once). Seeds still give identical outputs within one
-          graph and distinct outputs across seeds; the test''s 32-way burst spans graphs while admission
-          ramps. Closed when the split adopts the split-free op''s position-derived unit order.'
   status: COMPLETE
   supported_modalities:
     - text
