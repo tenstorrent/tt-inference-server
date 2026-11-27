@@ -5937,6 +5937,776 @@
             }
         ]
     },
+    "Qwen/Qwen-Image-Edit-2511": {
+        "blackhole_galaxy": [
+            {
+                "_comment": "Requirement with DBCache step caching (F1B0, threshold 0.12, 8 warmup steps, at most 3 cached in a row): one H200 (the only cache-dit column; no multi-GPU one), FlashAttention 3: 1 input image edited to 1024x1024 (40 steps, true CFG) in 11.04 s end to end, median of 3. Applies to a deployment whose spec declares the cache on; listed before the uncached entries, which apply to any deployment.",
+                "dbcache": true,
+                "num_images": 1,
+                "width": 1024,
+                "height": 1024,
+                "max_concurrency": 1,
+                "num_inference_steps": 40,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 11040,
+                        "end_to_end_latency_ms": 11040,
+                        "tput_user": 0.0906
+                    }
+                }
+            },
+            {
+                "_comment": "Requirement with DBCache step caching (F1B0, threshold 0.12, 8 warmup steps, at most 3 cached in a row): one H200 (the only cache-dit column; no multi-GPU one), FlashAttention 3: 2 input images edited to 1024x1024 (40 steps, true CFG) in 18.88 s end to end, median of 3. Applies to a deployment whose spec declares the cache on; listed before the uncached entries, which apply to any deployment.",
+                "dbcache": true,
+                "num_images": 2,
+                "width": 1024,
+                "height": 1024,
+                "max_concurrency": 1,
+                "num_inference_steps": 40,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 18880,
+                        "end_to_end_latency_ms": 18880,
+                        "tput_user": 0.053
+                    }
+                }
+            },
+            {
+                "_comment": "Requirement with DBCache step caching (F1B0, threshold 0.12, 8 warmup steps, at most 3 cached in a row): one H200 (the only cache-dit column; no multi-GPU one), FlashAttention 3: 3 input images edited to 1024x1024 (40 steps, true CFG) in 26.61 s end to end, median of 3. Applies to a deployment whose spec declares the cache on; listed before the uncached entries, which apply to any deployment.",
+                "dbcache": true,
+                "num_images": 3,
+                "width": 1024,
+                "height": 1024,
+                "max_concurrency": 1,
+                "num_inference_steps": 40,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 26610,
+                        "end_to_end_latency_ms": 26610,
+                        "tput_user": 0.0376
+                    }
+                }
+            },
+            {
+                "_comment": "Requirement: 8x H100 with Ulysses sequence parallelism, no cache-dit, FlashAttention 3: 1 input image edited to 1024x1024 (40 steps, true CFG) in 11.32 s end to end, median of 3. The benchmark sends that many inputs; tput_user is images per second.",
+                "num_images": 1,
+                "width": 1024,
+                "height": 1024,
+                "max_concurrency": 1,
+                "num_inference_steps": 40,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 11320,
+                        "end_to_end_latency_ms": 11320,
+                        "tput_user": 0.0883
+                    }
+                }
+            },
+            {
+                "_comment": "Requirement: 8x H100 with Ulysses sequence parallelism, no cache-dit, FlashAttention 3: 2 input images edited to 1024x1024 (40 steps, true CFG) in 13.4 s end to end, median of 3. The benchmark sends that many inputs; tput_user is images per second.",
+                "num_images": 2,
+                "width": 1024,
+                "height": 1024,
+                "max_concurrency": 1,
+                "num_inference_steps": 40,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 13400,
+                        "end_to_end_latency_ms": 13400,
+                        "tput_user": 0.0746
+                    }
+                }
+            },
+            {
+                "_comment": "Requirement: 8x H100 with Ulysses sequence parallelism, no cache-dit, FlashAttention 3: 3 input images edited to 1024x1024 (40 steps, true CFG) in 14.06 s end to end, median of 3. The benchmark sends that many inputs; tput_user is images per second.",
+                "num_images": 3,
+                "width": 1024,
+                "height": 1024,
+                "max_concurrency": 1,
+                "num_inference_steps": 40,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 14060,
+                        "end_to_end_latency_ms": 14060,
+                        "tput_user": 0.0711
+                    }
+                }
+            }
+        ]
+    },
+    "ideogram-ai/ideogram-4": {
+        "blackhole_galaxy": [
+            {
+                "_comment": "Requirement: one H200 (the only GPU reference; no multi-GPU one), Ideogram's code, fp8 weights with bf16 math, compiled, cuDNN attention, no cache-dit: one 2048x2048 image at V4_DEFAULT_20 (20 steps, CFG) in 50.46 s end to end, median of 3. tput_user is images per second.",
+                "preset": "V4_DEFAULT_20",
+                "width": 2048,
+                "height": 2048,
+                "max_concurrency": 1,
+                "num_inference_steps": 20,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 50460,
+                        "end_to_end_latency_ms": 50460,
+                        "tput_user": 0.0198
+                    }
+                }
+            },
+            {
+                "_comment": "Requirement: one H200 (the only GPU reference; no multi-GPU one), Ideogram's code, fp8 weights with bf16 math, compiled, cuDNN attention, no cache-dit: one 2048x2048 image at V4_QUALITY_48 (48 steps, CFG) in 119.35 s end to end, median of 3. tput_user is images per second.",
+                "preset": "V4_QUALITY_48",
+                "width": 2048,
+                "height": 2048,
+                "max_concurrency": 1,
+                "num_inference_steps": 48,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 119350,
+                        "end_to_end_latency_ms": 119350,
+                        "tput_user": 0.0084
+                    }
+                }
+            }
+        ]
+    },
+    "black-forest-labs/FLUX.2-klein-4B": {
+        "blackhole_galaxy": [
+            {
+                "_comment": "Requirement: one H200 (the only GPU column covering every configuration; no multi-GPU one), FlashAttention 3, no cache-dit (the 4 steps fall inside its warmup): 1024x1024 with no input image, 4 steps, no CFG, prompt padded to 512 tokens, in 0.35 s end to end, median of 3. tput_user is images per second.",
+                "num_images": 0,
+                "width": 1024,
+                "height": 1024,
+                "max_concurrency": 1,
+                "num_inference_steps": 4,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 350,
+                        "end_to_end_latency_ms": 350,
+                        "tput_user": 2.8571
+                    }
+                }
+            },
+            {
+                "_comment": "Requirement: one H200 (the only GPU column covering every configuration; no multi-GPU one), FlashAttention 3, no cache-dit (the 4 steps fall inside its warmup): 1024x1024 with 1 input image, 4 steps, no CFG, prompt padded to 512 tokens, in 0.7 s end to end, median of 3. tput_user is images per second.",
+                "num_images": 1,
+                "width": 1024,
+                "height": 1024,
+                "max_concurrency": 1,
+                "num_inference_steps": 4,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 700,
+                        "end_to_end_latency_ms": 700,
+                        "tput_user": 1.4286
+                    }
+                }
+            },
+            {
+                "_comment": "Requirement: one H200 (the only GPU column covering every configuration; no multi-GPU one), FlashAttention 3, no cache-dit (the 4 steps fall inside its warmup): 1024x1024 with 2 input images, 4 steps, no CFG, prompt padded to 512 tokens, in 1.11 s end to end, median of 3. tput_user is images per second.",
+                "num_images": 2,
+                "width": 1024,
+                "height": 1024,
+                "max_concurrency": 1,
+                "num_inference_steps": 4,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 1110,
+                        "end_to_end_latency_ms": 1110,
+                        "tput_user": 0.9009
+                    }
+                }
+            },
+            {
+                "_comment": "Requirement: one H200 (the only GPU column covering every configuration; no multi-GPU one), FlashAttention 3, no cache-dit (the 4 steps fall inside its warmup): 1024x1024 with 3 input images, 4 steps, no CFG, prompt padded to 512 tokens, in 1.59 s end to end, median of 3. tput_user is images per second.",
+                "num_images": 3,
+                "width": 1024,
+                "height": 1024,
+                "max_concurrency": 1,
+                "num_inference_steps": 4,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 1590,
+                        "end_to_end_latency_ms": 1590,
+                        "tput_user": 0.6289
+                    }
+                }
+            },
+            {
+                "_comment": "Requirement: one H200 (the only GPU column covering every configuration; no multi-GPU one), FlashAttention 3, no cache-dit (the 4 steps fall inside its warmup): 2048x2048 with no input image, 4 steps, no CFG, prompt padded to 512 tokens, in 1.69 s end to end, median of 3. tput_user is images per second.",
+                "num_images": 0,
+                "width": 2048,
+                "height": 2048,
+                "max_concurrency": 1,
+                "num_inference_steps": 4,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 1690,
+                        "end_to_end_latency_ms": 1690,
+                        "tput_user": 0.5917
+                    }
+                }
+            },
+            {
+                "_comment": "Requirement: one H200 (the only GPU column covering every configuration; no multi-GPU one), FlashAttention 3, no cache-dit (the 4 steps fall inside its warmup): 2048x2048 with 1 input image, 4 steps, no CFG, prompt padded to 512 tokens, in 2.19 s end to end, median of 3. tput_user is images per second.",
+                "num_images": 1,
+                "width": 2048,
+                "height": 2048,
+                "max_concurrency": 1,
+                "num_inference_steps": 4,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 2190,
+                        "end_to_end_latency_ms": 2190,
+                        "tput_user": 0.4566
+                    }
+                }
+            },
+            {
+                "_comment": "Requirement: one H200 (the only GPU column covering every configuration; no multi-GPU one), FlashAttention 3, no cache-dit (the 4 steps fall inside its warmup): 2048x2048 with 2 input images, 4 steps, no CFG, prompt padded to 512 tokens, in 2.8 s end to end, median of 3. tput_user is images per second.",
+                "num_images": 2,
+                "width": 2048,
+                "height": 2048,
+                "max_concurrency": 1,
+                "num_inference_steps": 4,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 2800,
+                        "end_to_end_latency_ms": 2800,
+                        "tput_user": 0.3571
+                    }
+                }
+            },
+            {
+                "_comment": "Requirement: one H200 (the only GPU column covering every configuration; no multi-GPU one), FlashAttention 3, no cache-dit (the 4 steps fall inside its warmup): 2048x2048 with 3 input images, 4 steps, no CFG, prompt padded to 512 tokens, in 3.48 s end to end, median of 3. tput_user is images per second.",
+                "num_images": 3,
+                "width": 2048,
+                "height": 2048,
+                "max_concurrency": 1,
+                "num_inference_steps": 4,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 3480,
+                        "end_to_end_latency_ms": 3480,
+                        "tput_user": 0.2874
+                    }
+                }
+            }
+        ]
+    },
+    "black-forest-labs/flux-3-image-klein": {
+        "blackhole_galaxy": [
+            {
+                "_comment": "Requirement with DBCache step caching (F4B0, threshold 0.30): one H200 (the H100 cache-dit column is empty; no multi-GPU one), BF16, FlashAttention 3: 1024x1024 with no input image (each about 1 MP), 16 steps, no CFG, prompt already upsampled, in 1.04 s end to end, median of 3. Applies to a deployment whose spec declares the cache on; listed before the uncached entries, which apply to any deployment.",
+                "dbcache": true,
+                "num_images": 0,
+                "width": 1024,
+                "height": 1024,
+                "max_concurrency": 1,
+                "num_inference_steps": 16,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 1040,
+                        "end_to_end_latency_ms": 1040,
+                        "tput_user": 0.9615
+                    }
+                }
+            },
+            {
+                "_comment": "Requirement with DBCache step caching (F4B0, threshold 0.30): one H200 (the H100 cache-dit column is empty; no multi-GPU one), BF16, FlashAttention 3: 1024x1024 with 1 input image (each about 1 MP), 16 steps, no CFG, prompt already upsampled, in 1.91 s end to end, median of 3. Applies to a deployment whose spec declares the cache on; listed before the uncached entries, which apply to any deployment.",
+                "dbcache": true,
+                "num_images": 1,
+                "width": 1024,
+                "height": 1024,
+                "max_concurrency": 1,
+                "num_inference_steps": 16,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 1910,
+                        "end_to_end_latency_ms": 1910,
+                        "tput_user": 0.5236
+                    }
+                }
+            },
+            {
+                "_comment": "Requirement with DBCache step caching (F4B0, threshold 0.30): one H200 (the H100 cache-dit column is empty; no multi-GPU one), BF16, FlashAttention 3: 1024x1024 with 2 input images (each about 1 MP), 16 steps, no CFG, prompt already upsampled, in 2.95 s end to end, median of 3. Applies to a deployment whose spec declares the cache on; listed before the uncached entries, which apply to any deployment.",
+                "dbcache": true,
+                "num_images": 2,
+                "width": 1024,
+                "height": 1024,
+                "max_concurrency": 1,
+                "num_inference_steps": 16,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 2950,
+                        "end_to_end_latency_ms": 2950,
+                        "tput_user": 0.339
+                    }
+                }
+            },
+            {
+                "_comment": "Requirement with DBCache step caching (F4B0, threshold 0.30): one H200 (the H100 cache-dit column is empty; no multi-GPU one), BF16, FlashAttention 3: 1024x1024 with 4 input images (each about 1 MP), 16 steps, no CFG, prompt already upsampled, in 5.5 s end to end, median of 3. Applies to a deployment whose spec declares the cache on; listed before the uncached entries, which apply to any deployment.",
+                "dbcache": true,
+                "num_images": 4,
+                "width": 1024,
+                "height": 1024,
+                "max_concurrency": 1,
+                "num_inference_steps": 16,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 5500,
+                        "end_to_end_latency_ms": 5500,
+                        "tput_user": 0.1818
+                    }
+                }
+            },
+            {
+                "_comment": "Requirement with DBCache step caching (F4B0, threshold 0.30): one H200 (the H100 cache-dit column is empty; no multi-GPU one), BF16, FlashAttention 3: 1024x1024 with 10 input images (each about 1 MP), 16 steps, no CFG, prompt already upsampled, in 18.34 s end to end, median of 3. Applies to a deployment whose spec declares the cache on; listed before the uncached entries, which apply to any deployment.",
+                "dbcache": true,
+                "num_images": 10,
+                "width": 1024,
+                "height": 1024,
+                "max_concurrency": 1,
+                "num_inference_steps": 16,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 18340,
+                        "end_to_end_latency_ms": 18340,
+                        "tput_user": 0.0545
+                    }
+                }
+            },
+            {
+                "_comment": "Requirement with DBCache step caching (F4B0, threshold 0.30): one H200 (the H100 cache-dit column is empty; no multi-GPU one), BF16, FlashAttention 3: 2048x2048 with no input image (each about 1 MP), 16 steps, no CFG, prompt already upsampled, in 5.47 s end to end, median of 3. Applies to a deployment whose spec declares the cache on; listed before the uncached entries, which apply to any deployment.",
+                "dbcache": true,
+                "num_images": 0,
+                "width": 2048,
+                "height": 2048,
+                "max_concurrency": 1,
+                "num_inference_steps": 16,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 5470,
+                        "end_to_end_latency_ms": 5470,
+                        "tput_user": 0.1828
+                    }
+                }
+            },
+            {
+                "_comment": "Requirement with DBCache step caching (F4B0, threshold 0.30): one H200 (the H100 cache-dit column is empty; no multi-GPU one), BF16, FlashAttention 3: 2048x2048 with 1 input image (each about 1 MP), 16 steps, no CFG, prompt already upsampled, in 6.26 s end to end, median of 3. Applies to a deployment whose spec declares the cache on; listed before the uncached entries, which apply to any deployment.",
+                "dbcache": true,
+                "num_images": 1,
+                "width": 2048,
+                "height": 2048,
+                "max_concurrency": 1,
+                "num_inference_steps": 16,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 6260,
+                        "end_to_end_latency_ms": 6260,
+                        "tput_user": 0.1597
+                    }
+                }
+            },
+            {
+                "_comment": "Requirement with DBCache step caching (F4B0, threshold 0.30): one H200 (the H100 cache-dit column is empty; no multi-GPU one), BF16, FlashAttention 3: 2048x2048 with 2 input images (each about 1 MP), 16 steps, no CFG, prompt already upsampled, in 8.14 s end to end, median of 3. Applies to a deployment whose spec declares the cache on; listed before the uncached entries, which apply to any deployment.",
+                "dbcache": true,
+                "num_images": 2,
+                "width": 2048,
+                "height": 2048,
+                "max_concurrency": 1,
+                "num_inference_steps": 16,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 8140,
+                        "end_to_end_latency_ms": 8140,
+                        "tput_user": 0.1229
+                    }
+                }
+            },
+            {
+                "_comment": "Requirement with DBCache step caching (F4B0, threshold 0.30): one H200 (the H100 cache-dit column is empty; no multi-GPU one), BF16, FlashAttention 3: 2048x2048 with 4 input images (each about 1 MP), 16 steps, no CFG, prompt already upsampled, in 11.66 s end to end, median of 3. Applies to a deployment whose spec declares the cache on; listed before the uncached entries, which apply to any deployment.",
+                "dbcache": true,
+                "num_images": 4,
+                "width": 2048,
+                "height": 2048,
+                "max_concurrency": 1,
+                "num_inference_steps": 16,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 11660,
+                        "end_to_end_latency_ms": 11660,
+                        "tput_user": 0.0858
+                    }
+                }
+            },
+            {
+                "_comment": "Requirement with DBCache step caching (F4B0, threshold 0.30): one H200 (the H100 cache-dit column is empty; no multi-GPU one), BF16, FlashAttention 3: 2048x2048 with 10 input images (each about 1 MP), 16 steps, no CFG, prompt already upsampled, in 26.49 s end to end, median of 3. Applies to a deployment whose spec declares the cache on; listed before the uncached entries, which apply to any deployment.",
+                "dbcache": true,
+                "num_images": 10,
+                "width": 2048,
+                "height": 2048,
+                "max_concurrency": 1,
+                "num_inference_steps": 16,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 26490,
+                        "end_to_end_latency_ms": 26490,
+                        "tput_user": 0.0378
+                    }
+                }
+            },
+            {
+                "_comment": "Requirement with DBCache step caching (F4B0, threshold 0.30): one H200 (the H100 cache-dit column is empty; no multi-GPU one), BF16, FlashAttention 3: 4096x4096 with no input image (each about 1 MP), 16 steps, no CFG, prompt already upsampled, in 46.87 s end to end, median of 3. Applies to a deployment whose spec declares the cache on; listed before the uncached entries, which apply to any deployment.",
+                "dbcache": true,
+                "num_images": 0,
+                "width": 4096,
+                "height": 4096,
+                "max_concurrency": 1,
+                "num_inference_steps": 16,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 46870,
+                        "end_to_end_latency_ms": 46870,
+                        "tput_user": 0.0213
+                    }
+                }
+            },
+            {
+                "_comment": "Requirement with DBCache step caching (F4B0, threshold 0.30): one H200 (the H100 cache-dit column is empty; no multi-GPU one), BF16, FlashAttention 3: 4096x4096 with 1 input image (each about 1 MP), 16 steps, no CFG, prompt already upsampled, in 47.12 s end to end, median of 3. Applies to a deployment whose spec declares the cache on; listed before the uncached entries, which apply to any deployment.",
+                "dbcache": true,
+                "num_images": 1,
+                "width": 4096,
+                "height": 4096,
+                "max_concurrency": 1,
+                "num_inference_steps": 16,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 47120,
+                        "end_to_end_latency_ms": 47120,
+                        "tput_user": 0.0212
+                    }
+                }
+            },
+            {
+                "_comment": "Requirement with DBCache step caching (F4B0, threshold 0.30): one H200 (the H100 cache-dit column is empty; no multi-GPU one), BF16, FlashAttention 3: 4096x4096 with 2 input images (each about 1 MP), 16 steps, no CFG, prompt already upsampled, in 52.22 s end to end, median of 3. Applies to a deployment whose spec declares the cache on; listed before the uncached entries, which apply to any deployment.",
+                "dbcache": true,
+                "num_images": 2,
+                "width": 4096,
+                "height": 4096,
+                "max_concurrency": 1,
+                "num_inference_steps": 16,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 52220,
+                        "end_to_end_latency_ms": 52220,
+                        "tput_user": 0.0191
+                    }
+                }
+            },
+            {
+                "_comment": "Requirement with DBCache step caching (F4B0, threshold 0.30): one H200 (the H100 cache-dit column is empty; no multi-GPU one), BF16, FlashAttention 3: 4096x4096 with 4 input images (each about 1 MP), 16 steps, no CFG, prompt already upsampled, in 55.55 s end to end, median of 3. Applies to a deployment whose spec declares the cache on; listed before the uncached entries, which apply to any deployment.",
+                "dbcache": true,
+                "num_images": 4,
+                "width": 4096,
+                "height": 4096,
+                "max_concurrency": 1,
+                "num_inference_steps": 16,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 55550,
+                        "end_to_end_latency_ms": 55550,
+                        "tput_user": 0.018
+                    }
+                }
+            },
+            {
+                "_comment": "Requirement with DBCache step caching (F4B0, threshold 0.30): one H200 (the H100 cache-dit column is empty; no multi-GPU one), BF16, FlashAttention 3: 4096x4096 with 10 input images (each about 1 MP), 16 steps, no CFG, prompt already upsampled, in 84.03 s end to end, median of 3. Applies to a deployment whose spec declares the cache on; listed before the uncached entries, which apply to any deployment.",
+                "dbcache": true,
+                "num_images": 10,
+                "width": 4096,
+                "height": 4096,
+                "max_concurrency": 1,
+                "num_inference_steps": 16,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 84030,
+                        "end_to_end_latency_ms": 84030,
+                        "tput_user": 0.0119
+                    }
+                }
+            },
+            {
+                "_comment": "Requirement: 8x H100 with Ulysses sequence parallelism, BF16, no cache-dit: 1024x1024 with no input image (each about 1 MP), 16 steps, no CFG, prompt already upsampled (the upsampler is not timed), in 1.23 s end to end, median of 3. tput_user is images per second.",
+                "num_images": 0,
+                "width": 1024,
+                "height": 1024,
+                "max_concurrency": 1,
+                "num_inference_steps": 16,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 1230,
+                        "end_to_end_latency_ms": 1230,
+                        "tput_user": 0.813
+                    }
+                }
+            },
+            {
+                "_comment": "Requirement: 8x H100 with Ulysses sequence parallelism, BF16, no cache-dit: 1024x1024 with 1 input image (each about 1 MP), 16 steps, no CFG, prompt already upsampled (the upsampler is not timed), in 1.63 s end to end, median of 3. tput_user is images per second.",
+                "num_images": 1,
+                "width": 1024,
+                "height": 1024,
+                "max_concurrency": 1,
+                "num_inference_steps": 16,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 1630,
+                        "end_to_end_latency_ms": 1630,
+                        "tput_user": 0.6135
+                    }
+                }
+            },
+            {
+                "_comment": "Requirement: 8x H100 with Ulysses sequence parallelism, BF16, no cache-dit: 1024x1024 with 2 input images (each about 1 MP), 16 steps, no CFG, prompt already upsampled (the upsampler is not timed), in 2.11 s end to end, median of 3. tput_user is images per second.",
+                "num_images": 2,
+                "width": 1024,
+                "height": 1024,
+                "max_concurrency": 1,
+                "num_inference_steps": 16,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 2110,
+                        "end_to_end_latency_ms": 2110,
+                        "tput_user": 0.4739
+                    }
+                }
+            },
+            {
+                "_comment": "Requirement: 8x H100 with Ulysses sequence parallelism, BF16, no cache-dit: 1024x1024 with 4 input images (each about 1 MP), 16 steps, no CFG, prompt already upsampled (the upsampler is not timed), in 2.63 s end to end, median of 3. tput_user is images per second.",
+                "num_images": 4,
+                "width": 1024,
+                "height": 1024,
+                "max_concurrency": 1,
+                "num_inference_steps": 16,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 2630,
+                        "end_to_end_latency_ms": 2630,
+                        "tput_user": 0.3802
+                    }
+                }
+            },
+            {
+                "_comment": "Requirement: 8x H100 with Ulysses sequence parallelism, BF16, no cache-dit: 1024x1024 with 10 input images (each about 1 MP), 16 steps, no CFG, prompt already upsampled (the upsampler is not timed), in 6.91 s end to end, median of 3. tput_user is images per second.",
+                "num_images": 10,
+                "width": 1024,
+                "height": 1024,
+                "max_concurrency": 1,
+                "num_inference_steps": 16,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 6910,
+                        "end_to_end_latency_ms": 6910,
+                        "tput_user": 0.1447
+                    }
+                }
+            },
+            {
+                "_comment": "Requirement: 8x H100 with Ulysses sequence parallelism, BF16, no cache-dit: 2048x2048 with no input image (each about 1 MP), 16 steps, no CFG, prompt already upsampled (the upsampler is not timed), in 1.81 s end to end, median of 3. tput_user is images per second.",
+                "num_images": 0,
+                "width": 2048,
+                "height": 2048,
+                "max_concurrency": 1,
+                "num_inference_steps": 16,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 1810,
+                        "end_to_end_latency_ms": 1810,
+                        "tput_user": 0.5525
+                    }
+                }
+            },
+            {
+                "_comment": "Requirement: 8x H100 with Ulysses sequence parallelism, BF16, no cache-dit: 2048x2048 with 1 input image (each about 1 MP), 16 steps, no CFG, prompt already upsampled (the upsampler is not timed), in 2.24 s end to end, median of 3. tput_user is images per second.",
+                "num_images": 1,
+                "width": 2048,
+                "height": 2048,
+                "max_concurrency": 1,
+                "num_inference_steps": 16,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 2240,
+                        "end_to_end_latency_ms": 2240,
+                        "tput_user": 0.4464
+                    }
+                }
+            },
+            {
+                "_comment": "Requirement: 8x H100 with Ulysses sequence parallelism, BF16, no cache-dit: 2048x2048 with 2 input images (each about 1 MP), 16 steps, no CFG, prompt already upsampled (the upsampler is not timed), in 2.87 s end to end, median of 3. tput_user is images per second.",
+                "num_images": 2,
+                "width": 2048,
+                "height": 2048,
+                "max_concurrency": 1,
+                "num_inference_steps": 16,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 2870,
+                        "end_to_end_latency_ms": 2870,
+                        "tput_user": 0.3484
+                    }
+                }
+            },
+            {
+                "_comment": "Requirement: 8x H100 with Ulysses sequence parallelism, BF16, no cache-dit: 2048x2048 with 4 input images (each about 1 MP), 16 steps, no CFG, prompt already upsampled (the upsampler is not timed), in 4.1 s end to end, median of 3. tput_user is images per second.",
+                "num_images": 4,
+                "width": 2048,
+                "height": 2048,
+                "max_concurrency": 1,
+                "num_inference_steps": 16,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 4100,
+                        "end_to_end_latency_ms": 4100,
+                        "tput_user": 0.2439
+                    }
+                }
+            },
+            {
+                "_comment": "Requirement: 8x H100 with Ulysses sequence parallelism, BF16, no cache-dit: 2048x2048 with 10 input images (each about 1 MP), 16 steps, no CFG, prompt already upsampled (the upsampler is not timed), in 9.42 s end to end, median of 3. tput_user is images per second.",
+                "num_images": 10,
+                "width": 2048,
+                "height": 2048,
+                "max_concurrency": 1,
+                "num_inference_steps": 16,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 9420,
+                        "end_to_end_latency_ms": 9420,
+                        "tput_user": 0.1062
+                    }
+                }
+            },
+            {
+                "_comment": "Requirement: 8x H100 with Ulysses sequence parallelism, BF16, no cache-dit: 4096x4096 with no input image (each about 1 MP), 16 steps, no CFG, prompt already upsampled (the upsampler is not timed), in 12.15 s end to end, median of 3. tput_user is images per second.",
+                "num_images": 0,
+                "width": 4096,
+                "height": 4096,
+                "max_concurrency": 1,
+                "num_inference_steps": 16,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 12150,
+                        "end_to_end_latency_ms": 12150,
+                        "tput_user": 0.0823
+                    }
+                }
+            },
+            {
+                "_comment": "Requirement: 8x H100 with Ulysses sequence parallelism, BF16, no cache-dit: 4096x4096 with 1 input image (each about 1 MP), 16 steps, no CFG, prompt already upsampled (the upsampler is not timed), in 12.94 s end to end, median of 3. tput_user is images per second.",
+                "num_images": 1,
+                "width": 4096,
+                "height": 4096,
+                "max_concurrency": 1,
+                "num_inference_steps": 16,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 12940,
+                        "end_to_end_latency_ms": 12940,
+                        "tput_user": 0.0773
+                    }
+                }
+            },
+            {
+                "_comment": "Requirement: 8x H100 with Ulysses sequence parallelism, BF16, no cache-dit: 4096x4096 with 2 input images (each about 1 MP), 16 steps, no CFG, prompt already upsampled (the upsampler is not timed), in 14.13 s end to end, median of 3. tput_user is images per second.",
+                "num_images": 2,
+                "width": 4096,
+                "height": 4096,
+                "max_concurrency": 1,
+                "num_inference_steps": 16,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 14130,
+                        "end_to_end_latency_ms": 14130,
+                        "tput_user": 0.0708
+                    }
+                }
+            },
+            {
+                "_comment": "Requirement: 8x H100 with Ulysses sequence parallelism, BF16, no cache-dit: 4096x4096 with 4 input images (each about 1 MP), 16 steps, no CFG, prompt already upsampled (the upsampler is not timed), in 16.02 s end to end, median of 3. tput_user is images per second.",
+                "num_images": 4,
+                "width": 4096,
+                "height": 4096,
+                "max_concurrency": 1,
+                "num_inference_steps": 16,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 16020,
+                        "end_to_end_latency_ms": 16020,
+                        "tput_user": 0.0624
+                    }
+                }
+            },
+            {
+                "_comment": "Requirement: 8x H100 with Ulysses sequence parallelism, BF16, no cache-dit: 4096x4096 with 10 input images (each about 1 MP), 16 steps, no CFG, prompt already upsampled (the upsampler is not timed), in 23.3 s end to end, median of 3. tput_user is images per second.",
+                "num_images": 10,
+                "width": 4096,
+                "height": 4096,
+                "max_concurrency": 1,
+                "num_inference_steps": 16,
+                "task_type": "image",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 23300,
+                        "end_to_end_latency_ms": 23300,
+                        "tput_user": 0.0429
+                    }
+                }
+            }
+        ]
+    },
     "black-forest-labs/FLUX.1-dev": {
         "t3k": [
             {

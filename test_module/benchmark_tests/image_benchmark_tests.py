@@ -460,6 +460,13 @@ def run_image_benchmark(ctx: MediaContext) -> Block:
     )
 
     runner_in_use = require_health(ctx)
+    from .generation_image_benchmark import (
+        run_generation_image_benchmark,
+        serves_generation_benchmark,
+    )
+
+    if serves_generation_benchmark(runner_in_use):
+        return run_generation_image_benchmark(ctx, runner_in_use)
 
     try:
         num_calls = get_num_calls(ctx)

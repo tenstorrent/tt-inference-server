@@ -10,7 +10,11 @@
       "black-forest-labs/FLUX.1-dev",
       "black-forest-labs/FLUX.1-schnell",
       "Motif-Technologies/Motif-Image-6B-Preview",
-      "Tongyi-MAI/Z-Image-Turbo"
+      "Tongyi-MAI/Z-Image-Turbo",
+      "black-forest-labs/FLUX.2-klein-4B",
+      "black-forest-labs/flux-3-image-klein",
+      "Qwen/Qwen-Image-Edit-2511",
+      "ideogram-ai/ideogram-4"
     ],
     "AUDIO": [
       "distil-whisper/distil-large-v3",
@@ -161,6 +165,10 @@
       "mochi": "Mochi video generation model tests",
       "mobilenetv2": "MobileNetV2 CNN model tests",
       "bge_m3": "BGE-M3 embedding model tests",
+      "flux2_klein": "FLUX.2 klein 4B generation API tests",
+      "flux3_klein": "FLUX 3 Image klein generation API tests",
+      "qwen_image_edit": "Qwen-Image-Edit-2511 generation API tests",
+      "ideogram4": "Ideogram 4 generation API tests",
       "ltx_distilled": "LTX-2.3 22B distilled generation API tests",
       "minimax_h3_fl2va_lightx2v": "MiniMax-H3 FL2VA LightX2V generation API tests",
       "minimax_h3_ref2va_lightx2v": "MiniMax-H3 Ref2VA LightX2V generation API tests",
@@ -1107,6 +1115,46 @@
         "IFM/K2-Horizon-7B"
       ]
     },
+    "flux2_klein": {
+      "id_name": "flux2-klein",
+      "weights": [
+        "black-forest-labs/FLUX.2-klein-4B"
+      ],
+      "category": "IMAGE",
+      "compatible_devices": [
+        "blackhole_galaxy"
+      ]
+    },
+    "flux3_klein": {
+      "id_name": "flux3-klein",
+      "weights": [
+        "black-forest-labs/flux-3-image-klein"
+      ],
+      "category": "IMAGE",
+      "compatible_devices": [
+        "blackhole_galaxy"
+      ]
+    },
+    "qwen_image_edit": {
+      "id_name": "qwen-image-edit",
+      "weights": [
+        "Qwen/Qwen-Image-Edit-2511"
+      ],
+      "category": "IMAGE",
+      "compatible_devices": [
+        "blackhole_galaxy"
+      ]
+    },
+    "ideogram4": {
+      "id_name": "ideogram4",
+      "weights": [
+        "ideogram-ai/ideogram-4"
+      ],
+      "category": "IMAGE",
+      "compatible_devices": [
+        "blackhole_galaxy"
+      ]
+    },
     "ltx_distilled": {
       "id_name": "ltx-distilled",
       "weights": [
@@ -1696,6 +1744,52 @@
         "verify_loops": 1,
         "pass_rate_threshold": 1.0,
         "non_blocking": false
+      }
+    },
+    "ImageGenerationAPIContractTest": {
+      "module": "test_module.load_param_tests.image_generation_api_contract_test",
+      "markers": [
+        "param",
+        "e2e",
+        "fast"
+      ],
+      "test_config": {
+        "test_timeout": 300,
+        "retry_attempts": 0,
+        "retry_delay": 0,
+        "break_on_failure": false,
+        "mock_mode": false
+      }
+    },
+    "ImageGenerationAPITest": {
+      "module": "test_module.load_param_tests.image_generation_api_test",
+      "markers": [
+        "e2e",
+        "slow",
+        "heavy"
+      ],
+      "test_config": {
+        "test_timeout": 1800,
+        "retry_attempts": 1,
+        "retry_delay": 60,
+        "break_on_failure": false,
+        "mock_mode": false
+      }
+    },
+    "ImageGenerationAPIParamTest": {
+      "module": "test_module.load_param_tests.image_generation_api_param_test",
+      "markers": [
+        "param",
+        "e2e",
+        "slow",
+        "heavy"
+      ],
+      "test_config": {
+        "test_timeout": 7200,
+        "retry_attempts": 0,
+        "retry_delay": 0,
+        "break_on_failure": false,
+        "mock_mode": false
       }
     },
     "VideoGenerationAPIContractTest": {
