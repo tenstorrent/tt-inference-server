@@ -124,3 +124,46 @@ def test_scrape_reads_the_body_of_a_server_with_metrics(monkeypatch):
     snapshot = sm.scrape_video_metrics("http://localhost:8000")
     assert seen["url"] == "http://localhost:8000/metrics"
     assert snapshot[("tt_video_queue_wait_seconds_count", "")] == 4
+
+
+PYTHON_AFTER = """\
+tt_media_server_video_generation_duration_seconds_bucket{status="success",le="120"} 0
+tt_media_server_video_generation_duration_seconds_bucket{status="success",le="+Inf"} 2
+tt_media_server_video_generation_duration_seconds_sum{status="success"} 260
+tt_media_server_video_generation_duration_seconds_count{status="success"} 2
+tt_media_server_video_generation_duration_seconds_count{status="failed"} 1
+tt_media_server_video_denoise_duration_seconds_bucket{le="+Inf"} 2
+tt_media_server_video_denoise_duration_seconds_sum 230
+tt_media_server_video_denoise_duration_seconds_count 2
+tt_media_server_video_vae_decode_duration_seconds_bucket{le="+Inf"} 2
+tt_media_server_video_vae_decode_duration_seconds_sum 24
+tt_media_server_video_vae_decode_duration_seconds_count 2
+"""
+
+CPP_STAGES = """\
+tt_video_denoise_seconds_bucket{le="+Inf"} 2
+tt_video_denoise_seconds_sum 200
+tt_video_denoise_seconds_count 2
+tt_video_vae_decode_seconds_bucket{le="+Inf"} 2
+tt_video_vae_decode_seconds_sum 20
+tt_video_vae_decode_seconds_count 2
+"""
+
+
+def test_the_python_servers_metrics_are_read_under_the_same_keys():
+    out = sm.server_side_video_metrics(
+        {("tt_media_server_video_generation_duration_seconds_count", "x"): 0.0},
+        sm.parse_video_metrics(PYTHON_AFTER),
+    )
+    assert out["e2e_ok_s"]["n"] == 2  # the failed generation is not counted
+    assert out["e2e_ok_s"]["mean"] == pytest.approx(130.0)
+    assert out["denoise_s"]["mean"] == pytest.approx(115.0)
+    assert out["vae_decode_s"]["mean"] == pytest.approx(12.0)
+    assert "queue_wait_s" not in out  # the Python server has no such series
+
+
+def test_the_cpp_servers_stage_histograms_are_read():
+    before = sm.parse_video_metrics("tt_video_denoise_seconds_count 0")
+    out = sm.server_side_video_metrics(before, sm.parse_video_metrics(CPP_STAGES))
+    assert out["denoise_s"]["mean"] == pytest.approx(100.0)
+    assert out["vae_decode_s"]["mean"] == pytest.approx(10.0)
