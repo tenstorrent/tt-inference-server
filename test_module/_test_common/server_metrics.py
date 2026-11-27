@@ -21,7 +21,8 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-SERIES_PREFIX = "tt_video_"
+# The C++ server exports tt_video_*, the Python media server tt_media_server_video_*.
+SERIES_PREFIXES = ("tt_video_", "tt_media_server_video_")
 _LINE = re.compile(
     r"^([a-zA-Z_:][a-zA-Z0-9_:]*)(\{[^}]*\})?\s+([-+0-9.eE]+|NaN|\+Inf)$"
 )
@@ -31,10 +32,11 @@ Snapshot = dict[tuple[str, str], float]
 
 
 def parse_video_metrics(text: str) -> Snapshot:
-    """``{(name, labels): value}`` of the tt_video_* samples in a /metrics body."""
+    """``{(name, labels): value}`` of the video samples (either server's) in a
+    /metrics body."""
     out: Snapshot = {}
     for line in text.splitlines():
-        if not line.startswith(SERIES_PREFIX):
+        if not line.startswith(SERIES_PREFIXES):
             continue
         match = _LINE.match(line.strip())
         if not match:
@@ -47,7 +49,7 @@ def parse_video_metrics(text: str) -> Snapshot:
 
 
 def scrape_video_metrics(base_url: str, timeout: float = 10) -> Snapshot:
-    """The server's tt_video_* samples, or {} when it has no /metrics."""
+    """The server's video samples, or {} when it has no /metrics."""
     try:
         response = requests.get(f"{base_url}/metrics", timeout=timeout)
     except Exception as e:  # noqa: BLE001 - metrics must never fail a benchmark
@@ -110,20 +112,50 @@ def histogram_delta(
     }
 
 
+def _first_with_data(*candidates: dict) -> dict:
+    """The first histogram summary that saw observations ({"n": 0} when none)."""
+    for candidate in candidates:
+        if candidate["n"] > 0:
+            return candidate
+    return {"n": 0}
+
+
 def server_side_video_metrics(before: Snapshot, after: Snapshot) -> dict:
-    """The video histograms of one phase, keyed by what they measure; {} when the
-    server exposes none of them."""
+    """The video histograms of one phase under the same keys for both servers;
+    {} when the server exposes none of them.
+
+    - ``e2e_ok_s``: a whole successful generation (C++ ``tt_video_e2e_seconds``,
+      Python ``video_generation_duration_seconds`` with status success)
+    - ``denoise_s`` and ``vae_decode_s``: the two stages of the generation
+    - ``queue_wait_s``, ``generation_s`` and ``overhead_*_s``: C++ only
+    """
     if not before or not after:
         return {}
+
+    def delta(name: str, labels: str = "") -> dict:
+        return histogram_delta(before, after, name, labels)
+
     result = {
-        "queue_wait_s": histogram_delta(before, after, "tt_video_queue_wait_seconds"),
-        "generation_s": histogram_delta(before, after, "tt_video_generation_seconds"),
-        "e2e_ok_s": histogram_delta(
-            before, after, "tt_video_e2e_seconds", 'outcome="ok"'
+        "queue_wait_s": delta("tt_video_queue_wait_seconds"),
+        "generation_s": delta("tt_video_generation_seconds"),
+        "e2e_ok_s": _first_with_data(
+            delta("tt_video_e2e_seconds", 'outcome="ok"'),
+            delta(
+                "tt_media_server_video_generation_duration_seconds",
+                'status="success"',
+            ),
+        ),
+        "denoise_s": _first_with_data(
+            delta("tt_video_denoise_seconds"),
+            delta("tt_media_server_video_denoise_duration_seconds"),
+        ),
+        "vae_decode_s": _first_with_data(
+            delta("tt_video_vae_decode_seconds"),
+            delta("tt_media_server_video_vae_decode_duration_seconds"),
         ),
     }
     for phase in OVERHEAD_PHASES:
-        result[f"overhead_{phase}_s"] = histogram_delta(
-            before, after, "tt_video_server_overhead_seconds", f'phase="{phase}"'
+        result[f"overhead_{phase}_s"] = delta(
+            "tt_video_server_overhead_seconds", f'phase="{phase}"'
         )
     return {key: value for key, value in result.items() if value["n"] > 0}
