@@ -58,3 +58,42 @@ TEST(VideoStageMetrics, AStageThatWasNotTimedIsSkipped) {
   EXPECT_EQ(sampleOf(after, "tt_video_vae_decode_seconds_count"),
             vaeBefore + 1);
 }
+
+TEST(VideoOutputMetrics, WhatAVideoAddedUpToIsCounted) {
+  auto& metrics = ServerMetrics::instance();
+  const auto read = [&](const std::string& series) {
+    return std::max(0.0, sampleOf("\n" + metrics.renderText(), series));
+  };
+  const double frames = read("tt_video_frames_generated_total");
+  const double steps = read("tt_video_denoise_steps_total");
+  const double bytes = read("tt_video_output_bytes_total");
+  const double seconds = read("tt_video_content_seconds_total");
+  const double fpsSamples = read("tt_video_frames_per_second_count");
+
+  metrics.onVideoOutput(81, 40, 3000000, 5.0625, 125.0);
+
+  EXPECT_EQ(read("tt_video_frames_generated_total"), frames + 81);
+  EXPECT_EQ(read("tt_video_denoise_steps_total"), steps + 40);
+  EXPECT_EQ(read("tt_video_output_bytes_total"), bytes + 3000000);
+  EXPECT_DOUBLE_EQ(read("tt_video_content_seconds_total"), seconds + 5.0625);
+  EXPECT_EQ(read("tt_video_frames_per_second_count"), fpsSamples + 1);
+}
+
+TEST(VideoOutputMetrics, WhatIsNotKnownIsSkipped) {
+  auto& metrics = ServerMetrics::instance();
+  const auto read = [&](const std::string& series) {
+    return std::max(0.0, sampleOf("\n" + metrics.renderText(), series));
+  };
+  const double frames = read("tt_video_frames_generated_total");
+  const double bytes = read("tt_video_output_bytes_total");
+  const double fpsSamples = read("tt_video_frames_per_second_count");
+
+  // no frame count: no frames, no frames per second; the bytes still count
+  metrics.onVideoOutput(std::nullopt, std::nullopt, 1000, std::nullopt, 10.0);
+  // no wall time: the frames count, the rate has no sample
+  metrics.onVideoOutput(10, std::nullopt, std::nullopt, std::nullopt, 0.0);
+
+  EXPECT_EQ(read("tt_video_frames_generated_total"), frames + 10);
+  EXPECT_EQ(read("tt_video_output_bytes_total"), bytes + 1000);
+  EXPECT_EQ(read("tt_video_frames_per_second_count"), fpsSamples);
+}

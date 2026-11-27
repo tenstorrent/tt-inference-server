@@ -112,6 +112,10 @@ struct DiTResult {
   std::vector<std::string> images;
   std::optional<double> denoiseSeconds;
   std::optional<double> vaeSeconds;
+  /** Of a video exported from frames: how many frames it has and how many
+   * seconds it plays. */
+  std::optional<int> frames;
+  std::optional<double> contentSeconds;
 };
 
 /** Wan2.2 I2V rules: at least one image, frame_pos in [-1, numFrames), each

@@ -237,7 +237,13 @@ DiTResult DiTRunner::exportResult(
     out.path = result["path"].cast<std::string>();
   } else if (kind == "frames") {
     py::array frames = contiguous(result["frames"]);
-    out.path = exportMp4(viewOf(frames), model_->fps(request), dir);
+    const ArrayView view = viewOf(frames);
+    const double fps = model_->fps(request);
+    out.path = exportMp4(view, fps, dir);
+    // (batch, frames, H, W, C) or (frames, H, W, C)
+    const size_t first = view.shape.size() == 5 ? 1 : 0;
+    out.frames = static_cast<int>(view.shape[first]);
+    if (fps > 0) out.contentSeconds = *out.frames / fps;
   } else if (kind == "av") {
     py::array frames = contiguous(result["frames"]);
     py::array audio = contiguous(result["audio"]);

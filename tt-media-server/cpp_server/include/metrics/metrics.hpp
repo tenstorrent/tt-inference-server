@@ -176,6 +176,14 @@ class ServerMetrics {
    */
   void onVideoStages(std::optional<double> denoiseSeconds,
                      std::optional<double> vaeDecodeSeconds);
+  /** What one finished video added up to: frames, diffusion steps, mp4 bytes
+   * and seconds of content (a value that is not known is skipped); the frames
+   * per wall-clock second go to a histogram when `generationSeconds` is
+   * positive. */
+  void onVideoOutput(std::optional<int> frames, std::optional<int> steps,
+                     std::optional<uint64_t> bytes,
+                     std::optional<double> contentSeconds,
+                     double generationSeconds);
   /** Jobs currently in the store, by status (queued, in_progress, ...). */
   void setVideoJobs(const std::array<size_t, 6>& byStatus);
   void onVideoSweep(size_t evicted, size_t stuck);
@@ -289,6 +297,11 @@ class ServerMetrics {
   prometheus::Histogram* video_generation_seconds_{nullptr};
   prometheus::Histogram* video_denoise_seconds_{nullptr};
   prometheus::Histogram* video_vae_decode_seconds_{nullptr};
+  prometheus::Counter* video_frames_total_{nullptr};
+  prometheus::Counter* video_steps_total_{nullptr};
+  prometheus::Counter* video_bytes_total_{nullptr};
+  prometheus::Counter* video_content_seconds_total_{nullptr};
+  prometheus::Histogram* video_frames_per_second_{nullptr};
   prometheus::Histogram* video_e2e_ok_seconds_{nullptr};
   prometheus::Histogram* video_e2e_error_seconds_{nullptr};
   prometheus::Counter* video_tasks_ok_{nullptr};

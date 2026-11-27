@@ -7,6 +7,7 @@
 #include <pybind11/embed.h>
 #include <pybind11/stl.h>
 
+#include <chrono>
 #include <cstdlib>
 #include <filesystem>
 #include <stdexcept>
@@ -183,11 +184,21 @@ std::string VideoDeviceRunner::run(
   }
   py::gil_scoped_acquire gil;
   try {
+    const auto started = std::chrono::steady_clock::now();
     const tt::dit::DiTResult result =
         python->runner->generate(tt::runtime::toDiTRequest(request));
+    const double wallSeconds = std::chrono::duration<double>(
+                                   std::chrono::steady_clock::now() - started)
+                                   .count();
     const std::string path = requireMp4(result.path);
-    tt::metrics::ServerMetrics::instance().onVideoStages(result.denoiseSeconds,
-                                                         result.vaeSeconds);
+    auto& metrics = tt::metrics::ServerMetrics::instance();
+    metrics.onVideoStages(result.denoiseSeconds, result.vaeSeconds);
+    std::error_code sizeError;
+    const auto bytes = std::filesystem::file_size(path, sizeError);
+    metrics.onVideoOutput(
+        result.frames, request.numInferenceSteps,
+        sizeError ? std::nullopt : std::optional<uint64_t>(bytes),
+        result.contentSeconds, wallSeconds);
     TT_LOG_INFO("[VideoDevice] task {} wrote {}", request.task_id, path);
     return path;
   } catch (const tt::dit::RequestError& e) {

@@ -283,6 +283,35 @@ ServerMetrics::ServerMetrics() {
                                    .Help("Time of the VAE decode of one video")
                                    .Register(*registry_)
                                    .Add({}, kVideoSeconds);
+  video_frames_total_ = &prometheus::BuildCounter()
+                             .Name("tt_video_frames_generated_total")
+                             .Help("Video frames generated")
+                             .Register(*registry_)
+                             .Add({});
+  video_steps_total_ =
+      &prometheus::BuildCounter()
+           .Name("tt_video_denoise_steps_total")
+           .Help("Diffusion steps carried out for finished videos")
+           .Register(*registry_)
+           .Add({});
+  video_bytes_total_ = &prometheus::BuildCounter()
+                            .Name("tt_video_output_bytes_total")
+                            .Help("Bytes of the mp4 files produced")
+                            .Register(*registry_)
+                            .Add({});
+  video_content_seconds_total_ = &prometheus::BuildCounter()
+                                      .Name("tt_video_content_seconds_total")
+                                      .Help("Seconds of video produced")
+                                      .Register(*registry_)
+                                      .Add({});
+  static const prometheus::Histogram::BucketBoundaries kFramesPerSecond{
+      0.05, 0.1, 0.2, 0.3, 0.5, 0.75, 1, 1.5, 2, 3, 5, 10, 20, 50};
+  video_frames_per_second_ =
+      &prometheus::BuildHistogram()
+           .Name("tt_video_frames_per_second")
+           .Help("Frames generated per wall-clock second of one video")
+           .Register(*registry_)
+           .Add({}, kFramesPerSecond);
   auto* videoE2e =
       &prometheus::BuildHistogram()
            .Name("tt_video_e2e_seconds")
@@ -455,6 +484,25 @@ void ServerMetrics::onVideoStages(std::optional<double> denoiseSeconds,
   }
   if (vaeDecodeSeconds && video_vae_decode_seconds_ != nullptr) {
     video_vae_decode_seconds_->Observe(*vaeDecodeSeconds);
+  }
+}
+
+void ServerMetrics::onVideoOutput(std::optional<int> frames,
+                                  std::optional<int> steps,
+                                  std::optional<uint64_t> bytes,
+                                  std::optional<double> contentSeconds,
+                                  double generationSeconds) {
+  if (video_frames_total_ == nullptr) return;
+  if (frames && *frames > 0) {
+    video_frames_total_->Increment(*frames);
+    if (generationSeconds > 0) {
+      video_frames_per_second_->Observe(*frames / generationSeconds);
+    }
+  }
+  if (steps && *steps > 0) video_steps_total_->Increment(*steps);
+  if (bytes) video_bytes_total_->Increment(static_cast<double>(*bytes));
+  if (contentSeconds && *contentSeconds > 0) {
+    video_content_seconds_total_->Increment(*contentSeconds);
   }
 }
 
