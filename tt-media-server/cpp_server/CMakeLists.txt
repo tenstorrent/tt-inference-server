@@ -1246,6 +1246,15 @@ target_include_directories(video_generate_request_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
+add_executable(video_metrics_test
+    tests/unit/metrics/video_metrics_test.cpp
+    src/metrics/metrics.cpp)
+target_link_libraries(video_metrics_test PRIVATE
+    llm_runner_lib prometheus-cpp::core GTest::gtest_main)
+target_include_directories(video_metrics_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${prometheus-cpp_SOURCE_DIR}/core/include)
+
 add_executable(dit_runner_test
     tests/unit/dit/dit_runner_test.cpp
     src/runtime/dit/dit_types.cpp
@@ -1768,6 +1777,7 @@ gtest_discover_tests(health_controller_test)
 gtest_discover_tests(image_generate_request_test)
 gtest_discover_tests(video_generate_request_test)
 gtest_discover_tests(dit_runner_test)
+gtest_discover_tests(video_metrics_test)
 gtest_discover_tests(embedding_ipc_test)
 gtest_discover_tests(embedding_json_test)
 gtest_discover_tests(mock_embedding_runner_test)

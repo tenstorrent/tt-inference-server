@@ -14,6 +14,7 @@
 #include <system_error>
 #include <utility>
 
+#include "metrics/metrics.hpp"
 #include "runtime/dit/dit_env.hpp"
 #include "runtime/dit/dit_python_runner.hpp"
 #include "runtime/runners/video_python_env.hpp"
@@ -182,8 +183,11 @@ std::string VideoDeviceRunner::run(
   }
   py::gil_scoped_acquire gil;
   try {
-    const std::string path = requireMp4(
-        python->runner->generate(tt::runtime::toDiTRequest(request)).path);
+    const tt::dit::DiTResult result =
+        python->runner->generate(tt::runtime::toDiTRequest(request));
+    const std::string path = requireMp4(result.path);
+    tt::metrics::ServerMetrics::instance().onVideoStages(result.denoiseSeconds,
+                                                         result.vaeSeconds);
     TT_LOG_INFO("[VideoDevice] task {} wrote {}", request.task_id, path);
     return path;
   } catch (const tt::dit::RequestError& e) {

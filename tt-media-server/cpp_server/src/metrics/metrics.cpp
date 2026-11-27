@@ -272,6 +272,17 @@ ServerMetrics::ServerMetrics() {
            .Help("Worker-side time of one video task (as the worker measured)")
            .Register(*registry_)
            .Add({}, kVideoSeconds);
+  video_denoise_seconds_ =
+      &prometheus::BuildHistogram()
+           .Name("tt_video_denoise_seconds")
+           .Help("Time of the diffusion sampling loop of one video")
+           .Register(*registry_)
+           .Add({}, kVideoSeconds);
+  video_vae_decode_seconds_ = &prometheus::BuildHistogram()
+                                   .Name("tt_video_vae_decode_seconds")
+                                   .Help("Time of the VAE decode of one video")
+                                   .Register(*registry_)
+                                   .Add({}, kVideoSeconds);
   auto* videoE2e =
       &prometheus::BuildHistogram()
            .Name("tt_video_e2e_seconds")
@@ -434,6 +445,16 @@ void ServerMetrics::onVideoTaskDone(bool ok, double generationSeconds,
   // A failed task has no generation time worth a sample.
   if (ok && generationSeconds > 0) {
     video_generation_seconds_->Observe(generationSeconds);
+  }
+}
+
+void ServerMetrics::onVideoStages(std::optional<double> denoiseSeconds,
+                                  std::optional<double> vaeDecodeSeconds) {
+  if (denoiseSeconds && video_denoise_seconds_ != nullptr) {
+    video_denoise_seconds_->Observe(*denoiseSeconds);
+  }
+  if (vaeDecodeSeconds && video_vae_decode_seconds_ != nullptr) {
+    video_vae_decode_seconds_->Observe(*vaeDecodeSeconds);
   }
 }
 

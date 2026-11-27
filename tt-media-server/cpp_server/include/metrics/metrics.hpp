@@ -171,6 +171,11 @@ class ServerMetrics {
    *  `e2eSeconds` runs from submit to the result being popped. */
   void onVideoTaskDone(bool ok, double generationSeconds, double e2eSeconds);
   void onVideoOverhead(VideoOverheadPhase phase, double seconds);
+  /** The two stages of one finished generation, as the adapter timed them (the
+   *  sampling loop and the VAE decode); a stage that was not timed is skipped.
+   */
+  void onVideoStages(std::optional<double> denoiseSeconds,
+                     std::optional<double> vaeDecodeSeconds);
   /** Jobs currently in the store, by status (queued, in_progress, ...). */
   void setVideoJobs(const std::array<size_t, 6>& byStatus);
   void onVideoSweep(size_t evicted, size_t stuck);
@@ -282,6 +287,8 @@ class ServerMetrics {
   // --- video service ---------------------------------------------------------
   prometheus::Histogram* video_queue_wait_seconds_{nullptr};
   prometheus::Histogram* video_generation_seconds_{nullptr};
+  prometheus::Histogram* video_denoise_seconds_{nullptr};
+  prometheus::Histogram* video_vae_decode_seconds_{nullptr};
   prometheus::Histogram* video_e2e_ok_seconds_{nullptr};
   prometheus::Histogram* video_e2e_error_seconds_{nullptr};
   prometheus::Counter* video_tasks_ok_{nullptr};
