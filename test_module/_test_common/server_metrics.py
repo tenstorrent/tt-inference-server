@@ -112,6 +112,27 @@ def histogram_delta(
     }
 
 
+# What one video added up to, under the same keys for both servers.
+TOTALS = {
+    "frames": ("frames_generated_total", "frames"),
+    "denoise_steps": ("denoise_steps_total", "steps"),
+    "output_bytes": ("output_bytes_total", "bytes"),
+    "content_seconds": ("content_seconds_total", "seconds"),
+}
+
+
+def counter_delta(before: Snapshot, after: Snapshot, name: str) -> float:
+    """How much the counter ``name`` (summed over its labels) grew between two
+    scrapes; 0 when the server has no such counter."""
+
+    def total(snapshot: Snapshot) -> float:
+        return sum(
+            value for (series, _labels), value in snapshot.items() if series == name
+        )
+
+    return max(0.0, total(after) - total(before))
+
+
 def _first_with_data(*candidates: dict) -> dict:
     """The first histogram summary that saw observations ({"n": 0} when none)."""
     for candidate in candidates:
@@ -127,6 +148,8 @@ def server_side_video_metrics(before: Snapshot, after: Snapshot) -> dict:
     - ``e2e_ok_s``: a whole successful generation (C++ ``tt_video_e2e_seconds``,
       Python ``video_generation_duration_seconds`` with status success)
     - ``denoise_s`` and ``vae_decode_s``: the two stages of the generation
+    - ``frames_per_second``: frames per wall-clock second of one video
+    - ``totals``: frames, denoise steps, output bytes and seconds of content produced
     - ``queue_wait_s``, ``generation_s`` and ``overhead_*_s``: C++ only
     """
     if not before or not after:
@@ -154,8 +177,22 @@ def server_side_video_metrics(before: Snapshot, after: Snapshot) -> dict:
             delta("tt_media_server_video_vae_decode_duration_seconds"),
         ),
     }
+    result["frames_per_second"] = _first_with_data(
+        delta("tt_video_frames_per_second"),
+        delta("tt_media_server_video_frames_per_second"),
+    )
     for phase in OVERHEAD_PHASES:
         result[f"overhead_{phase}_s"] = delta(
             "tt_video_server_overhead_seconds", f'phase="{phase}"'
         )
-    return {key: value for key, value in result.items() if value["n"] > 0}
+    summary: dict = {key: value for key, value in result.items() if value["n"] > 0}
+    totals = {}
+    for key, (counter, _unit) in TOTALS.items():
+        grew = counter_delta(before, after, f"tt_video_{counter}") or counter_delta(
+            before, after, f"tt_media_server_video_{counter}"
+        )
+        if grew > 0:
+            totals[key] = grew
+    if totals:
+        summary["totals"] = totals
+    return summary

@@ -67,3 +67,17 @@ def test_an_older_report_with_ttft_is_compared_with_a_newer_one():
         cmp.benchmarks_of(old), cmp.benchmarks_of(new), ["python", "cpp"], ["a", "b"]
     )
     assert "| whole request s | 127.9 | 125.5 | -1.9 % |" in text
+
+
+def test_the_totals_and_frames_per_second_of_the_server_are_rows():
+    report = _report(
+        server_side={
+            "frames_per_second": {"n": 2, "mean": 0.65},
+            "totals": {"frames": 162, "denoise_steps": 80},
+        }
+    )
+    block = cmp.benchmarks_of(report)
+    text = cmp.table(block, block, ["python", "cpp"], ["a", "b"])
+    assert "| server: frames per second | 0.65 | 0.65 | +0.0 % |" in text
+    assert "| server: frames made | 162 | 162 | +0.0 % |" in text
+    assert "| server: steps made | 80 | 80 | +0.0 % |" in text

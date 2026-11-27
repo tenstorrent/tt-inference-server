@@ -495,7 +495,7 @@ def test_the_benchmark_reports_the_mean_phases_of_the_requests(monkeypatch):
     monkeypatch.setattr(mod, "_video_target_checks", lambda *a: ({}, "n/a"))
     monkeypatch.setattr(mod, "block_id", lambda ctx: "id")
     monkeypatch.setattr(mod, "scrape_video_metrics", lambda base_url: {})
-    monkeypatch.delenv(mod.VIDEO_BENCHMARK_BURST_JOBS_ENV, raising=False)
+    monkeypatch.setenv(mod.VIDEO_BENCHMARK_BURST_JOBS_ENV, "0")
     ctx = _ctx("Wan-AI/Wan2.2-T2V-A14B-Diffusers")
     ctx.base_url = "http://localhost:8000"
     data = mod.run_video_benchmark(ctx).data["Benchmarks"]
@@ -561,15 +561,24 @@ def test_burst_counts_only_successful_jobs(monkeypatch):
     assert out["burst_latency_p50"] == 50.0  # the failed job's 1 s is not counted
 
 
-def test_burst_is_off_unless_the_environment_asks_for_it(monkeypatch):
+def test_burst_has_three_videos_unless_the_environment_says_otherwise(monkeypatch):
     monkeypatch.delenv(mod.VIDEO_BENCHMARK_BURST_JOBS_ENV, raising=False)
-    assert mod._burst_jobs_from_env() == 0
+    assert mod._burst_jobs_from_env() == 3
     monkeypatch.setenv(mod.VIDEO_BENCHMARK_BURST_JOBS_ENV, "6")
     assert mod._burst_jobs_from_env() == 6
+    monkeypatch.setenv(mod.VIDEO_BENCHMARK_BURST_JOBS_ENV, "0")
+    assert mod._burst_jobs_from_env() == 0  # turned off
     monkeypatch.setenv(mod.VIDEO_BENCHMARK_BURST_JOBS_ENV, "many")
-    assert mod._burst_jobs_from_env() == 0
+    assert mod._burst_jobs_from_env() == 3
     monkeypatch.setenv(mod.VIDEO_BENCHMARK_BURST_JOBS_ENV, "-3")
     assert mod._burst_jobs_from_env() == 0
+
+
+def test_at_least_three_requests_are_made_one_by_one(monkeypatch):
+    monkeypatch.delenv(mod.VIDEO_BENCHMARK_MIN_CALLS_ENV, raising=False)
+    assert mod._min_calls_from_env() == 3
+    monkeypatch.setenv(mod.VIDEO_BENCHMARK_MIN_CALLS_ENV, "5")
+    assert mod._min_calls_from_env() == 5
 
 
 def test_a_failed_burst_job_fails_the_benchmark(monkeypatch):
@@ -635,7 +644,7 @@ def test_a_server_without_metrics_adds_nothing_to_the_report(monkeypatch):
     monkeypatch.setattr(mod, "_video_target_checks", lambda *a: ({}, "n/a"))
     monkeypatch.setattr(mod, "block_id", lambda ctx: "id")
     monkeypatch.setattr(mod, "scrape_video_metrics", lambda base_url: {})
-    monkeypatch.delenv(mod.VIDEO_BENCHMARK_BURST_JOBS_ENV, raising=False)
+    monkeypatch.setenv(mod.VIDEO_BENCHMARK_BURST_JOBS_ENV, "0")
     ctx = _ctx("Wan-AI/Wan2.2-T2V-A14B-Diffusers")
     ctx.base_url = "http://localhost:8000"
     data = mod.run_video_benchmark(ctx).data["Benchmarks"]
@@ -658,7 +667,7 @@ def test_the_whole_request_is_reported_as_end_to_end_latency_not_ttft(monkeypatc
     monkeypatch.setattr(mod, "_video_target_checks", _checks)
     monkeypatch.setattr(mod, "block_id", lambda ctx: "id")
     monkeypatch.setattr(mod, "scrape_video_metrics", lambda base_url: {})
-    monkeypatch.delenv(mod.VIDEO_BENCHMARK_BURST_JOBS_ENV, raising=False)
+    monkeypatch.setenv(mod.VIDEO_BENCHMARK_BURST_JOBS_ENV, "0")
     ctx = _ctx("Wan-AI/Wan2.2-T2V-A14B-Diffusers")
     ctx.base_url = "http://localhost:8000"
     data = mod.run_video_benchmark(ctx).data["Benchmarks"]
@@ -695,3 +704,79 @@ def test_the_latency_target_is_checked_in_milliseconds(monkeypatch):
     assert latency.field_name == "end_to_end_latency"
     assert latency.target_attr == "e2el_ms"
     assert latency.actual == pytest.approx(125000.0)
+
+
+def _run_with_calls(monkeypatch, configured, minimum=None):
+    asked = {}
+    status = mod.VideoGenerationTestStatus(
+        status=True, elapsed=100.0, num_inference_steps=40
+    )
+
+    def _sequential(ctx, n):
+        asked["n"] = n
+        return [status] * n
+
+    monkeypatch.setattr(mod, "require_health", lambda ctx: None)
+    monkeypatch.setattr(mod, "get_num_calls", lambda ctx: configured)
+    monkeypatch.setattr(mod, "_run_video_generation_benchmark", _sequential)
+    monkeypatch.setattr(mod, "_video_target_checks", lambda *a: ({}, "n/a"))
+    monkeypatch.setattr(mod, "block_id", lambda ctx: "id")
+    monkeypatch.setattr(mod, "scrape_video_metrics", lambda base_url: {})
+    monkeypatch.setenv(mod.VIDEO_BENCHMARK_BURST_JOBS_ENV, "0")
+    if minimum is None:
+        monkeypatch.delenv(mod.VIDEO_BENCHMARK_MIN_CALLS_ENV, raising=False)
+    else:
+        monkeypatch.setenv(mod.VIDEO_BENCHMARK_MIN_CALLS_ENV, str(minimum))
+    ctx = _ctx("Wan-AI/Wan2.2-T2V-A14B-Diffusers")
+    ctx.base_url = "http://localhost:8000"
+    mod.run_video_benchmark(ctx)
+    return asked["n"]
+
+
+def test_the_configured_two_requests_are_raised_to_the_minimum(monkeypatch):
+    assert _run_with_calls(monkeypatch, configured=2) == 3
+
+
+def test_a_larger_configured_number_of_requests_is_kept(monkeypatch):
+    assert _run_with_calls(monkeypatch, configured=6) == 6
+
+
+def test_throughput_is_videos_per_second_and_steps_have_their_own_target(monkeypatch):
+    captured = {}
+
+    def _run(ctx, specs):
+        captured["specs"] = {spec.field_name: spec for spec in specs}
+        return {}, "n/a"
+
+    monkeypatch.setattr(mod, "run_tiered_check", _run)
+    mod._video_target_checks(object(), 125.0, 0.32)
+    specs = captured["specs"]
+    assert specs["tput_user"].actual == pytest.approx(0.008)  # 1 / 125 s
+    assert specs["tput_user"].target_attr == "tput_user"
+    assert specs["inference_steps_per_second"].actual == 0.32
+    assert (
+        specs["inference_steps_per_second"].target_attr == "inference_steps_per_second"
+    )
+
+
+def test_the_video_reference_targets_are_what_one_over_the_latency_gives():
+    # In the reference file tput_user is 1 / end_to_end_latency and the steps per
+    # second are 40 / end_to_end_latency: the same video seen three ways.
+    from test_module._test_common.target_check import PerformanceTargets
+
+    targets = PerformanceTargets.from_device_config(
+        {
+            "targets": {
+                "theoretical": {
+                    "end_to_end_latency_ms": 321490,
+                    "tput_user": 0.00311,
+                    "inference_steps_per_second": 0.1244,
+                }
+            }
+        }
+    )
+    assert targets.inference_steps_per_second == 0.1244
+    assert 1 / (targets.e2el_ms / 1000) == pytest.approx(targets.tput_user, rel=0.01)
+    assert 40 / (targets.e2el_ms / 1000) == pytest.approx(
+        targets.inference_steps_per_second, rel=0.01
+    )
