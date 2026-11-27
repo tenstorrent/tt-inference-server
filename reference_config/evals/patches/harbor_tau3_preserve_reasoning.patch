@@ -1,0 +1,29 @@
+diff --git a/adapters/tau3-bench/run_tau3_llm_agent.py b/adapters/tau3-bench/run_tau3_llm_agent.py
+index 9fd05748..3de4aeab 100644
+--- a/adapters/tau3-bench/run_tau3_llm_agent.py
++++ b/adapters/tau3-bench/run_tau3_llm_agent.py
+@@ -182,6 +182,12 @@ def parse_completion_message(
+     }
+     if tool_calls:
+         assistant_message["tool_calls"] = tool_calls
++    # Preserved thinking: models such as Kimi K3 expect an assistant turn's reasoning to be sent back with the
++    # history. Off by default so other models' histories are unchanged; TAU3_AGENT_PRESERVE_REASONING=1 turns it on.
++    if os.getenv("TAU3_AGENT_PRESERVE_REASONING", "").lower() in ("1", "true", "yes"):
++        reasoning_content = _read_value(message, "reasoning_content")
++        if reasoning_content:
++            assistant_message["reasoning_content"] = reasoning_content
+ 
+     usage = _read_value(response, "usage")
+     input_tokens = _coerce_int(_read_value(usage, "prompt_tokens"), default=0)
+diff --git a/adapters/tau3-bench/tau3_llm_agent.py b/adapters/tau3-bench/tau3_llm_agent.py
+index 75527be9..2cef7399 100644
+--- a/adapters/tau3-bench/tau3_llm_agent.py
++++ b/adapters/tau3-bench/tau3_llm_agent.py
+@@ -193,6 +193,7 @@ class Tau3LLMAgent(BaseInstalledAgent):
+             "OPENROUTER_API_KEY",
+             "MAX_THINKING_TOKENS",
+             "TAU3_AGENT_REASONING_EFFORT",
++            "TAU3_AGENT_PRESERVE_REASONING",
+         }
+ 
+         for key in passthrough_keys:

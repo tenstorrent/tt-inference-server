@@ -679,6 +679,16 @@ _K2_HORIZON_LM_EVAL_TASKS = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "lm_eval_tasks", "k2_horizon"
 )
 
+# lm-eval task definitions for Kimi-K3.1 (see lm_eval_tasks/kimi_k31): its math tasks
+# with graders that accept a boxed equation. Absolute, like the K2-Horizon path.
+_KIMI_K31_LM_EVAL_TASKS = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "lm_eval_tasks", "kimi_k31"
+)
+
+# The tokenizer the Kimi-K3.1 evals load: the served name moonshotai/Kimi-K3.1 is not
+# an HF repo, so they use the checkpoint's public one.
+_KIMI_K31_TOKENIZER = "moonshotai/Kimi-K3.1-Pro"
+
 # Per-request client timeout for QwQ-32B r1_* tasks (lm-eval local-completions
 # `timeout`, an aiohttp ClientTimeout total per request; harness default 1800 s).
 # The r1 task YAMLs generate up to max_gen_toks=32768 and the GPU reference
@@ -2404,6 +2414,842 @@ _eval_config_list = [
                     "tokenizer_num_proc": 32,  # pre-process up to 32 samples in parallel
                 },
                 limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
+    # Kimi-K3.1 (checkpoint Kimi-K3.1-Pro), served as moonshotai/Kimi-K3.1 by the
+    # tt-d-gen Dynamo frontend. The tasks shared with Kimi-K3 keep its chat API,
+    # reasoning capture, sampling and [EOS] stop (K3.1 keeps K3's tokenizer).
+    # No published or GPU-reference scores yet, so every score is None
+    # (reported, not gated).
+    #
+    # "moonshotai/Kimi-K3.1" is not an HF repo, so lm-eval's tokenizer and the
+    # dataset length filters are pointed at the checkpoint's tokenizer.
+    #
+    # terminal_bench_2_1 carries the single-ring endpoint's
+    # 25 users; the other tasks carry the 15 users of the disaggregated
+    # (prefill -> decode) endpoint, whose prompt ceiling is 1018880 tokens.
+    # TT_EVAL_CLIENT_CONCURRENCY and AGENTIC_MAX_CONCURRENT_TRIALS set the
+    # concurrency of a given run.
+    EvalConfig(
+        hf_model_repo="moonshotai/Kimi-K3.1",
+        tasks=[
+            EvalTask(
+                task_name="terminal_bench_2_1",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    # Not yet measured for K3.1.
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="terminal-bench/terminal-bench-2-1",
+                    agent="terminus-2",
+                    n_concurrent_trials=25,
+                    n_attempts=1,
+                    n_tasks=89,
+                    agent_timeout_sec=2 * 60 * 60,
+                    agent_kwargs={
+                        "parser_name": "json",
+                        "temperature": 1.0,
+                        "model_info": {
+                            "max_input_tokens": 1024 * 1024,
+                            "max_output_tokens": 256 * 1024,
+                        },
+                        "llm_kwargs": {
+                            # Moonshot evaluates agentic tasks at top_p 1.0.
+                            "top_p": 1.0,
+                            "max_tokens": 256 * 1024,
+                            "timeout": 60 * 60,
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "terminal-bench/break-filter-js-from-html",
+                            "terminal-bench/cobol-modernization",
+                            "terminal-bench/compile-compcert",
+                            "terminal-bench/feal-differential-cryptanalysis",
+                            "terminal-bench/qemu-startup",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
+            ),
+            EvalTask(
+                task_name="tau3_bench_banking",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    # Not yet measured for K3.1.
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                    tolerance=0.10,
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="sierra-research/tau3-bench",
+                    agent="tau3_llm_agent",
+                    agent_import_path="adapters.tau3-bench.tau3_llm_agent:Tau3LLMAgent",
+                    task_names=["sierra-research/tau3-bench__tau3-banking_knowledge-*"],
+                    # A single served instance is shared by the agent,
+                    # the simulated user, and the Natural Language verifier.
+                    n_concurrent_trials=15,
+                    n_attempts=1,
+                    n_tasks=97,
+                    override_cpus=4,
+                    override_memory_mb=8 * 1024,
+                    agent_timeout_sec=3600,
+                    agent_kwargs={
+                        "tau2_trial_index": 0,
+                        "temperature": 1.0,
+                        # The adapter's build_llm_args() sets only temperature,
+                        # so top_p has to be pinned here to reach the agent.
+                        #
+                        # Must stay a JSON *string*: agent_kwargs are written
+                        # verbatim into the harbor config file, and the adapter
+                        # shlex.quotes this value onto the container command
+                        # line, which fails with TypeError on a dict.
+                        "llm_args_json": '{"top_p": 1.0}',
+                        "max_steps": 200,
+                        # Default is 120s; a single reasoning user-sim turn under
+                        # load can exceed that and trip an MCP request timeout.
+                        "tool_timeout_sec": 900,
+                        # MCP session.initialize exceeds the 120s default when
+                        # many sandboxes start at once.
+                        "read_timeout_sec": 900,
+                    },
+                    # NOTE: values injected here are passed to the Harbor
+                    # container verbatim. Unlike the task.toml env, the
+                    # "${VAR:-default}" template syntax is NOT resolved on this
+                    # path, so use literal values -- a templated model name
+                    # reaches litellm unexpanded and fails with "LLM Provider
+                    # NOT provided". OPENAI_BASE_URL / OPENAI_API_KEY are
+                    # injected into environment.env by build_harbor_config after
+                    # runtime authentication configures the endpoint.
+                    environment_env={
+                        "TAU2_USER_MODEL": "openai/moonshotai/Kimi-K3.1",
+                    },
+                    verifier_env={
+                        "TAU2_NL_ASSERTIONS_MODEL": "openai/moonshotai/Kimi-K3.1",
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-001",
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-022",
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-050",
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-075",
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-100",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 3,
+                },
+            ),
+            # tau3 airline domain (50 tasks): same agent, sampling and harness
+            # timeouts as the banking entry above.
+            EvalTask(
+                task_name="tau3_bench_airline",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    # Not yet measured for K3.1.
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                    tolerance=0.10,
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="sierra-research/tau3-bench",
+                    agent="tau3_llm_agent",
+                    agent_import_path="adapters.tau3-bench.tau3_llm_agent:Tau3LLMAgent",
+                    task_names=["sierra-research/tau3-bench__tau3-airline-*"],
+                    # A single served instance is shared by the agent,
+                    # the simulated user, and the Natural Language verifier.
+                    n_concurrent_trials=15,
+                    n_attempts=1,
+                    n_tasks=50,
+                    override_cpus=4,
+                    override_memory_mb=8 * 1024,
+                    agent_timeout_sec=3600,
+                    agent_kwargs={
+                        "tau2_trial_index": 0,
+                        "temperature": 1.0,
+                        # The adapter's build_llm_args() sets only temperature,
+                        # so top_p has to be pinned here to reach the agent.
+                        #
+                        # Must stay a JSON *string*: agent_kwargs are written
+                        # verbatim into the harbor config file, and the adapter
+                        # shlex.quotes this value onto the container command
+                        # line, which fails with TypeError on a dict.
+                        "llm_args_json": '{"top_p": 1.0}',
+                        "max_steps": 200,
+                        # Default is 120s; a single reasoning user-sim turn under
+                        # load can exceed that and trip an MCP request timeout.
+                        "tool_timeout_sec": 900,
+                        # MCP session.initialize exceeds the 120s default when
+                        # many sandboxes start at once.
+                        "read_timeout_sec": 900,
+                    },
+                    # NOTE: values injected here are passed to the Harbor
+                    # container verbatim. Unlike the task.toml env, the
+                    # "${VAR:-default}" template syntax is NOT resolved on this
+                    # path, so use literal values -- a templated model name
+                    # reaches litellm unexpanded and fails with "LLM Provider
+                    # NOT provided". OPENAI_BASE_URL / OPENAI_API_KEY are
+                    # injected into environment.env by build_harbor_config after
+                    # runtime authentication configures the endpoint.
+                    environment_env={
+                        "TAU2_USER_MODEL": "openai/moonshotai/Kimi-K3.1",
+                    },
+                    verifier_env={
+                        "TAU2_NL_ASSERTIONS_MODEL": "openai/moonshotai/Kimi-K3.1",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 3,
+                },
+            ),
+            # Short-prompt generation evals. Only mmlu_pro (5-shot) has prompts
+            # above the workers' default min_disagg_tokens (1024); the others
+            # migrate from prefill only when the deployment lowers that threshold.
+            EvalTask(
+                # aime25 from lm_eval_tasks/kimi_k31: the fork's task with a grader that
+                # also accepts a boxed equation ("\\boxed{21+49=70}" for 70).
+                task_name="aime25",
+                include_path=_KIMI_K31_LM_EVAL_TASKS,
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                max_concurrent=15,
+                use_chat_api=True,
+                capture_reasoning=True,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["exact_match,none"],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "max_length": 1048576,
+                    "tokenizer": _KIMI_K31_TOKENIZER,
+                    "timeout": 7200,
+                },
+                gen_kwargs={
+                    "max_gen_toks": 1000000,  # prompt + answer must fit the 1048576 context
+                    # Dynamo rejects an empty stop list with 400; K3/K3.1's EOS string.
+                    "until": ["[EOS]"],
+                    "do_sample": "true",
+                    # Moonshot reports single-step benchmarks at temperature 1.0 / top_p 0.95.
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                    "stream": "false",
+                },
+                limit_samples_map={EvalLimitMode.SMOKE_TEST: 0.1},
+            ),
+            EvalTask(
+                # r1_aime24 from lm_eval_tasks/kimi_k31: the fork's task with a grader that
+                # also accepts a boxed equation.
+                task_name="r1_aime24",
+                include_path=_KIMI_K31_LM_EVAL_TASKS,
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                max_concurrent=15,
+                use_chat_api=True,
+                capture_reasoning=True,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["exact_match,none"],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "max_length": 1048576,
+                    "tokenizer": _KIMI_K31_TOKENIZER,
+                    "timeout": 7200,
+                },
+                gen_kwargs={
+                    "max_gen_toks": 1000000,  # prompt + answer must fit the 1048576 context
+                    # Dynamo rejects an empty stop list with 400; K3/K3.1's EOS string.
+                    "until": ["[EOS]"],
+                    "do_sample": "true",
+                    # Moonshot reports single-step benchmarks at temperature 1.0 / top_p 0.95.
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                    "stream": "false",
+                },
+                limit_samples_map={EvalLimitMode.SMOKE_TEST: 0.1},
+            ),
+            EvalTask(
+                task_name="ifeval",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                max_concurrent=15,
+                use_chat_api=True,
+                capture_reasoning=True,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                            "inst_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "max_length": 1048576,
+                    "tokenizer": _KIMI_K31_TOKENIZER,
+                    "timeout": 7200,
+                },
+                gen_kwargs={
+                    "max_gen_toks": 1000000,  # prompt + answer must fit the 1048576 context
+                    # Dynamo rejects an empty stop list with 400; K3/K3.1's EOS string.
+                    "until": ["[EOS]"],
+                    "do_sample": "true",
+                    # Moonshot reports single-step benchmarks at temperature 1.0 / top_p 0.95.
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                    "stream": "false",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.5,
+                    EvalLimitMode.SMOKE_TEST: 0.05,
+                },
+            ),
+            EvalTask(
+                # r1_math500 from lm_eval_tasks/kimi_k31: the fork's task with a grader that
+                # also accepts a boxed equation.
+                task_name="r1_math500",
+                include_path=_KIMI_K31_LM_EVAL_TASKS,
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                max_concurrent=15,
+                use_chat_api=True,
+                capture_reasoning=True,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["exact_match,none"],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "max_length": 1048576,
+                    "tokenizer": _KIMI_K31_TOKENIZER,
+                    "timeout": 7200,
+                },
+                gen_kwargs={
+                    "max_gen_toks": 1000000,  # prompt + answer must fit the 1048576 context
+                    # Dynamo rejects an empty stop list with 400; K3/K3.1's EOS string.
+                    "until": ["[EOS]"],
+                    "do_sample": "true",
+                    # Moonshot reports single-step benchmarks at temperature 1.0 / top_p 0.95.
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                    "stream": "false",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.02,
+                },
+            ),
+            EvalTask(
+                task_name="mmlu_pro",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                max_concurrent=15,
+                use_chat_api=True,
+                capture_reasoning=True,
+                num_fewshot=5,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["exact_match,custom-extract"],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "max_length": 1048576,
+                    "tokenizer": _KIMI_K31_TOKENIZER,
+                    "timeout": 7200,
+                },
+                gen_kwargs={
+                    "max_gen_toks": 1000000,  # prompt + answer must fit the 1048576 context
+                    # Dynamo rejects an empty stop list with 400; K3/K3.1's EOS string.
+                    "until": ["[EOS]"],
+                    "do_sample": "true",
+                    # Moonshot reports single-step benchmarks at temperature 1.0 / top_p 0.95.
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                    "stream": "false",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            # Long-context evals: every prompt is above min_disagg_tokens (1024),
+            # so all of them migrate from prefill.
+            EvalTask(
+                task_name="ruler",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                max_concurrent=15,
+                use_chat_api=True,
+                capture_reasoning=True,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "4096,none",
+                            "8192,none",
+                            "16384,none",
+                            "32768,none",
+                            "65536,none",
+                            "131072,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "max_length": 1048576,
+                    "tokenizer": _KIMI_K31_TOKENIZER,
+                    "timeout": 7200,
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 900000,  # prompt + answer must fit the 1048576 context
+                    "until": ["[EOS]"],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: None,
+                    EvalLimitMode.SMOKE_TEST: None,
+                },
+                custom_dataset_kwargs={
+                    "max_seq_lengths": [4096, 8192, 16384, 32768, 65536, 131072],
+                    "pretrained": _KIMI_K31_TOKENIZER,
+                    "num_samples_per_length": 50,
+                    "limit_factor": 0.1,
+                },
+            ),
+            EvalTask(
+                task_name="longbench_single_e",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                min_context_required=16384,
+                max_concurrent=15,
+                use_chat_api=True,
+                capture_reasoning=True,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["score,none"],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "max_length": 1048576,
+                    "tokenizer": _KIMI_K31_TOKENIZER,
+                    "timeout": 7200,
+                },
+                gen_kwargs={
+                    "max_gen_toks": 900000,  # prompt + answer must fit the 1048576 context
+                    "until": ["[EOS]"],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                    "stream": "false",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.05,
+                },
+            ),
+            EvalTask(
+                task_name="longbench_multi_e",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                min_context_required=16384,
+                max_concurrent=15,
+                use_chat_api=True,
+                capture_reasoning=True,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["score,none"],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "max_length": 1048576,
+                    "tokenizer": _KIMI_K31_TOKENIZER,
+                    "timeout": 7200,
+                },
+                gen_kwargs={
+                    "max_gen_toks": 900000,  # prompt + answer must fit the 1048576 context
+                    "until": ["[EOS]"],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                    "stream": "false",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.05,
+                },
+            ),
+            EvalTask(
+                task_name="longbench_summarization_e",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                min_context_required=16384,
+                max_concurrent=15,
+                use_chat_api=True,
+                capture_reasoning=True,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["score,none"],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "max_length": 1048576,
+                    "tokenizer": _KIMI_K31_TOKENIZER,
+                    "timeout": 7200,
+                },
+                gen_kwargs={
+                    "max_gen_toks": 900000,  # prompt + answer must fit the 1048576 context
+                    "until": ["[EOS]"],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                    "stream": "false",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.05,
+                },
+            ),
+            EvalTask(
+                task_name="longbench_fewshot_e",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                min_context_required=16384,
+                max_concurrent=15,
+                use_chat_api=True,
+                capture_reasoning=True,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["score,none"],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "max_length": 1048576,
+                    "tokenizer": _KIMI_K31_TOKENIZER,
+                    "timeout": 7200,
+                },
+                gen_kwargs={
+                    "max_gen_toks": 900000,  # prompt + answer must fit the 1048576 context
+                    "until": ["[EOS]"],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                    "stream": "false",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.05,
+                },
+            ),
+            EvalTask(
+                task_name="longbench_code_e",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                min_context_required=16384,
+                max_concurrent=15,
+                use_chat_api=True,
+                capture_reasoning=True,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["score,none"],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "max_length": 1048576,
+                    "tokenizer": _KIMI_K31_TOKENIZER,
+                    "timeout": 7200,
+                },
+                gen_kwargs={
+                    "max_gen_toks": 900000,  # prompt + answer must fit the 1048576 context
+                    "until": ["[EOS]"],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                    "stream": "false",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.05,
+                },
+            ),
+            EvalTask(
+                task_name="longbench_synthetic_e",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                min_context_required=16384,
+                max_concurrent=15,
+                use_chat_api=True,
+                capture_reasoning=True,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["score,none"],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "max_length": 1048576,
+                    "tokenizer": _KIMI_K31_TOKENIZER,
+                    "timeout": 7200,
+                },
+                gen_kwargs={
+                    "max_gen_toks": 900000,  # prompt + answer must fit the 1048576 context
+                    "until": ["[EOS]"],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                    "stream": "false",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.05,
+                },
+            ),
+            # Generate-then-answer LongBench v2 (chat API). Stock longbench2 is
+            # multiple_choice/loglikelihood and cannot run on chat-only servers.
+            # This is the long-context sweep for K3.1's 1M window: samples are
+            # selected from 256K ISL up to the top of the context budget.
+            EvalTask(
+                task_name="longbench2_generate",
+                max_concurrent=15,
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                min_context_required=1048576,
+                use_chat_api=True,
+                score=EvalTaskScore(
+                    # Not yet measured for K3.1.
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["exact_match,none"],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "max_length": 1048576,
+                    "tokenizer": _KIMI_K31_TOKENIZER,
+                    "timeout": 7200,
+                },
+                gen_kwargs={
+                    "max_gen_toks": 140000,  # 1048576 minus the longest prompt (~900K) and its template
+                    # https://huggingface.co/moonshotai/Kimi-K3/blob/main/tokenizer_config.json
+                    "until": ["[EOS]"],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                    "stream": "true",
+                },
+                # Select samples by input sequence length (ISL). ISL is measured
+                # by tokenizing each sample's context with `pretrained`; only
+                # samples with minimum_isl <= ISL <= maximum_isl are kept.
+                # ISL is measured on the raw context alone, so the ceiling also
+                # has to absorb the chat template, question and instruction
+                # wrapper on top of max_gen_toks (140000) before hitting the
+                # 1048576 window.
+                # Forwarded to the lm-eval fork loader via --metadata.
+                custom_dataset_kwargs={
+                    "minimum_isl": 256 * 1024,  # 256K
+                    "maximum_isl": 900 * 1000,  # 900K
+                    "pretrained": _KIMI_K31_TOKENIZER,
+                    "tokenizer_num_proc": 32,  # pre-process up to 32 samples in parallel
+                },
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                # HMMT February 2026 (MathArena), avg@4: 33 problems x 4 samples.
+                # The seed is not sent to the server, so the 4 samples differ.
+                # From lm_eval_tasks/kimi_k31: the K2-Horizon task with a grader that
+                # also accepts a boxed equation.
+                task_name="k2_hmmt_feb_2026_avg4",
+                include_path=_KIMI_K31_LM_EVAL_TASKS,
+                max_concurrent=15,
+                propagate_seed_to_gen_kwargs=False,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref="https://matharena.ai (K3 96.97, not K3.1)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["exact_match,none"],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                model_kwargs={
+                    "max_length": 1048576,
+                    "tokenizer": _KIMI_K31_TOKENIZER,
+                    "timeout": 14400,
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 1000000,  # prompts are under 1K tokens
+                    "until": ["[EOS]"],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 33,
+                    EvalLimitMode.SMOKE_TEST: 2,
+                },
+            ),
+            EvalTask(
+                # OpenAI GraphWalks, prompts up to 126,996 tokens. Scored by
+                # lm-eval's F1 over answer nodes.
+                task_name="graphwalks_128k",
+                max_concurrent=15,
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={"result_keys": ["f1,none"], "unit": "percent"},
+                ),
+                model_kwargs={
+                    "max_length": 1048576,
+                    "tokenizer": _KIMI_K31_TOKENIZER,
+                    "timeout": 14400,
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 900000,
+                    "until": ["[EOS]"],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                # OpenAI GraphWalks 256K-1M, prompts up to 1,014,023 tokens (under
+                # the 1018880 prompt ceiling); max_gen_toks is what the 1048576
+                # context leaves after the longest prompt and its template.
+                task_name="graphwalks_1M",
+                max_concurrent=15,
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={"result_keys": ["f1,none"], "unit": "percent"},
+                ),
+                model_kwargs={
+                    "max_length": 1048576,
+                    "tokenizer": _KIMI_K31_TOKENIZER,
+                    "timeout": 14400,
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 34000,
+                    "until": ["[EOS]"],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.25,
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),

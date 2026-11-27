@@ -1,0 +1,33 @@
+# AIME 2025 for Kimi-K3.1: the pinned lm-eval fork's aime25 task (aime/aime25.yaml) with
+# the same dataset, prompt, generation settings and metric. Only the grader differs: it
+# is the fork's grader, and when that says "wrong" the same comparison is tried on the
+# right-hand side of a boxed equation (see utils.py). K3.1 often boxes a whole equation
+# ("\boxed{21+49=70}" for the answer 70), which the fork's string comparison rejects.
+tag:
+  - math_word_problems
+task: aime25
+dataset_path: math-ai/aime25
+output_type: generate_until
+training_split: test
+fewshot_split: test
+test_split: test
+doc_to_text: "Question: {{problem}}\nPlease reason step by step, and put your answer within \\boxed{}."
+doc_to_target: "{{answer}}"
+process_results: !function utils.process_results_aime
+metric_list:
+  - metric: exact_match
+    aggregation: mean
+    higher_is_better: true
+generation_kwargs:
+  until:
+    - "Question:"
+    - "</s>"
+    - "<|im_end|>"
+    - "<|eot_id|>"
+  do_sample: false
+  temperature: 0.0
+  max_gen_toks: 32768
+repeats: 1
+num_fewshot: 0
+metadata:
+  version: 0.0

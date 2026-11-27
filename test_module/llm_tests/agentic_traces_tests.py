@@ -23,6 +23,7 @@ long-running source is planned alongside it.
 from __future__ import annotations
 
 import logging
+import os
 import sys
 import time
 from dataclasses import replace
@@ -208,7 +209,9 @@ def run_agentic_traces(
         base_url=ctx.server_host,
         service_port=ctx.server_port,
         model=model_repo,
-        tokenizer=model_repo,
+        # AGENTIC_TRACES_TOKENIZER names the tokenizer (HF repo or local
+        # directory) AIPerf loads when the served model name is not an HF repo.
+        tokenizer=os.environ.get("AGENTIC_TRACES_TOKENIZER") or model_repo,
         auth_token=auth_token,
         # The scenario's own --tokenizer-trust-remote-code flag covers AIPerf,
         # but ServerConnection carries it too so the field stays consistent with
