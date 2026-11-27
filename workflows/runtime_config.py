@@ -124,6 +124,8 @@ class RuntimeConfig:
 
     # Device configuration
     device_id: Optional[List[int]] = None
+    # Comma-separated models served on the same chips as ``model`` (--cohost-with).
+    cohost_with: Optional[str] = None
 
     # Docker volume options
     host_volume: Optional[str] = None
@@ -150,6 +152,8 @@ class RuntimeConfig:
     # Runtime state (set during execution, not from CLI)
     run_id: Optional[str] = None
     runtime_model_spec: Optional[Dict] = field(default=None, repr=False)
+    # Host path of the co-host group file run.py writes for --cohost-with.
+    cohost_group_json: Optional[str] = None
 
     @classmethod
     def from_args(
@@ -230,6 +234,7 @@ class RuntimeConfig:
                 args, "agentic_traces_metrics_url", None
             ),
             device_id=args.device_id,
+            cohost_with=getattr(args, "cohost_with", None),
             host_volume=args.host_volume,
             host_hf_cache=args.host_hf_cache,
             host_weights_dir=args.host_weights_dir,

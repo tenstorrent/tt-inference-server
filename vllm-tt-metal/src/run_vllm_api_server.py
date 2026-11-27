@@ -403,6 +403,13 @@ def parse_args():
         default=None,
         help="Service port for vLLM server and trace capture client",
     )
+    parser.add_argument(
+        "--cohost-group",
+        type=str,
+        default=None,
+        help="Co-host group file (written by run.py --cohost-with): serve every model "
+        "it names in this process, on the same chips, each on its own port",
+    )
     # Parse known args to allow vLLM args to pass through
     args, remaining_args = parser.parse_known_args()
 
@@ -1450,6 +1457,18 @@ def main():
     args, remaining_sys_argv = parse_args()
     args.device = args.tt_device or args.device
     args.engine = normalize_engine_type(args.engine)
+
+    cohost_group = getattr(args, "cohost_group", None)
+    if cohost_group:
+        if remaining_sys_argv:
+            raise ValueError(
+                f"--cohost-group takes no vLLM arguments (got {remaining_sys_argv}); "
+                "each member's come from its model spec in the group file"
+            )
+        from cohost_group import run_cohost_group
+
+        run_cohost_group(sys.modules[__name__], cohost_group, no_auth=args.no_auth)
+        return
 
     # Step 2: Load model spec
     model_spec = load_model_spec(

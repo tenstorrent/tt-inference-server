@@ -1559,6 +1559,7 @@ def test_main_forwards_validated_package_weight_source(
         host_weights_dir=None,
         image_user="1000",
         workflow="server",
+        cohost_with=None,
     )
     model = MagicMock(model_id="test-model")
     model.impl.impl_id = "tt_transformers" if selection == "native" else "quetzal"

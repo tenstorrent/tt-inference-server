@@ -50,6 +50,7 @@ python3 run.py --model meta-llama/Llama-3.2-1B-Instruct --tt-device n150 --workf
 - [Serving LLMs with vLLM](#serving-llms-with-vllm)
   - [Server Workflow](#server-workflow)
     - [Docker Server](#docker-server)
+    - [Several Models on the Same Chips](#several-models-on-the-same-chips)
     - [Direct Docker Run](#direct-docker-run)
     - [First Run](#first-run)
       - [Secrets](#secrets)
@@ -137,6 +138,7 @@ See [Host Storage Options](../workflows/README.md#host-storage-options) in the w
 |--------------------------|--------------------------------------------------------------------------------------------------|
 | `--dev-mode`             | Enable developer mode: bind mounts source code into Docker container for live editing.          |
 | `--override-docker-image`| Override the Docker image used by `--docker-server`.                                            |
+| `--cohost-with`          | Serve these models (comma-separated) on the same chips as `--model`, in one container. See [Several Models on the Same Chips](#several-models-on-the-same-chips). |
 | `--device-id`            | Tenstorrent device IDs, comma-separated PCI indices (e.g. `0` or `0,1,2`).                    |
 | `--override-tt-config`   | Override TT config as JSON string (e.g., `'{"data_parallel": 16}'`).                          |
 | `--vllm-override-args`   | Override vLLM arguments as JSON string (e.g., `'{"max_model_len": 4096}'`).                   |
@@ -198,6 +200,27 @@ INFO: Stop running container via: docker stop 6b8c7038a44a
 ```
 
 The running container can be viewed with `docker ps -a` and stopped with `docker stop <container-id>`.
+
+#### Several models on the same chips
+
+A Tenstorrent chip can be opened by one process at a time, so models that share chips have to share a process. `--cohost-with` serves several vLLM models from one container on the same chips, with [tt-cohost](https://github.com/jashansinghTT/tt-cohost) as that process: it boots every model (load all, compile all, then capture traces model by model) and gives each one its own OpenAI-compatible vLLM server.
+
+```bash
+python3 run.py --model Qwen3-32B --tt-device p300x2 --workflow server --docker-server \
+  --cohost-with Llama-3.1-8B-Instruct
+```
+
+- `--model` is served on `--service-port` (default `8000`), each `--cohost-with` model on the next port (`8001`, ...), and the group's status endpoint (each model's readiness, DRAM and L1 use) on the port after the last model.
+- Each model runs with exactly the settings it gets when served alone (its model spec's env vars, vLLM args and tt config), with one exception: tt-transformers models sample on the host (`sample_on_device_mode` is dropped and the log says so), because on the current release image (0.17.0) on-device sampling gave wrong output for Llama-3.1-8B-Instruct next to Qwen3-32B once the two models' decode steps interleaved. The group opens one mesh: the models must agree on its settings (fabric, dispatch axis, L1 sizes), and the trace region is the sum of theirs.
+- Only `--workflow server --docker-server`, only vLLM models, and only models whose specs use the same Docker image (one process means one tt-metal build). `run.py` refuses anything else and names the model and the reason. `--vllm-override-args` applies to `--model` only.
+- Host setup (weights, disk check) runs for `--model`; the other models' weights are downloaded inside the container into the same cache volume.
+- If tt-cohost is not in the image, the container installs a pinned version at start (`TT_COHOST_PIP_SPEC` overrides it). The repo's in-container launcher is mounted, as `--dev-mode` does, so images published before this option work too.
+
+What sharing chips does not do:
+
+- The models take turns on the chips; they never run at the same time. When all of them are busy, each gets a share of the device.
+- Whether the models fit together (DRAM and L1) is found out at boot: a model that does not fit fails the boot loudly, the container exits and its log names the model. Serve such models on separate chips (`--device-id`).
+- Stopping the container stops every model in the group.
 
 #### Local server
 
