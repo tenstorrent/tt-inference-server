@@ -439,9 +439,43 @@ TEST(VideoMediaTest, Base64DecodeAcceptsLineBreaksAndRejectsGarbage) {
   EXPECT_EQ(std::string(ok->begin(), ok->end()), "hello");
   EXPECT_FALSE(base64Decode("").has_value());
   EXPECT_FALSE(base64Decode("aGVs*G8=").has_value());
-  EXPECT_FALSE(
-      base64Decode("aGVsbG8").has_value());  // length not a multiple of 4
-  EXPECT_FALSE(base64Decode("aGVs=bG8").has_value());  // data after padding
+  EXPECT_FALSE(base64Decode("aGVs=bG8").has_value());   // data after padding
+  EXPECT_FALSE(base64Decode("aGVsb").has_value());      // 1 symbol over a group
+  EXPECT_FALSE(base64Decode("aGVsbG8==").has_value());  // padding does not fit
+}
+
+TEST(VideoMediaTest, Base64DecodeLikePython) {
+  using namespace tt::domain::video;
+  const auto text = [](const std::optional<std::vector<uint8_t>>& bytes) {
+    return bytes ? std::string(bytes->begin(), bytes->end()) : "<none>";
+  };
+  // Missing padding (JSON transport may strip it).
+  EXPECT_EQ(text(base64Decode("aGVsbG8")), "hello");
+  EXPECT_EQ(text(base64Decode("aGVsbG8=")), "hello");
+  EXPECT_EQ(text(base64Decode("aGk")), "hi");
+  // A data URI prefix is skipped.
+  EXPECT_EQ(text(base64Decode("data:image/png;base64,aGVsbG8=")), "hello");
+  EXPECT_EQ(text(base64Decode("data:image/png;base64,aGVsbG8")), "hello");
+  EXPECT_FALSE(base64Decode("data:image/png;base64").has_value());   // no comma
+  EXPECT_FALSE(base64Decode("data:image/png;base64,").has_value());  // no data
+}
+
+TEST(VideoMediaTest, BmpHeightOfInt32MinIsRefusedNotUndefined) {
+  using namespace tt::domain::video;
+  std::vector<uint8_t> bmp(26, 0);
+  bmp[0] = 'B';
+  bmp[1] = 'M';
+  bmp[18] = 2;  // width 2
+  bmp[22] = 3;  // height 3
+  const auto ok = imageSize(bmp);
+  ASSERT_TRUE(ok.has_value());
+  EXPECT_EQ(*ok, std::make_pair(2, 3));
+  bmp[22] = 0xFD;  // height -3: a top-down bitmap
+  bmp[23] = bmp[24] = bmp[25] = 0xFF;
+  EXPECT_EQ(*imageSize(bmp), std::make_pair(2, 3));
+  bmp[22] = bmp[23] = bmp[24] = 0;
+  bmp[25] = 0x80;  // height 0x80000000
+  EXPECT_FALSE(imageSize(bmp).has_value());
 }
 
 TEST(VideoMediaTest, ImageSizeIsReadFromThePngJpegWebpHeaders) {

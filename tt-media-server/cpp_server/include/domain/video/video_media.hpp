@@ -7,6 +7,7 @@
 
 #include <cstdint>
 #include <cstdlib>
+#include <limits>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -43,8 +44,10 @@ inline bool isMediaUrl(const std::string& value) {
   return head.rfind("http://", 0) == 0 || head.rfind("https://", 0) == 0;
 }
 
-/** Standard base64; line breaks and spaces are skipped, anything else outside
- *  the alphabet is an error (nullopt). */
+/** Standard base64 like the Python path (`ImageManager.base64_to_pil_image`): a
+ *  leading `data:...,` prefix is skipped and missing `=` padding is accepted.
+ *  Line breaks and spaces are skipped, anything else outside the alphabet is an
+ *  error (nullopt), as is padding that does not fit the length. */
 inline std::optional<std::vector<uint8_t>> base64Decode(
     const std::string& text) {
   static const std::string alphabet =
@@ -55,7 +58,14 @@ inline std::optional<std::vector<uint8_t>> base64Decode(
   int bits = 0;
   size_t padding = 0;
   size_t symbols = 0;
-  for (char c : text) {
+  size_t start = 0;
+  if (text.rfind("data:", 0) == 0) {
+    const size_t comma = text.find(',');
+    if (comma == std::string::npos) return std::nullopt;
+    start = comma + 1;
+  }
+  for (size_t i = start; i < text.size(); ++i) {
+    const char c = text[i];
     if (c == '\n' || c == '\r' || c == ' ' || c == '\t') continue;
     if (c == '=') {
       ++padding;
@@ -72,7 +82,10 @@ inline std::optional<std::vector<uint8_t>> base64Decode(
       out.push_back(static_cast<uint8_t>((buffer >> bits) & 0xFF));
     }
   }
-  if (padding > 2 || (symbols + padding) % 4 != 0 || symbols == 0) {
+  // One symbol more than a multiple of 4 cannot be the end of any input;
+  // padding, when present, has to complete the last group.
+  if (padding > 2 || symbols == 0 || symbols % 4 == 1 ||
+      (padding != 0 && (symbols + padding) % 4 != 0)) {
     return std::nullopt;
   }
   return out;
@@ -156,8 +169,11 @@ inline std::optional<std::pair<int, int>> imageSize(
     return std::make_pair(int(le16(b, 6)), int(le16(b, 8)));
   }
   if (has(26) && b[0] == 'B' && b[1] == 'M') {
-    return std::make_pair(int(le32(b, 18)),
-                          std::abs(static_cast<int32_t>(le32(b, 22))));
+    // A negative height is a top-down bitmap. INT32_MIN has no absolute value
+    // in 32 bits (and no real image has it), so it is refused.
+    const auto height = static_cast<int32_t>(le32(b, 22));
+    if (height == std::numeric_limits<int32_t>::min()) return std::nullopt;
+    return std::make_pair(int(le32(b, 18)), std::abs(height));
   }
   return std::nullopt;
 }

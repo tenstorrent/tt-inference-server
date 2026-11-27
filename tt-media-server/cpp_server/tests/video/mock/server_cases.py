@@ -606,6 +606,37 @@ def check_i2v(base, token):
         )
         if status == 202:
             finish(base, token, job["id"])
+    # The Python decoder takes a `data:` prefix and restores stripped `=` padding.
+    padded = next(
+        image
+        for image in (png_b64(width, 4) for width in range(1, 9))
+        if image.endswith("=")
+    )
+    for label, image in (
+        ("a data URI", "data:image/jpeg;base64," + JPEG_B64),
+        ("a PNG without its = padding", padded.rstrip("=")),
+    ):
+        status, job = expect(
+            base,
+            token,
+            f"i2v: {label} is accepted",
+            I2V,
+            {"prompt": "p", "image_prompts": [{"image": image, "frame_pos": 0}]},
+            202,
+        )
+        if status == 202:
+            finish(base, token, job["id"])
+    # Valid JSON that is not an object is a 422, not a 500.
+    for route, label in ((I2V, "/i2v"), (GEN, "/generations")):
+        for body in ([], 123, "text"):
+            expect(
+                base,
+                token,
+                f"i2v: {label} body {json.dumps(body)} is 422",
+                route,
+                body,
+                422,
+            )
     expect(
         base,
         token,

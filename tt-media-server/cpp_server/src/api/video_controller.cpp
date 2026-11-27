@@ -268,8 +268,10 @@ void VideoController::handle(const drogon::HttpRequestPtr& req,
     body = *prepared;
   } else {
     auto json = req->getJsonObject();
-    if (!json) {
-      // 422 like FastAPI/pydantic for every malformed or invalid body.
+    if (!json || !json->isObject()) {
+      // 422 like FastAPI/pydantic for every malformed or invalid body; valid
+      // JSON that is not an object (`[]`, `123`) would make the member calls
+      // below throw.
       callback(videoError(drogon::k422UnprocessableEntity, "Invalid JSON body",
                           "invalid_request_error"));
       return;
