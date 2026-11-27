@@ -167,3 +167,44 @@ def test_the_cpp_servers_stage_histograms_are_read():
     out = sm.server_side_video_metrics(before, sm.parse_video_metrics(CPP_STAGES))
     assert out["denoise_s"]["mean"] == pytest.approx(100.0)
     assert out["vae_decode_s"]["mean"] == pytest.approx(10.0)
+
+
+PYTHON_TOTALS = """\
+tt_media_server_video_frames_generated_total{model_type="wan",request_type="t2v"} 162
+tt_media_server_video_denoise_steps_total{model_type="wan",request_type="t2v"} 80
+tt_media_server_video_output_bytes_total{model_type="wan",request_type="t2v"} 6000000
+tt_media_server_video_content_seconds_total{model_type="wan",request_type="t2v"} 10.125
+tt_media_server_video_frames_per_second_bucket{resolution="480p",le="+Inf"} 2
+tt_media_server_video_frames_per_second_sum{resolution="480p"} 1.3
+tt_media_server_video_frames_per_second_count{resolution="480p"} 2
+"""
+
+CPP_TOTALS = """\
+tt_video_frames_generated_total 162
+tt_video_denoise_steps_total 80
+tt_video_output_bytes_total 6000000
+tt_video_content_seconds_total 10.125
+tt_video_frames_per_second_bucket{le="+Inf"} 2
+tt_video_frames_per_second_sum 1.3
+tt_video_frames_per_second_count 2
+"""
+
+
+@pytest.mark.parametrize("after", [PYTHON_TOTALS, CPP_TOTALS])
+def test_what_the_videos_added_up_to_is_read_from_either_server(after):
+    before = sm.parse_video_metrics("tt_video_frames_generated_total 0")
+    out = sm.server_side_video_metrics(before, sm.parse_video_metrics(after))
+    assert out["totals"] == {
+        "frames": 162,
+        "denoise_steps": 80,
+        "output_bytes": 6000000,
+        "content_seconds": 10.125,
+    }
+    assert out["frames_per_second"]["mean"] == pytest.approx(0.65)
+
+
+def test_a_counter_that_did_not_grow_is_left_out():
+    snapshot = sm.parse_video_metrics(CPP_TOTALS)
+    assert sm.counter_delta(snapshot, snapshot, "tt_video_frames_generated_total") == 0
+    out = sm.server_side_video_metrics(snapshot, snapshot)
+    assert "totals" not in out

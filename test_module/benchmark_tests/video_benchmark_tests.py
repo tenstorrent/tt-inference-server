@@ -72,9 +72,14 @@ VIDEO_BENCHMARK_SEED = 42
 #   processing_s  in progress until completed: the device run and the mp4 encode
 #   download_s    completed until the mp4 is downloaded
 VIDEO_PHASES = ("submit_s", "queue_wait_s", "processing_s", "download_s")
-# Videos submitted at once by the burst phase; 0 (the default) turns it off.
+# Videos submitted at once by the burst phase; 0 turns it off.
 # Keep it below the server's queue limit, a full queue answers 429.
 VIDEO_BENCHMARK_BURST_JOBS_ENV = "VIDEO_BENCHMARK_BURST_JOBS"
+VIDEO_BENCHMARK_BURST_JOBS_DEFAULT = 3
+# At least this many one-by-one requests, so that the spread between runs can be
+# told from a difference between servers (the benchmark config asks for fewer).
+VIDEO_BENCHMARK_MIN_CALLS_ENV = "VIDEO_BENCHMARK_MIN_CALLS"
+VIDEO_BENCHMARK_MIN_CALLS_DEFAULT = 3
 # A shape the boot warmup did not cover compiles inside its first request.
 MINIMAX_H3_VIDEO_TIMEOUT_SECONDS = 1800
 
@@ -370,13 +375,27 @@ def _run_video_burst_benchmark(ctx: MediaContext, num_jobs: int) -> dict:
     return summary
 
 
-def _burst_jobs_from_env() -> int:
-    raw = os.environ.get(VIDEO_BENCHMARK_BURST_JOBS_ENV, "")
+def _count_from_env(name: str, default: int) -> int:
+    raw = os.environ.get(name, "")
     try:
-        return max(0, int(raw)) if raw else 0
+        return max(0, int(raw)) if raw else default
     except ValueError:
-        logger.warning(f"Ignoring {VIDEO_BENCHMARK_BURST_JOBS_ENV}={raw!r}")
-        return 0
+        logger.warning(f"Ignoring {name}={raw!r}")
+        return default
+
+
+def _burst_jobs_from_env() -> int:
+    """Videos of the burst phase: 3 unless VIDEO_BENCHMARK_BURST_JOBS says otherwise
+    (0 turns the phase off)."""
+    return _count_from_env(
+        VIDEO_BENCHMARK_BURST_JOBS_ENV, VIDEO_BENCHMARK_BURST_JOBS_DEFAULT
+    )
+
+
+def _min_calls_from_env() -> int:
+    return _count_from_env(
+        VIDEO_BENCHMARK_MIN_CALLS_ENV, VIDEO_BENCHMARK_MIN_CALLS_DEFAULT
+    )
 
 
 def _video_end_to_end_latency(status_list: list[VideoGenerationTestStatus]) -> float:
@@ -386,12 +405,17 @@ def _video_end_to_end_latency(status_list: list[VideoGenerationTestStatus]) -> f
 
 
 def _video_target_checks(
-    ctx: MediaContext, latency_seconds: float, tput_user: float
+    ctx: MediaContext, latency_seconds: float, steps_per_second: float
 ) -> tuple[dict, ReportCheckTypes]:
-    # The latency is captured in seconds (time.time() deltas); the target is in ms
-    # (end_to_end_latency_ms of the reference file).
+    """The 3-tier checks against the reference file of a video model:
+    - end_to_end_latency: the latency in ms against ``end_to_end_latency_ms``
+    - tput_user: videos per second (one over the latency) against ``tput_user``; the
+      reference value of a video model is that number (1 / end_to_end_latency)
+    - inference_steps_per_second against its own target
+    """
     latency_ms = latency_seconds * 1000 if latency_seconds else None
-    logger.info("Computing 3-tier target checks for end_to_end_latency, tput_user")
+    videos_per_second = 1 / latency_seconds if latency_seconds else None
+    logger.info("Computing 3-tier target checks of a video benchmark")
     return run_tiered_check(
         ctx,
         [
@@ -404,10 +428,17 @@ def _video_target_checks(
             ),
             MetricSpec(
                 "tput_user",
-                tput_user,
+                videos_per_second,
                 "tput_user",
                 lower_is_better=False,
                 field_name="tput_user",
+            ),
+            MetricSpec(
+                "inference_steps_per_second",
+                steps_per_second,
+                "inference_steps_per_second",
+                lower_is_better=False,
+                field_name="inference_steps_per_second",
             ),
         ],
     )
@@ -428,7 +459,7 @@ def run_video_benchmark(ctx: MediaContext) -> Block:
 
     burst_jobs = _burst_jobs_from_env()
     try:
-        num_calls = get_num_calls(ctx)
+        num_calls = max(get_num_calls(ctx), _min_calls_from_env())
         # The server's own view of each phase (empty for a server without /metrics).
         metrics_start = scrape_video_metrics(ctx.base_url)
         status_list = _run_video_generation_benchmark(ctx, num_calls)
@@ -454,7 +485,7 @@ def run_video_benchmark(ctx: MediaContext) -> Block:
         if successful
         else 0
     )
-    # Sequential single-user benchmark, so tput_user = total throughput.
+    # Sequential single-user benchmark: tput_user is videos per second.
     target_checks, target_check = _video_target_checks(
         ctx, latency_value, inference_steps_per_second
     )
@@ -471,7 +502,7 @@ def run_video_benchmark(ctx: MediaContext) -> Block:
             ),
             "end_to_end_latency_s": latency_value,
             "inference_steps_per_second": inference_steps_per_second,
-            "tput_user": inference_steps_per_second,
+            "tput_user": 1 / latency_value if latency_value else 0,
             "target_check": target_check,
             "target_checks": target_checks,
         },

@@ -39,6 +39,12 @@ ROWS = [
     ("server: vae decode s", ("server_side", "vae_decode_s", "mean"), True),
     ("server: queue wait s", ("server_side", "queue_wait_s", "mean"), True),
     ("server: runner time s", ("server_side", "generation_s", "mean"), True),
+    ("server: frames per second", ("server_side", "frames_per_second", "mean"), False),
+    ("server: frames made", ("server_side", "totals", "frames"), None),
+    ("server: steps made", ("server_side", "totals", "denoise_steps"), None),
+    ("server: mp4 bytes made", ("server_side", "totals", "output_bytes"), None),
+    ("server: seconds of video", ("server_side", "totals", "content_seconds"), None),
+    ("videos per second (tput_user)", ("tput_user",), False),
     ("burst videos per minute", ("burst_videos_per_minute",), False),
     ("burst latency p95 s", ("burst_latency_p95",), True),
 ]

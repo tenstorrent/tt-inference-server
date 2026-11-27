@@ -40,6 +40,7 @@ class PerformanceTargets:
     ttft_ms: Optional[float] = None
     ttft_streaming_ms: Optional[float] = None
     tput_user: Optional[float] = None
+    inference_steps_per_second: Optional[float] = None
     tput_prefill: Optional[float] = None
     e2el_ms: Optional[float] = None
     tput: Optional[float] = None
@@ -66,6 +67,7 @@ class PerformanceTargets:
             ttft_ms=theoretical.get("ttft_ms"),
             ttft_streaming_ms=theoretical.get("ttft_streaming_ms"),
             tput_user=theoretical.get("tput_user"),
+            inference_steps_per_second=theoretical.get("inference_steps_per_second"),
             tput_prefill=theoretical.get("tput_prefill"),
             # The video entries call it end_to_end_latency_ms.
             e2el_ms=theoretical.get(
