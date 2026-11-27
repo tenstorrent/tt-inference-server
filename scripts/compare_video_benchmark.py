@@ -26,7 +26,9 @@ from pathlib import Path
 ROWS = [
     ("requests ok", ("num_successful",), None),
     ("steps per second", ("inference_steps_per_second",), False),
-    ("whole request (ttft) s", ("ttft",), True),
+    # older reports call it ttft
+    ("whole request s", (("end_to_end_latency_s",), ("ttft",)), True),
+    ("video size bytes", ("video_bytes",), None),
     ("generation s (submit to completed)", ("generation_seconds",), True),
     ("submit (POST) s", ("phases", "submit_s"), True),
     ("queue wait s", ("phases", "queue_wait_s"), True),
@@ -50,6 +52,14 @@ def benchmarks_of(report: dict) -> dict:
 
 
 def pick(block: dict, path: tuple):
+    """The number at ``path``; ``path`` may also be a tuple of alternative paths
+    (the first one present wins)."""
+    if path and isinstance(path[0], tuple):
+        for alternative in path:
+            found = pick(block, alternative)
+            if found is not None:
+                return found
+        return None
     value = block
     for key in path:
         if not isinstance(value, dict) or key not in value:

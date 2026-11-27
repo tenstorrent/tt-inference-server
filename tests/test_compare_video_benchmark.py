@@ -58,3 +58,12 @@ def test_a_report_without_benchmarks_is_refused(tmp_path):
     with pytest.raises(SystemExit) as exc:
         raise SystemExit(cmp.main([str(a), str(a)]))
     assert exc.value.code == 1
+
+
+def test_an_older_report_with_ttft_is_compared_with_a_newer_one():
+    old = _report(ttft=127.9)
+    new = _report(end_to_end_latency_s=125.5)
+    text = cmp.table(
+        cmp.benchmarks_of(old), cmp.benchmarks_of(new), ["python", "cpp"], ["a", "b"]
+    )
+    assert "| whole request s | 127.9 | 125.5 | -1.9 % |" in text

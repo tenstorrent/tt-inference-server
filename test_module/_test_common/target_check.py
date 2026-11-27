@@ -67,7 +67,10 @@ class PerformanceTargets:
             ttft_streaming_ms=theoretical.get("ttft_streaming_ms"),
             tput_user=theoretical.get("tput_user"),
             tput_prefill=theoretical.get("tput_prefill"),
-            e2el_ms=theoretical.get("e2el_ms"),
+            # The video entries call it end_to_end_latency_ms.
+            e2el_ms=theoretical.get(
+                "e2el_ms", theoretical.get("end_to_end_latency_ms")
+            ),
             tput=theoretical.get("tput"),
             rtr=theoretical.get("rtr"),
             fc_p50_ms=theoretical.get("fc_p50_ms"),
