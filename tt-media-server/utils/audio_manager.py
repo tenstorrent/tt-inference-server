@@ -438,7 +438,9 @@ class AudioManager:
             list: List of audio chunks with timing and speaker information for Whisper processing
 
         Raises:
-            RuntimeError: If VAD model is not available and no fallback is possible
+            RuntimeError: If diarization is requested and pyannote is not available or fails.
+                A VAD-only result would label every segment SPEAKER_00, which reads as a
+                real one-speaker answer.
         """
         # Step 1: Apply VAD to detect speech segments
         vad_speech_segments = self._apply_vad(audio_array)
@@ -446,13 +448,19 @@ class AudioManager:
         if enable_diarization:
             # Step 2: Apply diarization (will run on entire audio but can be filtered by VAD results)
             if self._diarization_model is None:
-                self._logger.warning(
-                    "Diarization requested but model not available - falling back to VAD-only mode"
+                raise RuntimeError(
+                    "Diarization requested but the pyannote audio worker is not available; "
+                    "see the 'Failed to start audio worker' error in the server log"
                 )
-                enable_diarization = False
             else:
                 diarization_segments = self._apply_diarization(audio_array)
 
+                if diarization_segments is None:
+                    raise RuntimeError(
+                        "Diarization requested but the pyannote audio worker failed; "
+                        "see the audio worker error in the server log (missing HF_TOKEN "
+                        "or unaccepted pyannote model terms are common causes)"
+                    )
                 if not diarization_segments:
                     self._logger.warning(
                         "Diarization returned no segments - falling back to VAD-only mode"
@@ -615,9 +623,9 @@ class AudioManager:
             )
             worker.start()
         except Exception as e:
-            self._logger.warning(
-                f"Failed to start audio worker: {e}. "
-                "Continuing without audio preprocessing"
+            self._logger.error(
+                f"Failed to start audio worker: {e}. Continuing without audio "
+                "preprocessing; requests with perform_diarization=true will fail"
             )
             self._audio_venv_worker = None
             self._diarization_model = None
@@ -651,12 +659,13 @@ class AudioManager:
 
     @log_execution_time("Applying diarization")
     def _apply_diarization(self, audio_array):
-        """Run diarization on the persistent audio venv worker."""
+        """Run diarization on the persistent audio venv worker.
+
+        Returns the segments, an empty list if pyannote found no speech, or None if the
+        worker is unavailable or failed."""
         if self._audio_venv_worker is None:
-            self._logger.warning(
-                "Diarization requested but audio worker not available, returning no segments"
-            )
-            return []
+            self._logger.error("Diarization requested but audio worker not available")
+            return None
 
         self._logger.info("Performing speaker diarization via audio venv worker...")
 
@@ -667,7 +676,7 @@ class AudioManager:
         )
 
         if segments is None:
-            return []
+            return None
 
         diarization_segments = [
             {

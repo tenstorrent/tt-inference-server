@@ -132,6 +132,37 @@ def test_normalize_speaker_ids():
     assert norm[2]["speaker"] == "SPEAKER_00"
 
 
+_SPEECH = [{"start": 0.0, "end": 1.0}]
+
+
+@patch("utils.audio_manager.settings", new=DummySettings())
+def test_diarization_without_audio_worker_raises():
+    manager = AudioManager()  # preprocessing disabled -> no worker, no pyannote
+    with patch.object(AudioManager, "_apply_vad", return_value=_SPEECH):
+        with pytest.raises(RuntimeError, match="not available"):
+            manager.apply_diarization_with_vad(np.zeros(16000, dtype=np.float32), True)
+
+
+@patch("utils.audio_manager.settings", new=DummySettings())
+def test_diarization_worker_error_raises():
+    manager = AudioManager()
+    manager._diarization_model = True
+    manager._audio_venv_worker = Mock(run=Mock(return_value=None))  # error payload
+    with patch.object(AudioManager, "_apply_vad", return_value=_SPEECH):
+        with pytest.raises(RuntimeError, match="failed"):
+            manager.apply_diarization_with_vad(np.zeros(16000, dtype=np.float32), True)
+
+
+@patch("utils.audio_manager.settings", new=DummySettings())
+def test_vad_only_labels_one_speaker_without_pyannote():
+    manager = AudioManager()
+    with patch.object(AudioManager, "_apply_vad", return_value=_SPEECH):
+        chunks = manager.apply_diarization_with_vad(
+            np.zeros(16000, dtype=np.float32), False
+        )
+    assert chunks and all(c["speaker"] == "SPEAKER_00" for c in chunks)
+
+
 # ---------------------------------------------------------------------------
 # AudioVenvWorker
 #
