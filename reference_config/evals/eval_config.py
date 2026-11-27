@@ -13313,6 +13313,16 @@ _eval_config_list = [
                     published_score_ref="https://huggingface.co/IFM/K2-Horizon-MoVA-36B-A4B#benchmark-results",
                     gpu_reference_score=None,
                     gpu_reference_score_ref=None,
+                    # ci-nightly runs the first 40 questions (lm-eval --limit, dataset order)
+                    # against this model's QB2 CI accuracy on exactly those questions;
+                    # tolerance 0.10 keeps P(fail) under 5% for a binomial at that rate.
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=80.0,
+                            ref="QB2 CI GPQA on the first 40 questions: 32/40 (tt-shield run 45616714055, 160/198 on the full set); needs 28/40",
+                            tolerance=0.10,
+                        ),
+                    },
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -13337,9 +13347,9 @@ _eval_config_list = [
                     "temperature": 1.0,
                     "top_p": 0.95,
                 },
-                # Dispatch with run-full-evals (no --ci-mode) for all 198 questions.
+                # ci-nightly: the first 40 questions; all 198 with run-full-evals (no --ci-mode).
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.CI_NIGHTLY: 40,
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
