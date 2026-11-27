@@ -862,13 +862,15 @@ templates:
     VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
   metadata:
     google/gemma-4-12B-it:
+      # Agentic evals: the QB2 five-task Terminal-Bench 2.1 and SWE-bench Verified subsets
+      # (>= 1/5 each) instead of the shared 24-task Terminal-Bench 2 wave
+      # (EVAL_CONFIG_VARIANTS["gemma4-12b-qb2"] in reference_config/evals/eval_config.py).
+      eval_config_variant: gemma4-12b-qb2
       # The eval tasks are shared with the tt_transformers profiles, which keep their gates.
       # In ci-nightly this profile's lm-eval tasks are graded against its own QB2 results at
       # tolerance 0.10 (P(fail) under 5% for a binomial at the measured rate):
       # - GPQA Diamond (all 198): CI 144 / 145 / 144 at seeds 42 / 43 / 44 = 72.9%; needs 129/198.
       # - LiveCodeBench v6 (131): CI 73.28 (96/131, tt-shield run 45719501496); needs 86/131.
-      # Profile overrides do not reach agentic tasks: Terminal-Bench 2 keeps the shared gate
-      # (published 18.0 at 0.05, 5/24 on the ci-nightly wave; CI 28/89 = 31.46).
       eval_task_score_overrides:
         r1_gpqa_diamond:
           mode_reference_scores:

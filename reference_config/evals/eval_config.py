@@ -14731,3 +14731,150 @@ EVAL_CONFIGS = {
 # RequirementsTargetPack._find_task_template) read this instead, so dropping a
 # task from one model's run set cannot make it unreachable catalog-wide.
 ALL_EVAL_CONFIGS = _eval_config_map
+
+
+def _gemma4_12b_qb2_agentic_tasks() -> List[EvalTask]:
+    """Terminal-Bench 2.1 and SWE-bench Verified five-task QB2 subsets for gemma4_12b_qb2.
+
+    The same subsets and >= 1/5 gates as the other QB2 agentic-models profiles, with the
+    sampling of the shared gemma-4-12B-it Terminal-Bench 2 task (T 1.0, top_p 0.95,
+    top_k 20, thinking on per request, 96K input / 32K output). On that task's full
+    89-task CI run (tt-shield 45719501496) this profile solved 4 of the 5 Terminal-Bench
+    subset tasks (TB 2.0 versions): openssl-selfsigned-cert, fix-git,
+    nginx-request-logging and overfull-hbox; sqlite-db-truncate failed.
+    """
+    one_of_five = {
+        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+            score=20.0,
+            ref="CI gate: at least 1 of 5 tasks solved",
+            tolerance=0.0,
+            min_correct=1,
+        ),
+    }
+    sampling = {
+        "top_p": 0.95,
+        "extra_body": {
+            "top_k": 20,
+            "chat_template_kwargs": {"enable_thinking": True},
+        },
+    }
+    return [
+        EvalTask(
+            task_name="terminal_bench_2_1",
+            workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+            score=EvalTaskScore(
+                # The subset is not comparable to a full-set published score.
+                published_score=None,
+                published_score_ref=None,
+                mode_reference_scores=dict(one_of_five),
+                score_func=score_task_single_key,
+                score_func_kwargs={"result_keys": ["accuracy"], "unit": "percent"},
+            ),
+            agentic_eval_config=TerminalBenchEvalConfig(
+                dataset="terminal-bench/terminal-bench-2-1",
+                agent="terminus-2",
+                n_concurrent_trials=5,
+                n_attempts=1,
+                n_tasks=5,
+                task_names=list(_QB2_TERMINAL_BENCH_2_1_SUBSET),
+                agent_timeout_sec=2 * 60 * 60,
+                agent_kwargs={
+                    "parser_name": "json",
+                    "temperature": 1.0,
+                    "model_info": {
+                        "max_input_tokens": 96 * 1024,
+                        "max_output_tokens": 32 * 1024,
+                    },
+                    "llm_kwargs": {
+                        **sampling,
+                        "max_tokens": 32 * 1024,
+                        "timeout": 60 * 60,
+                    },
+                },
+                task_names_map={
+                    EvalLimitMode.CI_NIGHTLY: list(_QB2_TERMINAL_BENCH_2_1_SUBSET),
+                },
+            ),
+            limit_samples_map={
+                EvalLimitMode.SMOKE_TEST: 2,
+                EvalLimitMode.CI_NIGHTLY: 5,
+            },
+        ),
+        EvalTask(
+            task_name="swe_bench_verified",
+            workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+            score=EvalTaskScore(
+                published_score=None,
+                published_score_ref=None,
+                mode_reference_scores=dict(one_of_five),
+                score_func=score_task_single_key,
+                score_func_kwargs={"result_keys": ["accuracy"], "unit": "percent"},
+            ),
+            agentic_eval_config=HarborEvalConfig(
+                dataset="swebench-verified",
+                agent="mini-swe-agent",
+                n_concurrent_trials=5,
+                n_attempts=1,
+                n_tasks=5,
+                task_names=list(_QB2_SWE_BENCH_VERIFIED_SUBSET),
+                agent_timeout_sec=3 * 60 * 60,
+                llm_timeout_sec=60 * 60,
+                agent_kwargs={
+                    "version": MINI_SWE_AGENT_VERSION,
+                    "max_tokens": 32 * 1024,
+                    "config": {
+                        "model": {
+                            "model_kwargs": {"temperature": 1.0, **sampling},
+                        }
+                    },
+                },
+                task_names_map={
+                    EvalLimitMode.CI_NIGHTLY: list(_QB2_SWE_BENCH_VERIFIED_SUBSET),
+                },
+            ),
+            limit_samples_map={
+                EvalLimitMode.SMOKE_TEST: 2,
+                EvalLimitMode.CI_NIGHTLY: 5,
+            },
+        ),
+    ]
+
+
+# Per-profile eval configs. A model spec selects one with the catalog metadata key
+# ``eval_config_variant: <name>``; for that profile it replaces the HF repo's shared
+# EvalConfig, so other implementations of the same checkpoint keep the shared one.
+EVAL_CONFIG_VARIANTS: Dict[str, EvalConfig] = {
+    # gemma4_12b_qb2: the shared gemma-4-12B-it lm-eval tasks (its GPQA / LiveCodeBench
+    # gates come from eval_task_score_overrides), with the QB2 five-task agentic subsets
+    # in place of the shared 24-task Terminal-Bench 2 wave.
+    "gemma4-12b-qb2": EvalConfig(
+        hf_model_repo="google/gemma-4-12B-it",
+        tasks=[
+            t
+            for t in _eval_config_map["google/gemma-4-12B-it"].tasks
+            if t.workflow_venv_type != WorkflowVenvType.EVALS_AGENTIC
+        ]
+        + _gemma4_12b_qb2_agentic_tasks(),
+    ),
+}
+
+
+def resolve_eval_config(hf_model_repo: str, model_spec: Any = None):
+    """The EvalConfig a run of ``model_spec`` uses: its variant if it names one, else the repo's."""
+    metadata = getattr(model_spec, "metadata", None) or {}
+    variant = (
+        metadata.get("eval_config_variant") if isinstance(metadata, dict) else None
+    )
+    if variant:
+        cfg = EVAL_CONFIG_VARIANTS.get(variant)
+        if cfg is None:
+            raise ValueError(
+                f"eval_config_variant {variant!r} of "
+                f"{getattr(model_spec, 'model_name', hf_model_repo)} is not in EVAL_CONFIG_VARIANTS"
+            )
+        if cfg.hf_model_repo != hf_model_repo:
+            raise ValueError(
+                f"eval_config_variant {variant!r} is for {cfg.hf_model_repo}, not {hf_model_repo}"
+            )
+        return cfg
+    return EVAL_CONFIGS.get(hf_model_repo)
