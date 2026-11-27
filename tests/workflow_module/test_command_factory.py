@@ -12,6 +12,7 @@ out of scope here.
 from __future__ import annotations
 
 import json
+import re
 from argparse import Namespace
 from pathlib import Path
 from types import SimpleNamespace
@@ -566,18 +567,26 @@ class TestOutputLeaf:
     below where every consumer (report globs, CI artifact payloads) looks.
     """
 
+    TS = "2026-11-05_09-24-04"
+
     @staticmethod
     def _args(model):
         return Namespace(model=model, device="p150", workflow="release")
 
     def test_org_prefix_does_not_become_a_directory(self):
-        leaf = cf._output_leaf(self._args("Qwen/Qwen3-32B"))
-        assert leaf == "Qwen__Qwen3-32B_p150_release"
+        leaf = cf._output_leaf(self._args("Qwen/Qwen3-32B"), self.TS)
+        assert leaf == f"Qwen__Qwen3-32B_p150_release_{self.TS}"
         assert "/" not in leaf
         assert len(Path(leaf).parts) == 1
 
     def test_bare_model_id_is_unchanged(self):
-        assert cf._output_leaf(self._args("resnet-50")) == "resnet-50_p150_release"
+        leaf = cf._output_leaf(self._args("resnet-50"), self.TS)
+        assert leaf == f"resnet-50_p150_release_{self.TS}"
+
+    def test_default_timestamp_is_the_run_start(self):
+        leaf = cf._output_leaf(self._args("resnet-50"))
+        stamp = leaf[len("resnet-50_p150_release_") :]
+        assert re.fullmatch(r"\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}", stamp)
 
     def test_output_path_stays_directly_under_output_dir(self, tmp_path):
         leaf = cf._output_leaf(self._args("meta-llama/Llama-3.1-8B-Instruct"))
@@ -587,8 +596,8 @@ class TestOutputLeaf:
         "model", ["Qwen/Qwen3-32B", "microsoft/phi-1_5", "resnet-50"]
     )
     def test_model_portion_recovers_the_repo_id(self, model):
-        leaf = cf._output_leaf(self._args(model))
-        assert unslugify_model_id(leaf[: -len("_p150_release")]) == model
+        leaf = cf._output_leaf(self._args(model), self.TS)
+        assert unslugify_model_id(leaf[: -len(f"_p150_release_{self.TS}")]) == model
 
 
 class TestCanonicalizeCliModel:
