@@ -767,19 +767,32 @@ templates:
       reasoning_parser_name: gemma4
       tool_call_parser_name: gemma4
 
-# PR tt-metal#56765: the dedicated Gemma4 31B QB2 implementation under
-# models/demos/gemma4_31b_qb2. Keep max_concurrency=1 so the standard ten-point
-# Shield sweep is directly comparable with the existing autoport benchmark run.
+# Dedicated Gemma 4 31B QB2 implementation, two profiles of ONE server (32 decode slots, 262144 context, prefix caching,
+# adaptive decode rows: the model decodes with the smallest trace that covers the live rows, so a lone user runs at the
+# one-slot speed). They differ only in speculation and scheduling:
+#   gemma4_31b_qb2      few users (up to 4 agents): n-gram speculation chosen by the number of live requests (K = 5 for one,
+#                       K = 3 up to four, none beyond: the plugin plan caps larger batches at zero drafts), synchronous
+#                       scheduling (vLLM refuses async scheduling with the n-gram method), NUMBA_NUM_THREADS=1. End-to-end
+#                       SWE-bench agent runs, one agent: 46.0 vs 33.6 tok/s/user (+37%), 3.5 vs 5.3 min of agent time per trial.
+#   gemma4_31b_qb2_c32  many agents (8 and more): the same server with speculation off and async scheduling. At 16 agents
+#                       it gives 18.6 vs 16.4 tok/s/user (+13%) and 17% less wall time than the speculative profile; at 20 agents
+#                       (40 tasks) it holds 12-13 tok/s/user with a KV peak of 68%, a prefix hit rate of 95% and no thrash.
+#                       The profiles are level at about 8 agents. Measured end to end from 1 to 20 agents; the 32 slots are
+#                       there, the harness (Docker address pool, about 30 trials) limits the agent runs, not the server.
+# Both profiles need the vllm-tt-plugin changes of the Gemma 31B stack: state-slots fix, anchored sliding-window KV spec, the
+# eviction layer (skipped sliding blocks first) and the repetition guard; the speculative profile also needs the cap-zero change.
+# The no-speculation entry comes first because it holds the YAML anchors the speculative profile reuses.
 - weights:
     - google/gemma-4-31B-it
-  impl: gemma4_31b_qb2
+  impl: gemma4_31b_qb2_c32
   inference_engine: VLLM
   device_model_specs:
-    - device: P300X2
-      max_concurrency: 1
+    - &gemma4_31b_qb2_device
+      device: P300X2
+      max_concurrency: 32
       max_context: 262144
-      default_impl: false  # selectable with --impl gemma4_31b_qb2; needs tt-metal vvukoman/gemma4-31b-qb2-stable
-      env_vars:
+      default_impl: false  # selectable with --impl gemma4_31b_qb2_c32; many-agent profile, no speculation
+      env_vars: &gemma4_31b_qb2_device_env
         MESH_DEVICE: P300x2
         EXTRA_MODELS_DIR: ../../tt-metal/models/demos
         TT_METAL_PINNED_MEMORY_CACHE_LIMIT_BYTES: '0'
@@ -787,12 +800,12 @@ templates:
         sample_on_device_mode: all
         trace_region_size: 536870912
         l1_small_size: 16384
-      vllm_args:
+      vllm_args: &gemma4_31b_qb2_vllm_args
         block_size: '128'
         hf-overrides: '{"architectures":["TTGemma4QB2ForCausalLM"]}'
         max-logprobs: '-1'
         async-scheduling: true
-        no-enable-prefix-caching: true
+        enable-prefix-caching: true
         # The merged model (tt-metal ce5a667) uses scheduler-driven chunked
         # prefill and rejects budgets above 8192 batched tokens. Requests that
         # omit top_k need a default inside the device sampler's 1..32 range.
@@ -805,12 +818,37 @@ templates:
         default-chat-template-kwargs: '{"enable_thinking":true}'
   status: COMPLETE
   has_builtin_warmup: true
-  env_vars:
+  env_vars: &gemma4_31b_qb2_env_vars
     VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
-  metadata:
+  metadata: &gemma4_31b_qb2_metadata
     google/gemma-4-31B-it:
       reasoning_parser_name: gemma4
       tool_call_parser_name: gemma4
+
+- weights:
+    - google/gemma-4-31B-it
+  impl: gemma4_31b_qb2
+  inference_engine: VLLM
+  device_model_specs:
+    - <<: *gemma4_31b_qb2_device
+      max_concurrency: 32
+      default_impl: false  # selectable with --impl gemma4_31b_qb2; needs the vllm-tt-plugin changes listed above (cap-zero included)
+      env_vars:
+        <<: *gemma4_31b_qb2_device_env
+        # The host n-gram proposer's numba pool (16 threads by default) steals the cores of the serving loop on a
+        # speculative server with several users; one thread removes it (4 slots K=3: 27.6 -> 43.9 tok/s/user).
+        NUMBA_NUM_THREADS: "1"
+      vllm_args:
+        <<: *gemma4_31b_qb2_vllm_args
+        # Host n-gram drafter, K = 5. The model's verify call needs synchronous scheduling. A false boolean emits no flag,
+        # so the inherited async-scheduling is cleared (null) and the explicit negative flag is set.
+        async-scheduling: null
+        no-async-scheduling: true
+        speculative_config: '{"method":"ngram","num_speculative_tokens":5,"prompt_lookup_max":4,"prompt_lookup_min":2}'
+  status: COMPLETE
+  has_builtin_warmup: true
+  env_vars: *gemma4_31b_qb2_env_vars
+  metadata: *gemma4_31b_qb2_metadata
 
 # Dedicated Gemma 4 26B A4B implementation (single user): selectable with --impl gemma4-26b-a4b-qb2; the QB2 default
 # is the tt_transformers entry below (32 users, the MTP speculative contract).
