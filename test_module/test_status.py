@@ -172,10 +172,13 @@ class VideoGenerationTestStatus(BaseTestStatus):
         video_path: Optional[str] = None,
         prompt: Optional[str] = None,
         generation_seconds: Optional[float] = None,
+        phases: Optional[Dict[str, float]] = None,
     ):
         super().__init__(status, elapsed)
         # Seconds until the job reported `completed`, without the download.
         self.generation_seconds = generation_seconds
+        # submit_s, queue_wait_s, processing_s, download_s of the request
+        self.phases = phases
         self.num_inference_steps = num_inference_steps
         self.inference_steps_per_second = inference_steps_per_second
         self.ttft = ttft
@@ -194,4 +197,5 @@ class VideoGenerationTestStatus(BaseTestStatus):
             "video_path": self.video_path,
             "prompt": self.prompt,
             "generation_seconds": self.generation_seconds,
+            "phases": self.phases,
         }

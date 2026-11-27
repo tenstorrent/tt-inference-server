@@ -65,6 +65,13 @@ VIDEO_INFERENCE_STEPS = {
 # between runs. Models whose payload fixes the seed already keep their own.
 VIDEO_BENCHMARK_PROMPT = "a red ball rolling on grass"
 VIDEO_BENCHMARK_SEED = 42
+# The phases of one request, as the client sees them (the same for every server):
+#   submit_s      the POST until the 202 answer
+#   queue_wait_s  until a poll first sees the job in progress (the polling interval
+#                 is the resolution; the server_side block has the exact wait)
+#   processing_s  in progress until completed: the device run and the mp4 encode
+#   download_s    completed until the mp4 is downloaded
+VIDEO_PHASES = ("submit_s", "queue_wait_s", "processing_s", "download_s")
 # Videos submitted at once by the burst phase; 0 (the default) turns it off.
 # Keep it below the server's queue limit, a full queue answers 429.
 VIDEO_BENCHMARK_BURST_JOBS_ENV = "VIDEO_BENCHMARK_BURST_JOBS"
@@ -72,6 +79,7 @@ VIDEO_BENCHMARK_BURST_JOBS_ENV = "VIDEO_BENCHMARK_BURST_JOBS"
 MINIMAX_H3_VIDEO_TIMEOUT_SECONDS = 1800
 
 
+VIDEO_JOB_STATUS_IN_PROGRESS = "in_progress"
 VIDEO_JOB_STATUS_COMPLETED = "completed"
 VIDEO_JOB_STATUS_FAILED = "failed"
 VIDEO_JOB_STATUS_CANCELLED = "cancelled"
@@ -116,8 +124,10 @@ def _poll_video_completion(
     timings: dict | None = None,
 ) -> str:
     """Wait for the job and download its video; "" when it failed or timed out.
-    ``timings["completed_at"]`` is set when the job reports `completed`, before
-    the download, so generation time and download time can be told apart."""
+    ``timings["first_in_progress_at"]`` is set when a poll first sees the job
+    `in_progress` and ``timings["completed_at"]`` when it reports `completed`
+    (before the download), so the phases of a request can be told apart; both are
+    as exact as the polling interval."""
     logger.info(f"Polling video job: {job_id}")
     logger.info(f"Polling interval: {polling_interval} seconds")
     logger.info(f"Timeout: {timeout} seconds")
@@ -140,6 +150,12 @@ def _poll_video_completion(
             status = job_data.get("status")
             logger.info(f"Job {job_id} status: {status}")
 
+            if (
+                status == VIDEO_JOB_STATUS_IN_PROGRESS
+                and timings is not None
+                and "first_in_progress_at" not in timings
+            ):
+                timings["first_in_progress_at"] = time.time()
             if status == VIDEO_JOB_STATUS_COMPLETED:
                 if timings is not None:
                     timings["completed_at"] = time.time()
@@ -158,6 +174,21 @@ def _poll_video_completion(
 
     logger.error(f"Video generation timed out after {timeout}s")
     return ""
+
+
+def _request_phases(
+    start_time: float, submitted_at: float, poll_times: dict, finished_at: float
+) -> dict:
+    """The VIDEO_PHASES of one request from its timestamps."""
+    completed_at = poll_times["completed_at"]
+    started_at = min(poll_times.get("first_in_progress_at", submitted_at), completed_at)
+    started_at = max(started_at, submitted_at)
+    return {
+        "submit_s": submitted_at - start_time,
+        "queue_wait_s": started_at - submitted_at,
+        "processing_s": completed_at - started_at,
+        "download_s": finished_at - completed_at,
+    }
 
 
 def _generate_video(
@@ -204,6 +235,7 @@ def _generate_video(
             )
             return False, time.time() - start_time, "", ""
 
+        submitted_at = time.time()
         job_data = response.json()
         job_id = job_data.get("id")
         logger.info(f"Video generation job submitted: {job_id}")
@@ -220,9 +252,13 @@ def _generate_video(
             ),
             timings=poll_times,
         )
-        elapsed = time.time() - start_time
+        finished_at = time.time()
+        elapsed = finished_at - start_time
         if timings is not None and "completed_at" in poll_times:
             timings["generation_seconds"] = poll_times["completed_at"] - start_time
+            timings.update(
+                _request_phases(start_time, submitted_at, poll_times, finished_at)
+            )
 
         if video_path:
             logger.info(f"✅ Video generated successfully: {video_path}")
@@ -274,6 +310,7 @@ def _run_video_generation_benchmark(
                 video_path=video_path,
                 prompt=VIDEO_BENCHMARK_PROMPT,
                 generation_seconds=timings.get("generation_seconds"),
+                phases={k: timings[k] for k in VIDEO_PHASES if k in timings} or None,
             )
         )
     return status_list
@@ -427,11 +464,19 @@ def run_video_benchmark(ctx: MediaContext) -> Block:
             "target_checks": target_checks,
         },
     }
+    phase_values = [s.phases for s in successful if s.phases]
     if generation_times:
         # Until the job reported `completed`: ttft above also holds the download.
         block_data["Benchmarks"]["generation_seconds"] = sum(generation_times) / len(
             generation_times
         )
+    if phase_values:
+        # The same keys for every server: the mean over the requests, and each request.
+        block_data["Benchmarks"]["phases"] = {
+            key: sum(p[key] for p in phase_values) / len(phase_values)
+            for key in VIDEO_PHASES
+        }
+        block_data["Benchmarks"]["phases_per_request"] = phase_values
     if burst:
         block_data["Benchmarks"].update(burst)
     server_side = server_side_video_metrics(metrics_start, metrics_sequential)
