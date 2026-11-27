@@ -390,7 +390,8 @@ def test_poll_does_not_record_a_completion_for_a_failed_job(monkeypatch):
 
 
 def test_generate_video_reports_generation_time_without_the_download(monkeypatch):
-    clock = iter([100.0, 180.0, 183.0])  # submit, completed, downloaded
+    # start, 202 answered, [in progress seen, completed], downloaded
+    clock = iter([100.0, 102.0, 180.0, 183.0])
     monkeypatch.setattr(mod.time, "time", lambda: next(clock))
 
     class _Resp:
@@ -413,6 +414,96 @@ def test_generate_video_reports_generation_time_without_the_download(monkeypatch
     assert ok is True
     assert timings["generation_seconds"] == 80.0
     assert elapsed == 83.0
+
+
+def test_a_request_is_split_into_submit_queue_processing_and_download():
+    phases = mod._request_phases(
+        start_time=100.0,
+        submitted_at=100.2,  # the 202 came after 0.2 s
+        poll_times={"first_in_progress_at": 103.0, "completed_at": 228.0},
+        finished_at=228.5,
+    )
+    assert phases["submit_s"] == pytest.approx(0.2)
+    assert phases["queue_wait_s"] == pytest.approx(2.8)
+    assert phases["processing_s"] == pytest.approx(125.0)
+    assert phases["download_s"] == pytest.approx(0.5)
+    # the four phases add up to the whole request
+    assert sum(phases.values()) == pytest.approx(128.5)
+
+
+def test_without_an_in_progress_poll_the_whole_wait_counts_as_processing():
+    phases = mod._request_phases(
+        start_time=10.0,
+        submitted_at=10.1,
+        poll_times={"completed_at": 12.1},  # never seen in progress
+        finished_at=12.2,
+    )
+    assert phases["queue_wait_s"] == 0.0
+    assert phases["processing_s"] == pytest.approx(2.0)
+
+
+def test_poll_notes_the_first_time_the_job_is_in_progress(monkeypatch):
+    answers = iter(["queued", "in_progress", "in_progress", "completed"])
+
+    class _Status:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {"status": next(answers)}
+
+    clock = iter([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0])
+    monkeypatch.setattr(mod.requests, "get", lambda *a, **k: _Status())
+    monkeypatch.setattr(mod.time, "sleep", lambda _s: None)
+    monkeypatch.setattr(mod.time, "time", lambda: next(clock))
+    monkeypatch.setattr(mod, "_download_video", lambda *a: "/tmp/v.mp4")
+    timings = {}
+    mod._poll_video_completion(_poll_ctx(), "job", {}, timings=timings)
+    # a later in-progress answer does not move the first one
+    assert timings["first_in_progress_at"] < timings["completed_at"]
+    assert timings["first_in_progress_at"] == 4.0
+
+
+def test_the_benchmark_reports_the_mean_phases_of_the_requests(monkeypatch):
+    statuses = [
+        mod.VideoGenerationTestStatus(
+            status=True,
+            elapsed=130.0,
+            num_inference_steps=40,
+            phases={
+                "submit_s": 0.1,
+                "queue_wait_s": 1.0,
+                "processing_s": 120.0,
+                "download_s": 0.2,
+            },
+        ),
+        mod.VideoGenerationTestStatus(
+            status=True,
+            elapsed=132.0,
+            num_inference_steps=40,
+            phases={
+                "submit_s": 0.3,
+                "queue_wait_s": 3.0,
+                "processing_s": 124.0,
+                "download_s": 0.4,
+            },
+        ),
+    ]
+    monkeypatch.setattr(mod, "require_health", lambda ctx: None)
+    monkeypatch.setattr(mod, "get_num_calls", lambda ctx: 2)
+    monkeypatch.setattr(mod, "_run_video_generation_benchmark", lambda c, n: statuses)
+    monkeypatch.setattr(mod, "_video_target_checks", lambda *a: ({}, "n/a"))
+    monkeypatch.setattr(mod, "block_id", lambda ctx: "id")
+    monkeypatch.setattr(mod, "scrape_video_metrics", lambda base_url: {})
+    monkeypatch.delenv(mod.VIDEO_BENCHMARK_BURST_JOBS_ENV, raising=False)
+    ctx = _ctx("Wan-AI/Wan2.2-T2V-A14B-Diffusers")
+    ctx.base_url = "http://localhost:8000"
+    data = mod.run_video_benchmark(ctx).data["Benchmarks"]
+    assert data["phases"]["submit_s"] == pytest.approx(0.2)
+    assert data["phases"]["queue_wait_s"] == pytest.approx(2.0)
+    assert data["phases"]["processing_s"] == pytest.approx(122.0)
+    assert data["phases"]["download_s"] == pytest.approx(0.3)
+    assert len(data["phases_per_request"]) == 2
 
 
 def test_t2v_benchmark_request_has_a_fixed_seed(monkeypatch):
