@@ -1,6 +1,6 @@
 ---
 name: deploy-tts-4galaxy
-description: Bare-metal deploy of the Inworld TTS-2 stack on a 4-galaxy Blackhole quad (blaze speechlm ring + 2 audio decoders + the C++ inference server in docker) from two ISOLATED trees - tt-blaze on its own pinned tt-metal, and a separate tt-metal fork checkout for the decoders - then prove it serves audio. Use when asked to build, deploy, redeploy, bring up, or tear down TTS-2 on a quad such as 110-A-Quad2 (bh-glx-110-a0[2,3]u0[2,8]); when a deploy hangs, aborts, or serves 44-byte responses; when changing slot caps or the server image. Self-contained: every command is inline. Validated 2026-11-12 on 110-A-Quad2 with tt-blaze 1721755859 (tt-metal v0.83.0-dev20261105), tt-metal fork 00e3f2137f, image tts_sampling_topk64_penalties.
+description: Bare-metal deploy of the Inworld TTS-2 stack on a 4-galaxy Blackhole quad (blaze speechlm ring + 16 audio decoders + the C++ inference server in docker) from two ISOLATED trees - tt-blaze on its own pinned tt-metal, and a separate tt-metal fork checkout for the decoders - then prove it serves audio. Use when asked to build, deploy, redeploy, bring up, or tear down TTS-2 on a quad such as 110-A-Quad2 (bh-glx-110-a0[2,3]u0[2,8]); when a deploy hangs, aborts, or serves 44-byte responses; when changing slot caps or the server image. Self-contained: every command is inline. Current stack (2026-11-27, 110-A-Quad2): tt-blaze multi_token_new 1721755859 (tt-metal v0.83.0-dev20261105), 16 decoders from tt-metal fork 1d1d17d0aa (inworld_tts_decoder_valid, T=384, batch 2), image tts_garbling_fix_dump.
 ---
 
 # Deploy TTS-2 on a 4-Galaxy Quad (bare metal, isolated trees)
@@ -8,7 +8,7 @@ description: Bare-metal deploy of the Inworld TTS-2 stack on a 4-galaxy Blackhol
 Three tiers come up in this exact order. Each depends on the one before it:
 
 ```
-1. audio decoders  (2 x tts_runner --model inworld_tts_decoder, T=48, batch 2)  -> decoder host
+1. audio decoders  (16 x tts_runner --model inworld_tts_decoder_valid, T=384, batch 2) -> decoder host
 2. blaze ring      (35 MPI ranks, tt-run + blaze.models.cli, --n-slots N)       -> all 4 hosts
 3. inference server (docker, tt_media_server_cpp)                               -> decoder host
 ```
@@ -16,17 +16,19 @@ Three tiers come up in this exact order. Each depends on the one before it:
 Decoders go **before** blaze: they enumerate every chip on their host at start-up,
 and if blaze already holds its chips there the decoder deadlocks on `CHIP_IN_USE`.
 
-Validated stack (2026-11-12, 110-A-Quad2):
+Current stack (2026-11-27, 110-A-Quad2):
 
 | piece | commit | where |
 |---|---|---|
-| tt-blaze | `1721755859` ("Repetition and frequency penalties") | `tenstorrent/tt-blaze` |
+| tt-blaze | `1721755859` = tip of `multi_token_new` ("Repetition and frequency penalties") | `tenstorrent/tt-blaze` |
 | blaze's tt-metal | `860b4917` = tag `v0.83.0-dev20261105` (blaze's own submodule pin) | `tenstorrent/tt-metal` |
-| decoder tt-metal | `00e3f2137f` ("on-device per-value mask table") | `ssinghalTT/tt-metal` fork |
-| server image | `tt-media-inference-server-blaze:tts_sampling_topk64_penalties` | ghcr `tt-shield` |
+| decoder tt-metal | `1d1d17d0aa` ("single runtime-mask trace, device mask table, wait for D2H sends", #15) | `ssinghalTT/tt-metal` fork |
+| decoders | 16 x `inworld_tts_decoder_valid`, `--tokens 384 --batch 2`, one chip each | decoder host |
+| server image | `tt-media-inference-server-blaze:tts_garbling_fix_dump` (scheduler nanicic `5bd43e1`) | ghcr `tt-shield` |
 
-Result: audio proof 266,924 B, 100/100 warmup requests OK, warm TTFB ~1 ms (~1.9 s total
-for one sentence), `max_session_count` 1000.
+Earlier validation (2026-11-12, 2 decoders, fork `00e3f2137f`, image
+`tts_sampling_topk64_penalties`): audio proof 266,924 B, 100/100 warmup requests OK,
+warm TTFB ~1 ms (~1.9 s total for one sentence), `max_session_count` 1000.
 
 ---
 
@@ -50,12 +52,13 @@ coexist as separate processes on the decoder host - but only after a fresh
 ## Inputs
 
 ```bash
-STACK=/data/ljovanovic/stacks/tts2_b1721755_m00e3f21     # everything for this stack lives here
+STACK=/data/ljovanovic/stacks/tts2_b1721755_m1d1d17d     # everything for this stack lives here
 H4=bh-glx-110-a02u02,bh-glx-110-a02u08,bh-glx-110-a03u02,bh-glx-110-a03u08   # 110-A-Quad2
 LAUNCH_HOST=bh-glx-110-a02u02   # where tt-run is started (any quad host)
 NSLOTS=1000                     # blaze --n-slots; the server's five caps MUST equal it
-DECCHIPS="24 25"                # decoder chips on the decoder host (free per rank_bindings)
-IMG=ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-blaze:tts_sampling_topk64_penalties
+NDEC=16                         # audio decoders, one chip each, all on the decoder host
+DECCHIPS="2 3 6 7 10 11 14 15 18 19 22 23 24 25 26 27"   # 16 free chips on the decoder host (stage 3 derives them)
+IMG=ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-blaze:tts_garbling_fix_dump
 ```
 
 **Which hosts make up a quad:** the "Cluster" column of the allocation sheet (spreadsheet
@@ -85,10 +88,10 @@ git clone --no-checkout git@github.com:ssinghalTT/tt-metal.git tt-metal
 cd tt-metal
 git remote add upstream git@github.com:tenstorrent/tt-metal.git
 git fetch upstream --tags                         # the fork has no release tags
-git checkout 00e3f2137f3ca5aad1fbcc88b9c4adb5e6354dba
+git checkout 1d1d17d0aa55cb033a2d91533ac0c59bc65681e8
 git submodule update --init --recursive
 git tag -d $(git tag -l 'tt-tts-*')               # REQUIRED - see trap below
-git describe --abbrev=10 --first-parent           # must print v0.79.0-dev20260903-...
+git describe --abbrev=10 --first-parent           # must print an upstream v0.7x.0-dev... tag, not tt-tts-*
 ```
 
 > **TRAP - the fork's own tag breaks the CMake version.** tt-metal's `cmake/version.cmake`
@@ -125,7 +128,7 @@ python_env/bin/python -c "import ttnn"
 `$STACK/env_blaze.sh` (launcher + blaze ranks):
 
 ```bash
-STACK=/data/ljovanovic/stacks/tts2_b1721755_m00e3f21
+STACK=/data/ljovanovic/stacks/tts2_b1721755_m1d1d17d
 BLAZE_DIR=$STACK/tt-blaze
 TTS2_DIR=/mnt/models/InWorld-Propritery/tts-models/tts-2
 source "$BLAZE_DIR/tt-metal/python_env/bin/activate"
@@ -143,7 +146,7 @@ export TTS_DECODER_BATCH=2
 `$STACK/env_tts.sh` (decoders):
 
 ```bash
-STACK=/data/ljovanovic/stacks/tts2_b1721755_m00e3f21
+STACK=/data/ljovanovic/stacks/tts2_b1721755_m1d1d17d
 BLAZE_DIR=$STACK/tt-blaze
 METAL_DIR=$STACK/tt-metal
 TTS2_DIR=/mnt/models/InWorld-Propritery/tts-models/tts-2
@@ -216,7 +219,7 @@ takes 30-90 s on some hosts); retry only on empty output:
 
 ```bash
 cat > $STACK/probe.sh <<'EOF'
-source /data/ljovanovic/stacks/tts2_b1721755_m00e3f21/env_blaze.sh >/dev/null 2>&1
+source /data/ljovanovic/stacks/tts2_b1721755_m1d1d17d/env_blaze.sh >/dev/null 2>&1
 cd "$TT_METAL_HOME" || exit 9
 TT_VISIBLE_DEVICES=0 timeout 200 python -c "
 import ttnn
@@ -262,8 +265,31 @@ The **decoder host** is the one host with free chips - the one carrying the two 
 meshes (here a02u08). Stage 0 (rank 2) and its `tt_{h2d,d2h}_tts2_speechlm.bin`
 descriptors land there too, so decoders, blaze I/O and the server all share memory on it.
 
-`DEVICE_IDS` for the server = **every chip blaze uses on the decoder host + the decoder
-chips**, read from the bindings, never guessed:
+The 16 decoders take 16 of the chips blaze leaves free on the decoder host. On Quad2
+blaze uses 12 there (`0,1,4,5,8,9,12,13,16,17,20,21`), so 20 are free; take the first
+16 of them as `DECCHIPS`:
+
+```bash
+cat > $STACK/free_chips.py <<'EOF'
+import sys, yaml
+f, host, n = sys.argv[1], sys.argv[2], int(sys.argv[3])
+used = set()
+for e in yaml.safe_load(open(f))["rank_bindings"]:
+    ov = e.get("env_overrides", {})
+    if ov.get("TT_METAL_CLUSTER_ID") == host:
+        used |= {int(x) for x in ov["TT_VISIBLE_DEVICES"].split(",")}
+free = [c for c in range(32) if c not in used]
+if len(free) < n:
+    sys.exit(f"only {len(free)} free chips on {host}, need {n}")
+print(" ".join(str(c) for c in free[:n]))
+EOF
+DECCHIPS=$($STACK/tt-blaze/tt-metal/python_env/bin/python $STACK/free_chips.py \
+  $(ls -t $STACK/tt-blaze/generated/ttrun/*/rank_bindings.yaml | head -1) bh-glx-110-a02u08 16)
+# Quad2 -> 2 3 6 7 10 11 14 15 18 19 22 23 24 25 26 27
+```
+
+`DEVICE_IDS` for the server = **every chip blaze uses on the decoder host + all 16
+decoder chips**, read from the bindings, never guessed:
 
 ```bash
 cat > $STACK/device_ids.py <<'EOF'
@@ -277,8 +303,8 @@ for e in yaml.safe_load(open(f))["rank_bindings"]:
 print("(" + ",".join(str(c) for c in sorted(chips) + dec) + ")")
 EOF
 $STACK/tt-blaze/tt-metal/python_env/bin/python $STACK/device_ids.py \
-  $(ls -t $STACK/tt-blaze/generated/ttrun/*/rank_bindings.yaml | head -1) bh-glx-110-a02u08 "24 25"
-# Quad2 -> (0,1,4,5,8,9,12,13,16,17,20,21,24,25)
+  $(ls -t $STACK/tt-blaze/generated/ttrun/*/rank_bindings.yaml | head -1) bh-glx-110-a02u08 "$DECCHIPS"
+# Quad2 -> (0,1,4,5,8,9,12,13,16,17,20,21,2,3,6,7,10,11,14,15,18,19,22,23,24,25,26,27)
 ```
 
 Both ranks on that host matter: rank 2 owns the speechlm H2D socket, rank 1 the
@@ -288,40 +314,38 @@ quad's hard-coded `(2,3,6,7,10,11,14,15,24,25)` does not carry over.
 
 ---
 
-## 4. Audio decoders (T=48, batch 2) on the decoder host
+## 4. Audio decoders (16 x T=384, batch 2) on the decoder host
 
 ```bash
 cat > $STACK/launch_decoders.sh <<'EOF'
 #!/usr/bin/env bash
-S=/data/ljovanovic/stacks/tts2_b1721755_m00e3f21
+S=/data/ljovanovic/stacks/tts2_b1721755_m1d1d17d
 L=${L:?need L}; mkdir -p "$L"
-DECCHIPS=${DECCHIPS:-"24 25"}; WIRE_T=${WIRE_T:-48}
+DECCHIPS=${DECCHIPS:?16 chips from free_chips.py}; WIRE_T=${WIRE_T:-384}
 source $S/env_tts.sh >/dev/null
 cd "$TT_METAL_HOME"
 i=0
 for c in $DECCHIPS; do
   i=$((i+1)); sfx=""; [ $i -gt 1 ] && sfx="_$i"
-  TT_VISIBLE_DEVICES=$c nohup python -u -m models.demos.inworld_tts.tts_runner --model inworld_tts_decoder \
+  TT_VISIBLE_DEVICES=$c nohup python -u -m models.demos.inworld_tts.tts_runner --model inworld_tts_decoder_valid \
     --model-path "$TTS2_CODEC_DECODER_CKPT" ${sfx:+--socket-suffix $sfx} \
     --tokens $WIRE_T --batch $TTS_DECODER_BATCH > "$L/decoder$i.log" 2>&1 < /dev/null &
   echo "decoder$i chip=$c suffix=${sfx:-none} T=$WIRE_T batch=$TTS_DECODER_BATCH pid=$!"
 done
 EOF
 L=$STACK/tts_logs/run_$(date +%m%d_%H%M)
-ssh bh-glx-110-a02u08 "L=$L bash $STACK/launch_decoders.sh"
-# wait for BOTH:  TTS_RUNNER_READY v1 component=inworld_tts_decoder ... codes_per_chunk=48 ... users_per_chunk=2
-grep -h TTS_RUNNER_READY $L/decoder1.log $L/decoder2.log      # ~30 s (trace capture)
+ssh bh-glx-110-a02u08 "L=$L DECCHIPS='$DECCHIPS' bash $STACK/launch_decoders.sh"   # decoder1..decoder16, suffixes none,_2.._16
+# wait for ALL 16:  TTS_RUNNER_READY v1 component=inworld_tts_decoder_valid ... users_per_chunk=2
+ssh bh-glx-110-a02u08 "grep -l TTS_RUNNER_READY $L/decoder*.log | wc -l"   # must print 16 (~30 s each, trace capture)
 ```
 
-Use the **plain** `inworld_tts_decoder` target, launched directly - not
-`--model inworld_tts_codec` / `--dec-chip`:
+Launch each `inworld_tts_decoder_valid` directly, one per chip, with `--tokens 384`
+(the default on `1d1d17d`: 8 x 48 wire codes per row) and `--batch 2`.
 
-> **TRAP - `00e3f21`'s codec wrapper only starts `inworld_tts_decoder_valid`.** That
-> decoder asserts `T % 32 == 0` (`runtime-mask path assumes tile-aligned T (got 48)`), and
-> at T=32 it builds an `8*T*4 = 1024 B` FIFO. The server engine writes 48-code pages
-> (8 rows x 48 x 4 = 1536 B), so it dies at connect with
-> `TT_FATAL: Page size must be less than or equal to the FIFO size`. The plain target
-> takes T=48 and uses `TtDecoder`'s 64512 B FIFO. (`83feb0fd` has the same assertion.)
+> **Old trap, `00e3f21` only:** there `_valid` asserted `T % 32 == 0` and at T=32 built a
+> 1024 B FIFO, so the server died at connect with
+> `TT_FATAL: Page size must be less than or equal to the FIFO size`, and we had to run
+> the plain `inworld_tts_decoder --tokens 48`. With `1d1d17d` use `_valid --tokens 384`.
 
 **The 64512 B FIFO is load-bearing.** `H2DSocket::write` does not split at the FIFO wrap,
 so a write straddling the end overruns L1 and the decoder goes idle with work queued
@@ -342,7 +366,7 @@ Do not raise it past ~128 KB (L1-backed; 256 KB crashes the decoder).
 ```bash
 cat > $STACK/launch_blaze.sh <<'EOF'
 #!/usr/bin/env bash
-S=/data/ljovanovic/stacks/tts2_b1721755_m00e3f21
+S=/data/ljovanovic/stacks/tts2_b1721755_m1d1d17d
 NSLOTS=${NSLOTS:-1000}
 H4=${H4:-bh-glx-110-a02u02,bh-glx-110-a02u08,bh-glx-110-a03u02,bh-glx-110-a03u08}
 L=${L:?need L}; mkdir -p "$L"
@@ -385,7 +409,7 @@ setup. A rank is stuck (not slow) when a `gdb -p <pid> -batch -ex 'bt'` shows
 > `Permission denied (publickey)` -> `PRTE has lost communication with a remote daemon`.
 > Once the daemons are up the session can end; the ring keeps running.
 
-> **TRAP - do not launch blaze through `tts_runner` with this fork.** `00e3f21`'s runner
+> **TRAP - do not launch blaze through the fork's `tts_runner`.** `00e3f21`'s runner
 > never forwards a slot count, so blaze defaults to `n_slots=1` and every rank dies with
 > `batch_slots needs n_slots (1) > max(slot_ids) (7)` (its error path then crashes with
 > `NameError: name 'h2d' is not defined`). The direct command above is exactly what the
@@ -407,10 +431,11 @@ ghcr credentials on the quad hosts. Load it there (`docker load` from a tarball 
 cat > $STACK/launch_is.sh <<'EOF'
 #!/usr/bin/env bash
 NSLOTS=${NSLOTS:-1000}
-IMG=${IMG:-ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-blaze:tts_sampling_topk64_penalties}
+IMG=${IMG:-ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-blaze:tts_garbling_fix_dump}
 SPEECHLM=${SPEECHLM:-/data/ssinghal/inworld/tts-models/checkpoints/speechlm}   # SAME checkpoint blaze loaded
-DECPAIRS=${DECPAIRS:-tts2_decoder_h2d:tts2_decoder_d2h,tts2_decoder_h2d_2:tts2_decoder_d2h_2}
-DEVIDS=${DEVIDS:?from device_ids.py, e.g. (0,1,4,5,8,9,12,13,16,17,20,21,24,25)}
+NDEC=${NDEC:-16}   # one socket pair per decoder: none, _2 .. _16
+DECPAIRS=${DECPAIRS:-$(for i in $(seq 1 $NDEC); do s=""; [ $i -gt 1 ] && s="_$i"; printf "tts2_decoder_h2d$s:tts2_decoder_d2h$s,"; done | sed 's/,$//')}
+DEVIDS=${DEVIDS:?from device_ids.py: 12 blaze chips + 16 decoder chips}
 docker stop -t 30 tt-cpp-worker >/dev/null 2>&1; docker rm tt-cpp-worker >/dev/null 2>&1
 docker run -d --name tt-cpp-worker --privileged --ipc=host \
   --ulimit nofile=65536:65536 --ulimit nproc=65536:65536 \
@@ -431,7 +456,8 @@ docker run -d --name tt-cpp-worker --privileged --ipc=host \
   -e TTS_PAGE_LINGER_US=500 -e TTS_PAGE_MIN_ROWS=8 \
   -e TTS_PREFILL_CHUNK_SIZE=256 \
   -e TTS_EDF_SAFETY_FACTOR=0.75 \
-  -e TTS_FC_DEADLINE_US=150 \
+  -e TTS_FC_DEADLINE_US=150000 \
+  -e TTS_CHUNK_TIERS=11,20,36 -e TTS_REALTIME_MARGIN_US=100000 \
   -e TTS_MAX_NEW_TOKENS=6000 -e TTS_MIN_NEW_TOKENS=25 \
   -e TTS_CHUNK_TOKENS_1=17 -e TTS_CHUNK_TOKENS_2=32 -e TTS_CHUNK_TOKENS_3=48 \
   -e TTS_FIRST_CHUNK_TOKENS=17 -e TTS_SECOND_CHUNK_TOKENS=32 -e TTS_CHUNK_TOKENS=48 \
@@ -445,12 +471,14 @@ docker run -d --name tt-cpp-worker --privileged --ipc=host \
   -e DEVICE_IDS="$DEVIDS" \
   --entrypoint /bin/bash "$IMG" -c 'cd cpp_server && ./build/tt_media_server_cpp'
 EOF
-ssh bh-glx-110-a02u08 "DEVIDS='(0,1,4,5,8,9,12,13,16,17,20,21,24,25)' bash $STACK/launch_is.sh"
+DEVIDS=$($STACK/tt-blaze/tt-metal/python_env/bin/python $STACK/device_ids.py \
+  $(ls -t $STACK/tt-blaze/generated/ttrun/*/rank_bindings.yaml | head -1) bh-glx-110-a02u08 "$DECCHIPS")
+ssh bh-glx-110-a02u08 "DEVIDS='$DEVIDS' NDEC=16 bash $STACK/launch_is.sh"
 sleep 45; ssh bh-glx-110-a02u08 'docker logs tt-cpp-worker 2>&1 | grep -aiE "capacity=|makeTtsScheduler: decoder|residual|TT_THROW|TT_FATAL|terminate"'
 ```
 
 Expect: `capacity=1000`, one `makeTtsScheduler: decoder N over shared memory` line per
-decoder (0 and 1), `drained 0 + 0 residual D2H pages ... clean handoff`, and **no**
+decoder (16 lines, 0 to 15), `drained 0 + 0 residual D2H pages ... clean handoff`, and **no**
 `TT_THROW`. `workers=1` is the TTS service worker, not the decoder count.
 
 Knobs that must agree:
@@ -551,8 +579,8 @@ shm clear from stage 2 - leftover segments are root-owned and hold ~2.6 GB.
 | `Access denied by pam_slurm_adopt` | drain-held quad, flaky Slurm | retry the ssh |
 | `batch_slots needs n_slots (1) > max(slot_ids) (7)` | blaze started via the fork's `tts_runner` (no slot flag) | launch blaze directly with `--n-slots` |
 | 2/35 ranks set up, rank 2 stuck in `wait_for_cores_idle` | relaunched without a reset | teardown + `recover-hosts` + shm, relaunch |
-| decoder: `runtime-mask path assumes tile-aligned T (got 48)` | `_valid` decoder via codec wrapper | plain `inworld_tts_decoder --tokens 48` |
-| server: `Page size must be less than or equal to the FIFO size` | decoders at T=32 (1024 B FIFO) | T=48 plain decoders |
+| decoder: `runtime-mask path assumes tile-aligned T (got 48)` | `_valid` decoder started with T=48 | `inworld_tts_decoder_valid --tokens 384` (fork `1d1d17d`) |
+| server: `Page size must be less than or equal to the FIFO size` | decoder FIFO too small (old fork at T=32) | fork `1d1d17d`, `--tokens 384` |
 | server: `cannot find physical PCIe device /dev/tenstorrent/<n>` | `DEVICE_IDS` missing a blaze chip | derive from rank_bindings (stage 3) |
 | `Waiting for lock 'CHIP_IN_USE_...'` in a decoder | blaze started before decoders | full relaunch, decoders first |
 | `health=200`, 44-byte responses | FIFO not batch-aligned / socket wedged | 64512 FIFO; relaunch |
