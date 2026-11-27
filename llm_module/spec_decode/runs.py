@@ -14,8 +14,8 @@ orchestrator that ties them together is
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
-from typing import List, Optional, Tuple
+from dataclasses import dataclass, replace
+from typing import List, Optional, Tuple, Union
 
 # SPEED-Bench qualitative split: ~80 prompts per category.
 SPEED_BENCH_QUALITATIVE_CATEGORIES: Tuple[str, ...] = (
@@ -55,6 +55,11 @@ SPEED_BENCH_QUALITATIVE_NUM_PROMPTS = 80
 # concurrencies (e.g. SPEC_DECODE_ISLS=1k,8k SPEC_DECODE_CONCURRENCIES=8,32).
 SPEC_DECODE_ISLS_ENV = "SPEC_DECODE_ISLS"
 SPEC_DECODE_CONCURRENCIES_ENV = "SPEC_DECODE_CONCURRENCIES"
+# Sets every request's temperature (e.g. SPEC_DECODE_TEMPERATURE=0). Unset, a
+# request carries none and gets the model's generation_config default (MiMo:
+# 1.0), as the GPU reference sweeps did; the TT plugin speculates only for
+# greedy requests.
+SPEC_DECODE_TEMPERATURE_ENV = "SPEC_DECODE_TEMPERATURE"
 
 # Cap output tokens on the throughput sweep so a handful of long-decoding
 # prompts can't blow up the runtime. Injected as
@@ -70,6 +75,8 @@ class SpecDecodeRun:
     (``ignore_eos:true``); unset lets the model decode to its natural EOS.
     ``max_completion_tokens`` is an upper bound that still allows early stop
     at EOS — a wall-clock guard rail, not a workload dimension.
+    ``temperature`` set is sent with every request; unset leaves it to the
+    server's default.
     """
 
     public_dataset: str
@@ -77,6 +84,7 @@ class SpecDecodeRun:
     num_prompts: Optional[int] = None
     output_len: Optional[int] = None
     max_completion_tokens: Optional[int] = None
+    temperature: Optional[float] = None
 
     def __post_init__(self) -> None:
         if not self.public_dataset:
@@ -99,6 +107,8 @@ class SpecDecodeRun:
         parts.append(f"maxcon-{self.max_concurrency}")
         if self.num_prompts is not None:
             parts.append(f"n-{self.num_prompts}")
+        if self.temperature is not None:
+            parts.append(f"temp-{self.temperature:g}")
         return "_".join(parts)
 
 
@@ -198,12 +208,35 @@ def parse_concurrencies(concurrencies: Optional[str]) -> Optional[Tuple[int, ...
     return tuple(sorted(selected))
 
 
+def parse_temperature(temperature: Union[str, float, None]) -> Optional[float]:
+    """Parse ``SPEC_DECODE_TEMPERATURE`` (e.g. ``"0"``) or
+    ``--spec-decode-temperature`` into a float.
+
+    Returns ``None`` when unset so requests keep the server's default.
+    """
+    if temperature is None or (
+        isinstance(temperature, str) and not temperature.strip()
+    ):
+        return None
+    try:
+        value = float(temperature)
+    except ValueError:
+        value = -1.0
+    if value < 0:
+        raise ValueError(
+            f"Invalid spec-decode temperature: {temperature!r}. "
+            "Expected a non-negative number, e.g. '0'."
+        )
+    return value
+
+
 def build_runs(
     preset: str = "full",
     *,
     isls: Optional[str] = None,
     concurrencies: Optional[str] = None,
     max_concurrency: Optional[int] = None,
+    temperature: Union[str, float, None] = None,
 ) -> List[SpecDecodeRun]:
     """Return the spec-decode sweep for ``preset``.
 
@@ -222,6 +255,9 @@ def build_runs(
     concurrencies when ``concurrencies`` is unset: points above it become
     ``max_concurrency`` itself, so an 8-slot server sweeps 1/8 instead of
     measuring rejected requests at 16/64.
+
+    ``temperature`` (default: the ``SPEC_DECODE_TEMPERATURE`` env var) is
+    set on every run, qualitative ones included.
     """
     if preset not in _PRESETS:
         raise ValueError(
@@ -231,17 +267,23 @@ def build_runs(
         isls = os.environ.get(SPEC_DECODE_ISLS_ENV)
     if concurrencies is None:
         concurrencies = os.environ.get(SPEC_DECODE_CONCURRENCIES_ENV)
+    if temperature is None:
+        temperature = os.environ.get(SPEC_DECODE_TEMPERATURE_ENV)
     base = _PRESETS[preset]
     selected = parse_concurrencies(concurrencies)
     if selected is None:
         selected = base.throughput_concurrencies
         if max_concurrency:
             selected = tuple(sorted({min(c, max_concurrency) for c in selected}))
-    return _Preset(
+    runs = _Preset(
         base.qualitative_categories,
         parse_isls(isls) or base.throughput_isls,
         selected,
     ).runs()
+    value = parse_temperature(temperature)
+    if value is None:
+        return runs
+    return [replace(run, temperature=value) for run in runs]
 
 
 def summarize_runs(runs: List[SpecDecodeRun]) -> str:
@@ -253,6 +295,7 @@ def summarize_runs(runs: List[SpecDecodeRun]) -> str:
             f" num_prompts={run.num_prompts}"
             f" output_len={run.output_len}"
             f" max_completion_tokens={run.max_completion_tokens}"
+            f" temperature={run.temperature}"
         )
     return "\n".join(lines)
 
@@ -267,5 +310,6 @@ __all__ = [
     "build_runs",
     "parse_concurrencies",
     "parse_isls",
+    "parse_temperature",
     "summarize_runs",
 ]

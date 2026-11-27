@@ -12,7 +12,9 @@ def score_task_single_key(results, task_name, kwargs):
     )
 
     score = res[result_key]
-    if kwargs["unit"] == "percent":
+    # already_percent: a "percent" metric the harness reports as 0-100 (lmms-eval's
+    # videomme / mmau), which keeps the binomial noise rule without scaling twice.
+    if kwargs["unit"] == "percent" and not kwargs.get("already_percent"):
         score *= 100.0
     return score
 

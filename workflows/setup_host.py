@@ -24,6 +24,7 @@ project_root = Path(__file__).resolve().parent.parent
 if project_root not in sys.path:
     sys.path.insert(0, str(project_root))
 
+from utils.cache_monitor import get_volume_impl_id
 from utils.pinned_artifacts import get_pinned_revision
 from workflows.model_spec import ModelSpec
 from workflows.utils import (
@@ -126,8 +127,9 @@ class SetupConfig:
 
     def _infer_data(self):
         self.repo_root = str(Path(__file__).resolve().parent.parent)
+        volume_impl_id = get_volume_impl_id(self.model_spec)
         self.docker_volume_name = (
-            f"volume_id_{self.model_spec.impl.impl_id}-{self.model_spec.model_name}"
+            f"volume_id_{volume_impl_id}-{self.model_spec.model_name}"
         )
 
         if self.local_server and not self.host_volume:
@@ -138,7 +140,7 @@ class SetupConfig:
             self.host_volume = str(Path(self.host_volume).expanduser().resolve())
             self.persistent_volume_root = Path(self.host_volume)
             volume_dir_name = (
-                f"volume_id_{self.model_spec.impl.impl_id}"
+                f"volume_id_{volume_impl_id}"
                 f"-{self.model_spec.model_name}"
                 f"-v{self.model_spec.version}"
             )
@@ -500,6 +502,14 @@ class HostSetupManager:
             check_path = str(self.setup_config.host_model_volume_root)
         else:
             return True
+        if self.model_spec.min_disk_gb is None:
+            # No requirement to check against: min_disk_gb is inferred from the param count in the HF repo name
+            # ("...-70B"), so a spec whose name has none must set min_disk_gb (or param_count) itself.
+            logger.warning(
+                f"⚠️ No min_disk_gb for {self.model_spec.model_name}: skipping the disk space check "
+                "(set min_disk_gb or param_count in its model spec)."
+            )
+            return True
         total, used, free = shutil.disk_usage(check_path)
         free_gb = free // (1024**3)
         if free_gb >= self.model_spec.min_disk_gb:
@@ -513,6 +523,13 @@ class HostSetupManager:
         return False
 
     def check_ram(self) -> bool:
+        if self.model_spec.min_ram_gb is None:
+            # As for min_disk_gb: inferred from the param count in the HF repo name unless the spec sets it.
+            logger.warning(
+                f"⚠️ No min_ram_gb for {self.model_spec.model_name}: skipping the host RAM check "
+                "(set min_ram_gb or param_count in its model spec)."
+            )
+            return True
         try:
             with open("/proc/meminfo", "r") as f:
                 for line in f:

@@ -112,9 +112,16 @@ def get_default_persistent_volume_root(repo_root: Optional[Path] = None) -> Path
     return Path(root).resolve() / "persistent_volume"
 
 
-def get_docker_volume_name(model_spec) -> Optional[str]:
+def get_volume_impl_id(model_spec) -> Optional[str]:
+    """The impl id a model's persistent volume is keyed by: ``impl.volume_impl_id``
+    when the impl shares another impl's volume (same weights and TT cache), else its
+    own ``impl_id``. Works on a ModelSpec or its JSON dict."""
     impl = _get_value(model_spec, "impl")
-    impl_id = _get_value(impl, "impl_id")
+    return _get_value(impl, "volume_impl_id") or _get_value(impl, "impl_id")
+
+
+def get_docker_volume_name(model_spec) -> Optional[str]:
+    impl_id = get_volume_impl_id(model_spec)
     model_name = _get_value(model_spec, "model_name")
     if not impl_id or not model_name:
         return None
@@ -125,8 +132,7 @@ def get_host_model_volume_root(
     model_spec, host_volume: Optional[Union[str, Path]]
 ) -> Optional[Path]:
     host_volume_path = _normalize_optional_path(host_volume)
-    impl = _get_value(model_spec, "impl")
-    impl_id = _get_value(impl, "impl_id")
+    impl_id = get_volume_impl_id(model_spec)
     model_name = _get_value(model_spec, "model_name")
     version = _get_value(model_spec, "version")
     if (

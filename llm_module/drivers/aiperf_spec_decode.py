@@ -460,8 +460,9 @@ def _build_aiperf_cmd(
 
     - ``--public-dataset <name>`` (SPEED-Bench categories / throughput
       splits) instead of ``--synthetic-input-tokens-*``.
-    - ``--extra-inputs temperature:0`` so draft/target sampling is
-      deterministic; matches the spec-decode comparison convention.
+    - ``--extra-inputs temperature:<T>`` only when ``run.temperature`` is
+      set (``SPEC_DECODE_TEMPERATURE``); otherwise requests carry none and
+      get the server's default.
     - When ``run.output_len`` is set, ``--output-tokens-mean/-stddev``
       and ``ignore_eos:true`` force each request to emit exactly that
       many tokens. When unset (the default), the model decodes to its
@@ -500,6 +501,8 @@ def _build_aiperf_cmd(
         cmd.append("--tokenizer-trust-remote-code")
     if run.num_prompts is not None:
         cmd += ["--request-count", str(run.num_prompts)]
+    if run.temperature is not None:
+        cmd += ["--extra-inputs", f"temperature:{run.temperature:g}"]
     if run.output_len is not None:
         cmd += [
             "--output-tokens-mean",
@@ -802,6 +805,7 @@ def _build_payload(
         "num_prompts": run.num_prompts,
         "output_len": run.output_len,
         "max_completion_tokens": run.max_completion_tokens,
+        "temperature": run.temperature,
         **metrics,
     }
     if spec_decode_metrics is not None:

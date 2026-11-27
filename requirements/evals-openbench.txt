@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
+#
+# Dependencies for the EVALS_OPENBENCH workflow venv: openbench / inspect-ai, the
+# harness OpenRouter's Auto Exacto benchmarks run (GPQA-Diamond, tau2-bench
+# Airline), driven by llm_module/openbench_eval.py. setup_evals_openbench() stages
+# tau2's data at the installed tau2 commit (openbench's own downloader clones
+# tau2-bench main, whose data layout no longer matches this code).
+
+-c constraints.txt
+
+openbench==0.5.3
+# openbench 0.5.3 imports mcp.server.fastmcp (renamed in mcp 2) and is written
+# against the openai 2 SDK.
+mcp<2
+openai>=2,<3
+# The commit openbench 0.5.3's [tau_bench] extra pins.
+tau2 @ git+https://github.com/sierra-research/tau2-bench.git@558e6cd066d7bf05db587fa2dc1509765c7d03bc

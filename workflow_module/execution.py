@@ -141,6 +141,8 @@ class SpecDecodeOptions:
     """
 
     preset: str = "full"
+    # Sent with every request; None leaves it to the server's default.
+    temperature: Optional[float] = None
     warmup_requests: int = 4
     auth_token: str = ""
     # Worker /metrics endpoints holding the vllm:spec_decode_* counters,

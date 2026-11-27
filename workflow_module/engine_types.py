@@ -280,3 +280,7 @@ class WorkflowVenvType(IntEnum):
     TT_TOPOLOGY = auto()
     LLM_VLLM_TOKEN_TIMING = auto()
     MINIMAX_VERIFIER = auto()
+    # lmms-eval 0.7 with tt-metal's MiMo OpenRouter-shaped client (image / video / audio).
+    EVALS_MULTIMODAL = auto()
+    # openbench / inspect-ai: OpenRouter's benchmark harness (GPQA-Diamond, tau2-bench).
+    EVALS_OPENBENCH = auto()

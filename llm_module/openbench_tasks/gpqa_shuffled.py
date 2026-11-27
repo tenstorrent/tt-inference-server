@@ -1,0 +1,74 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: 2026 Tenstorrent AI ULC
+
+"""GPQA-Diamond as OpenRouter's benchmark harness runs it: openbench's prompt, data
+(nmayorga7/gpqa_diamond), answer
+extraction and settings (temperature 0.5, 10 epochs), but the four options shuffled
+deterministically PER QUESTION.
+
+openbench's own gpqa_diamond reseeds random with 0 before every record, so every
+question gets the same permutation
+and the correct answer is always option B; OpenRouter's docs say their harness shuffles
+by question instead and that
+its numbers are therefore not comparable with openbench's. OpenRouter does not publish
+its exact shuffle; this one
+seeds from a hash of the question text, so it is stable across runs, machines and
+endpoints.
+
+Vendored from tt-metal models/experimental/mimo_v2_6_flash/tests/evals/openbench_tasks;
+llm_module/openbench_eval.py runs it.
+
+Security note: ``random.Random(seed)`` is used on purpose. The shuffle has to be
+reproducible (the same question must get the same option order on every run), which a
+cryptographic generator cannot give; the order of four public answer options is not a
+secret, token or identifier. The ``# nosec B311`` markers below acknowledge this.
+"""
+
+import hashlib
+import random  # nosec B311  # noqa: S311  -- see module docstring
+
+from inspect_ai import Epochs, task
+from inspect_ai.model import GenerateConfig
+from openbench.utils.mcq import MCQEval, MCQSample
+from openbench.utils.text import (
+    MULTIPLE_CHOICE_PROMPT_TEMPLATE,
+    SIMPLE_EVALS_SYSTEM_MESSAGE,
+)
+
+
+def record_to_mcq_sample(record: dict) -> MCQSample:
+    options = [
+        record["Correct Answer"],
+        record["Incorrect Answer 1"],
+        record["Incorrect Answer 2"],
+        record["Incorrect Answer 3"],
+    ]
+    seed = int.from_bytes(
+        hashlib.sha256(record["Question"].encode("utf-8")).digest()[:8], "big"
+    )
+    random.Random(seed).shuffle(options)  # nosec B311  # noqa: S311  -- reproducible order
+    return MCQSample(
+        input=MULTIPLE_CHOICE_PROMPT_TEMPLATE.format(
+            prompt=record["Question"],
+            option_a=options[0],
+            option_b=options[1],
+            option_c=options[2],
+            option_d=options[3],
+        ),
+        target="ABCD"[options.index(record["Correct Answer"])],
+    )
+
+
+@task
+def gpqa_diamond_shuffled(epochs: int = 10, temperature: float = 0.5):
+    return MCQEval(
+        name="gpqa_diamond_shuffled",
+        dataset_path="nmayorga7/gpqa_diamond",
+        record_to_mcq_sample=record_to_mcq_sample,
+        split="train",
+        auto_id=True,
+        prompt_template=SIMPLE_EVALS_SYSTEM_MESSAGE,
+        config=GenerateConfig(temperature=temperature),
+        epochs=Epochs(epochs),
+    )

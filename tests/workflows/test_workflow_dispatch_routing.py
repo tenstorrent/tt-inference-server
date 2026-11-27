@@ -41,6 +41,7 @@ def _rc(workflow="benchmarks", **kw):
         prefix_cache_metrics_url=None,
         spec_decode=False,
         spec_decode_preset="full",
+        spec_decode_temperature=None,
         spec_decode_warmup_requests=None,
         spec_decode_metrics_url=None,
         agentic_benchmark=None,
@@ -608,6 +609,7 @@ def test_release_forwards_prefix_cache_and_spec_decode_flags(monkeypatch, tmp_pa
         ],
         spec_decode=True,
         spec_decode_preset="ci",
+        spec_decode_temperature=0.0,
         spec_decode_warmup_requests=2,
         spec_decode_metrics_url=["worker-a:9000"],
     )
@@ -628,6 +630,7 @@ def test_release_forwards_prefix_cache_and_spec_decode_flags(monkeypatch, tmp_pa
     )
     assert "--spec-decode" in argv
     assert argv[argv.index("--spec-decode-preset") + 1] == "ci"
+    assert argv[argv.index("--spec-decode-temperature") + 1] == "0.0"
     assert argv[argv.index("--spec-decode-warmup-requests") + 1] == "2"
     assert argv[argv.index("--spec-decode-metrics-url") + 1] == "worker-a:9000"
 

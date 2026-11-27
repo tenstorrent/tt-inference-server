@@ -1,0 +1,25 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
+#
+# Dependencies for the EVALS_MULTIMODAL workflow venv: lmms-eval 0.7 driving
+# tt-metal's MiMo OpenRouter-shaped client (llm_module/lmms_plugins/mimo_lmms,
+# launched by llm_module/lmms_eval_multimodal.py). Image, video (data: URIs of the
+# files) and audio (WAV input_audio) requests in the forms OpenRouter sends.
+# Tested 2026-11-07 (tt-metal models/experimental/mimo_v2_6_flash/tests/evals,
+# dry run over MMMU-Pro, OCRBench, Video-MME, MMAU, LibriSpeech).
+
+-c constraints.txt
+
+lmms-eval==0.7.4
+# datasets<4 decodes Audio columns with soundfile (datasets 4+ needs torchcodec and
+# system FFmpeg, absent on the runners).
+datasets>=3,<4
+soundfile
+scipy
+# lmms-eval's librispeech normalizer.
+more_itertools
+openai>=2,<3
+httpx
+# A static ffmpeg for re-encoding a video above the client's size cap.
+imageio-ffmpeg

@@ -589,6 +589,9 @@ def _forward_spec_decode(cmd, runtime_config) -> None:
     cmd.append("--spec-decode")
     cmd.extend(["--spec-decode-preset", runtime_config.spec_decode_preset])
     _extend_if_set(
+        cmd, "--spec-decode-temperature", runtime_config.spec_decode_temperature
+    )
+    _extend_if_set(
         cmd, "--spec-decode-warmup-requests", runtime_config.spec_decode_warmup_requests
     )
     _forward_spec_decode_metrics_urls(cmd, runtime_config)
@@ -742,6 +745,9 @@ def _build_spec_decode_cmd(
     cmd.append("--spec-decode")
     cmd.extend(["--spec-decode-preset", runtime_config.spec_decode_preset])
     _extend_if_set(
+        cmd, "--spec-decode-temperature", runtime_config.spec_decode_temperature
+    )
+    _extend_if_set(
         cmd, "--spec-decode-warmup-requests", runtime_config.spec_decode_warmup_requests
     )
     _forward_spec_decode_metrics_urls(cmd, runtime_config)
@@ -761,6 +767,8 @@ _ENGINE_LLM_STANDARD_EVAL_VENVS = frozenset(
         WorkflowVenvType.EVALS_COMMON,
         WorkflowVenvType.EVALS_META,
         WorkflowVenvType.EVALS_VISION,
+        WorkflowVenvType.EVALS_MULTIMODAL,
+        WorkflowVenvType.EVALS_OPENBENCH,
     }
 )
 

@@ -19,6 +19,12 @@ Generated tasks keep the registry task names in ``task.toml``, but Harbor
 filters a local dataset by directory name, so configured task-name patterns
 are translated with :func:`local_task_pattern`.
 
+``sierra-research/tau3-bench`` is generated this way: its registry copy
+predates the tau3 adapter pinning tau2-bench, so its task Dockerfiles clone
+tau2-bench ``main`` at build time and never install ``websockets``, which the
+tau2 evaluator now imports, and every verifier reports ``No module named
+'websockets'``.
+
 Running a local copy instead of the registry dataset also changes:
 
 - Scoring: Harbor reports the job metrics the verifier writes, or a plain

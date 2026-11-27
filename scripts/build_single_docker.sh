@@ -50,6 +50,26 @@ resolve_commit_to_full_sha() {
     return 1
 }
 
+# tt-shield's CIv2 VM build runners mount a pre-seeded image cache at /var/lib/containerd: a
+# per-job copy-on-write disk (virtio-dockercache) destroyed with the job, holding tt-metalium
+# images this build does not use (37G of its 98G seen). With them there, the dev image can run
+# out of space while containerd unpacks it ("no space left on device"). On those runners only
+# (the guard tt-shield's media-server reclaim uses), drop what the build does not need: at
+# "start" every unused image and the build cache, after the "base" image the bake's build cache.
+reclaim_ci_docker_space() {
+    local stage="$1"
+    if [[ ! -e /dev/disk/by-id/virtio-dockercache ]]; then
+        return 0
+    fi
+    echo "Reclaiming Docker space on the CI cache disk (${stage}) ..."
+    df -h /var/lib/containerd || true
+    if [[ "$stage" == "start" ]]; then
+        docker image prune -af || true
+    fi
+    docker builder prune -af || true
+    df -h /var/lib/containerd || true
+}
+
 # ==============================================================================
 # Main script logic
 # ==============================================================================
@@ -266,6 +286,7 @@ fi
 
 if [ "$build" = true ]; then
 
+    reclaim_ci_docker_space start
     echo "using TT_METAL_DOCKERFILE_URL: ${TT_METAL_DOCKERFILE_URL}"
 
     if ! check_image_not_exists_local "${TT_METAL_DOCKERFILE_URL}"; then
@@ -309,6 +330,7 @@ if [ "$build" = true ]; then
             ci-build
         cd "$repo_root"
         rm -rf "${tt_metal_build_dir}"
+        reclaim_ci_docker_space base
     fi
     
     # build dev image

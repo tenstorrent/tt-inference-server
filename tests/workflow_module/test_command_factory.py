@@ -204,6 +204,7 @@ class TestSpecDecodeOptions:
         args = Namespace(
             spec_decode=True,
             spec_decode_preset="ci",
+            spec_decode_temperature=0.0,
             spec_decode_warmup_requests=2,
             spec_decode_metrics_url=["worker-a:9000", "worker-b:9000/metrics"],
             jwt_secret=None,
@@ -211,6 +212,7 @@ class TestSpecDecodeOptions:
         opts = cf._build_spec_decode_options(args)
         assert isinstance(opts, SpecDecodeOptions)
         assert opts.preset == "ci"
+        assert opts.temperature == 0.0
         assert opts.warmup_requests == 2
         assert opts.auth_token == ""
         # Repeatable --spec-decode-metrics-url -> tuple, forwarded verbatim
@@ -231,6 +233,8 @@ class TestSpecDecodeOptions:
         opts = cf._build_spec_decode_options(args)
         assert opts is not None
         assert opts.metrics_urls == ()
+        # No spec_decode_temperature either: requests keep the server's default.
+        assert opts.temperature is None
 
     def test_release_pins_tool_venv_python(self, monkeypatch):
         monkeypatch.delenv("JWT_SECRET", raising=False)
