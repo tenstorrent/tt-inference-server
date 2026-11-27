@@ -862,13 +862,15 @@ templates:
     VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
   metadata:
     google/gemma-4-12B-it:
+      # Agentic evals: the QB2 five-task Terminal-Bench 2.1 and SWE-bench Verified subsets
+      # (>= 1/5 each) instead of the shared 24-task Terminal-Bench 2 wave
+      # (EVAL_CONFIG_VARIANTS["gemma4-12b-qb2"] in reference_config/evals/eval_config.py).
+      eval_config_variant: gemma4-12b-qb2
       # The eval tasks are shared with the tt_transformers profiles, which keep their gates.
-      # In ci-nightly this profile is graded against its own QB2 results at tolerance 0.10
-      # (P(fail) under 5% for a binomial at the measured rate):
+      # In ci-nightly this profile's lm-eval tasks are graded against its own QB2 results at
+      # tolerance 0.10 (P(fail) under 5% for a binomial at the measured rate):
       # - GPQA Diamond (all 198): CI 144 / 145 / 144 at seeds 42 / 43 / 44 = 72.9%; needs 129/198.
       # - LiveCodeBench v6 (131): CI 73.28 (96/131, tt-shield run 45719501496); needs 86/131.
-      # - Terminal-Bench 2: CI 31.46 (28/89, run 45719501496); the 24-task ci-nightly wave at
-      #   tolerance 0.40 needs 4/24 (0.10 would need 6/24, P(fail) ~20% at 31%).
       eval_task_score_overrides:
         r1_gpqa_diamond:
           mode_reference_scores:
@@ -882,12 +884,6 @@ templates:
               score: 73.28
               tolerance: 0.10
               ref: "QB2 CI LiveCodeBench v6, 96/131 (tt-shield run 45719501496); needs 86/131"
-        terminal_bench_2:
-          mode_reference_scores:
-            ci_nightly:
-              score: 31.46
-              tolerance: 0.40
-              ref: "QB2 CI Terminal-Bench 2, 28/89 (tt-shield run 45719501496); needs 4/24 on the ci-nightly wave"
 
 # Dedicated Gemma 4 26B A4B implementation (single user): selectable with --impl gemma4-26b-a4b-qb2; the QB2 default
 # is the tt_transformers entry below (32 users, the MTP speculative contract).

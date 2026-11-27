@@ -186,7 +186,7 @@ def _build_context(
     output_path = Path(output_path)
     output_path.mkdir(parents=True, exist_ok=True)
 
-    eval_cfg = _resolve_eval_config(model_spec.hf_model_repo)
+    eval_cfg = _resolve_eval_config(model_spec)
     all_params = eval_cfg if eval_cfg is not None else []
 
     return MediaContext(
@@ -219,10 +219,15 @@ def _resolve_server_url(
     return resolve_deploy_url(runtime_config)
 
 
-def _resolve_eval_config(hf_model_repo: str):
+def _resolve_eval_config(model_spec):
     from .target_pack import get_target_pack
 
-    cfg = get_target_pack().eval_config(hf_model_repo)
+    hf_model_repo = model_spec.hf_model_repo
+    pack = get_target_pack()
+    # A pack may resolve per profile (catalog ``eval_config_variant``); packs
+    # without that hook resolve by HF repo as before.
+    for_spec = getattr(pack, "eval_config_for_spec", None)
+    cfg = for_spec(model_spec) if for_spec else pack.eval_config(hf_model_repo)
     if cfg is None:
         logger.warning(
             "No EvalConfig registered for model=%r; eval task metadata will be empty.",
