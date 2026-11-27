@@ -4,8 +4,8 @@
 
 """``swo-bench replay`` driver for SwarmOne agentic trace replay.
 
-Drives the SwarmOne ``swo-bench`` CLI (installed into the AGENTIC_TRACES venv;
-see ``setup_agentic_traces`` in ``workflows/workflow_venvs.py``). swo-bench owns
+Drives the SwarmOne ``swo-bench`` CLI (installed into the AGENTIC_TRACES venv
+from ``requirements/agentic-traces.txt``). swo-bench owns
 the recorded Claude-Code / Codex coding scenarios and the replay plan (built
 server-side by the SwarmOne backend), so this driver only translates one
 :class:`AgenticTracesRun` into its CLI and reads the ``-o`` results JSON back.

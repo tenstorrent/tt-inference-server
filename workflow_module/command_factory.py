@@ -312,7 +312,7 @@ def _build_agentic_traces_options(
     ``venv_python`` is only pinned for the release path. A standalone run is
     already inside the AGENTIC_TRACES venv (``launchers/run_agentic_traces.py``
     re-execs there), so the driver's ``sys.executable`` fallback is the
-    interpreter that owns the InferenceX AIPerf fork; a release child instead
+    interpreter that owns the agentx-harness AIPerf fork; a release child instead
     runs in WORKFLOW_RUN_SCRIPT and would otherwise invoke an ``aiperf`` that
     isn't the fork.
     """
@@ -325,7 +325,6 @@ def _build_agentic_traces_options(
         mode=getattr(args, "agentic_traces_mode", None) or "full",
         trace_sources=getattr(args, "agentic_traces_sources", None),
         duration_override=getattr(args, "agentic_traces_duration", None),
-        git_ref_override=getattr(args, "agentic_traces_git_ref", None),
         metrics_urls=tuple(getattr(args, "agentic_traces_metrics_url", None) or ()),
         auth_token=_resolve_auth_token(args),
         venv_python=(

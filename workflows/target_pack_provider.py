@@ -78,17 +78,12 @@ class TenstorrentTargetPack(TargetPack):
         config: Any,
         *,
         trace_sources: Any = None,
-        git_ref_override: Optional[str] = None,
     ) -> Any:
         from reference_config.agentic_traces.agentic_traces_config import (
             resolve_run_specs,
         )
 
-        return resolve_run_specs(
-            config,
-            trace_sources=trace_sources,
-            git_ref_override=git_ref_override,
-        )
+        return resolve_run_specs(config, trace_sources=trace_sources)
 
     def agentic_traces_min_profile_seconds(self) -> int:
         from reference_config.agentic_traces.agentic_traces_config import (
