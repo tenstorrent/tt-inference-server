@@ -1,0 +1,1159 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+
+"""Staged TTS load test that reproduces the input mix of a captured run.
+
+Recreates the staged run captured on tts2-110a-q3, 2026-10-27 21:15-21:47 UTC:
+
+    warmup  rounds of simultaneous requests; each round drains before the next
+    ladder  closed loop at 1,2,4,...,256 workers for 120 s per level; workers join
+            at the offsets the capture's clients did (~2 s ramp at the top
+            levels); each level drains completely before the next one starts.
+            ``--ramp random`` instead spreads worker starts uniformly over
+            ``--ramp-window`` s, so first requests don't finish (and resend) in
+            lockstep and re-create the start burst mid-level
+    probe   one request at a time across every voice size, cancelled after two
+            chunks, to measure first-chunk latency against prompt length
+
+Each ladder request draws a text and a voice reference independently at random
+(seeded) with the counts observed in the capture, so the ISL distribution
+(text tokens + voice speech tokens) matches it. The capture showed no correlation
+between the two, so independent draws reproduce the joint distribution too.
+
+    python tts_staged_harness.py build-dataset --capture tts2-110a-q3-....jsonl \\
+        --start 2026-10-27T21:15:00 --end 2026-10-27T21:48:00
+    python tts_staged_harness.py run --host d08u08 --out staged.json
+    python tts_staged_harness.py report --results staged.json
+
+``run`` and ``report`` print a per-stage table (run next to capture) and, when
+matplotlib is installed, write three charts next to the results file:
+
+    <prefix>_throughput_fc.png   ladder: requests/s vs first-chunk P50/P95
+    <prefix>_concurrency_fc.png  ladder: first-chunk P50/P95 vs concurrency
+    <prefix>_probe_fc_isl.png    probe: first-chunk latency vs prompt tokens
+
+Voice references:
+  The capture records only each voice prompt's length in speech tokens, not its
+  IDs or audio. By default (``--voice-format ids``) each voice prompt is sent as
+  JSON ``speech_ids``: cut from ``--voice-ids`` if given, else seeded random
+  codebook IDs, stored in ``<voice-dir>/speech_ids.json`` for reuse. Random IDs
+  give the right prompt length but no real voice, so output length may differ.
+  With ``--voice-format wav``, ``run`` instead needs one WAV per voice size, ``<voice-dir>/voice_<N>.wav``.
+  Missing files are cut from the recordings in ``--voice-source`` or, without that
+  option, from speech the server under test generates with no voice prompt. Clips
+  are written to ``--voice-dir``, so later runs reuse identical audio. Clip length
+  is N / ``--speech-ids-per-s`` seconds. The default 50/s assumes the voice encoder
+  runs at the output codec's rate (960 samples at 48 kHz per token); check the
+  server's prompt token counts if that matters.
+"""
+
+from __future__ import annotations
+
+import argparse
+import array
+import collections
+import datetime as dt
+import http.client
+import io
+import json
+import logging
+import math
+import os
+import random
+import sys
+import threading
+import time
+import wave
+
+# Support both direct execution and package imports.
+if __package__:
+    from . import tts_load_harness as harness
+else:
+    import tts_load_harness as harness
+
+pct = harness.pct
+
+logger = logging.getLogger(__name__)
+
+DEFAULT_DATASET = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    "datasets",
+    "tts_staged_2026-10-27.json",
+)
+DEFAULT_LEVELS = "1,2,4,8,16,32,64,128,256"
+LEVEL_DURATION_S = 120.0
+VOICE_RATE_HZ = 16000
+CODEBOOK_SIZE = 65536  # speech token IDs are <|s_0|>..<|s_65535|>
+# Speech prompt tokens wrap in <|audio_prompt_start|> ... <|audio_prompt_end|>.
+VOICE_WRAP_TOKENS = 2
+# Output audio cap observed on the server: 6000 tokens = 120 s.
+OUTPUT_CAP_S = 119.9
+# Runaway heuristic: audio well past what the text needs (~0.07 s per character).
+RUNAWAY_S_PER_CHAR = 0.07
+RUNAWAY_FACTOR = 3.0
+RUNAWAY_SLACK_S = 5.0
+MAX_GAPS = harness.MAX_TC_GAPS
+
+
+def isl_tokens(text_tokens: int, voice_ids: int) -> int:
+    return text_tokens + voice_ids + (VOICE_WRAP_TOKENS if voice_ids else 0)
+
+
+def is_runaway(audio_s: float, chars: int) -> bool:
+    expected = RUNAWAY_S_PER_CHAR * chars
+    return audio_s > RUNAWAY_FACTOR * expected + RUNAWAY_SLACK_S
+
+
+# ---------------------------------------------------------------- dataset build
+
+
+def _parse_utc(value: str) -> int:
+    t = dt.datetime.fromisoformat(value)
+    if t.tzinfo is None:
+        t = t.replace(tzinfo=dt.timezone.utc)
+    return int(t.timestamp() * 1e6)
+
+
+def _segments(rows: list, min_idle_s: float) -> list:
+    """Split rows wherever nothing was in flight for at least ``min_idle_s``."""
+    out, cur, busy_until = [], [], None
+    for r in rows:
+        start = r["arrival_wall_us"]
+        if cur and start - busy_until >= min_idle_s * 1e6:
+            out.append(cur)
+            cur = []
+        cur.append(r)
+        end = start + r["total_us"]
+        busy_until = end if busy_until is None else max(busy_until, end)
+    if cur:
+        out.append(cur)
+    return out
+
+
+def _text_tokens(r: dict) -> int:
+    ids = r["prompt_speech_ids"]
+    return r["prompt_tokens"] - ids - (VOICE_WRAP_TOKENS if ids else 0)
+
+
+def _stage_stats(rows: list) -> dict:
+    span = (rows[-1]["arrival_wall_us"] - rows[0]["arrival_wall_us"]) / 1e6
+    audio = [r["audio_samples"] / r["sample_rate_hz"] for r in rows]
+    fc = [r["ttfc_us"] / 1e3 for r in rows if r["chunks"]]
+    gaps = [
+        (o[i + 1] - o[i]) / 1e3
+        for r in rows
+        for o in [r["chunk_offsets_us"]]
+        for i in range(1, len(o) - 1)
+    ]
+    isl = [r["prompt_tokens"] for r in rows]
+    return {
+        "n": len(rows),
+        "cancelled": sum(r["outcome"] != "completed" for r in rows),
+        "max_inflight": max(r["inflight_on_arrival"] for r in rows) + 1,
+        "arrival_span_s": round(span, 1),
+        "req_per_s": round(len(rows) / span, 2) if span > 0 else None,
+        "isl_p50": round(pct(isl, 50)),
+        "isl_p90": round(pct(isl, 90)),
+        "isl_max": max(isl),
+        "fc_p50_ms": round(pct(fc, 50), 1),
+        "fc_p95_ms": round(pct(fc, 95), 1),
+        "fc_p99_ms": round(pct(fc, 99), 1),
+        "tc_p50_ms": round(pct(gaps, 50), 1),
+        "audio_p50_s": round(pct(audio, 50), 2),
+        "capped_pct": round(100 * sum(a >= OUTPUT_CAP_S for a in audio) / len(rows), 1),
+        "runaway_pct": round(
+            100
+            * sum(is_runaway(a, r["text_chars"]) for a, r in zip(audio, rows))
+            / len(rows),
+            1,
+        ),
+    }
+
+
+def _ladder_stages(rows: list, levels: list, duration_s: float) -> list:
+    """Replay the closed-loop schedule over the capture to attribute rows to levels.
+
+    A level opens at its first arrival and accepts arrivals for ``duration_s``; the
+    next level opens at the first arrival after every earlier request finished.
+    """
+    stages, i = [], 0
+    for level in levels:
+        if i >= len(rows):
+            raise ValueError(f"capture ran out of requests before level {level}")
+        start = rows[i]["arrival_wall_us"]
+        j = i
+        while j < len(rows) and rows[j]["arrival_wall_us"] < start + duration_s * 1e6:
+            j += 1
+        stage = rows[i:j]
+        drained = max(r["arrival_wall_us"] + r["total_us"] for r in stage)
+        # Arrivals that slipped in before the drain finished still belong here.
+        while j < len(rows) and rows[j]["arrival_wall_us"] < drained - 500_000:
+            stage.append(rows[j])
+            j += 1
+        seen = max(r["inflight_on_arrival"] for r in stage) + 1
+        if seen > level:
+            raise ValueError(
+                f"level {level}: {seen} requests in flight -- schedule does not fit"
+            )
+        # The capture's clients joined over ~2 s, not at once; keep each worker's
+        # first-arrival offset so the run admits the opening wave the same way.
+        ramp = [round((r["arrival_wall_us"] - start) / 1e6, 4) for r in stage[:level]]
+        stages.append(
+            {"concurrency": level, "ramp_s": ramp, "captured": _stage_stats(stage)}
+        )
+        i = j
+    if i != len(rows):
+        raise ValueError(f"{len(rows) - i} ladder requests left after the last level")
+    return stages
+
+
+def build_dataset(
+    capture: str,
+    start: str,
+    end: str,
+    levels: list,
+    duration_s: float = LEVEL_DURATION_S,
+    min_idle_s: float = 10.0,
+) -> dict:
+    lo, hi = _parse_utc(start), _parse_utc(end)
+    with open(capture) as f:
+        rows = [json.loads(line) for line in f if line.strip()]
+    rows = sorted(
+        (r for r in rows if lo <= r["arrival_wall_us"] < hi),
+        key=lambda r: r["arrival_wall_us"],
+    )
+    phases = _segments(rows, min_idle_s)
+    if len(phases) != 3:
+        raise ValueError(
+            f"expected warmup, ladder and probe separated by idle gaps, "
+            f"found {len(phases)} segments"
+        )
+    warm, ladder, probe = phases
+
+    tokens: dict = {}
+    for r in rows:
+        tokens.setdefault(r["text"], collections.Counter())[_text_tokens(r)] += 1
+    text_tokens = {t: c.most_common(1)[0][0] for t, c in tokens.items()}
+
+    texts = collections.Counter(r["text"] for r in ladder)
+    voices = collections.Counter(r["prompt_speech_ids"] for r in ladder)
+    cancel_chunks = collections.Counter(
+        r["chunks"] for r in probe if r["outcome"] != "completed"
+    )
+
+    def spec(r: dict) -> dict:
+        return {
+            "text": r["text"],
+            "text_tokens": text_tokens[r["text"]],
+            "voice_speech_ids": r["prompt_speech_ids"],
+        }
+
+    return {
+        "source": {
+            "capture": os.path.basename(capture),
+            "start": start,
+            "end": end,
+            "requests": len(rows),
+        },
+        "warmup": [
+            {"requests": [spec(r) for r in rnd], "captured": _stage_stats(rnd)}
+            for rnd in _segments(warm, 0.0)
+        ],
+        "ladder": {
+            "duration_s": duration_s,
+            "stages": _ladder_stages(ladder, levels, duration_s),
+            "texts": [
+                {"text": t, "text_tokens": text_tokens[t], "count": n}
+                for t, n in sorted(texts.items(), key=lambda kv: (-kv[1], kv[0]))
+            ],
+            "voices": [
+                {"voice_speech_ids": v, "count": n} for v, n in sorted(voices.items())
+            ],
+        },
+        "probe": {
+            "cancel_after_chunks": cancel_chunks.most_common(1)[0][0]
+            if cancel_chunks
+            else 0,
+            "requests": [
+                dict(spec(r), captured_fc_ms=round(r["ttfc_us"] / 1e3, 1))
+                for r in probe
+            ],
+            "captured": _stage_stats(probe),
+        },
+    }
+
+
+# ------------------------------------------------------------------ voice clips
+
+
+def _wav_bytes(pcm: array.array) -> bytes:
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(VOICE_RATE_HZ)
+        w.writeframes(pcm.tobytes())
+    return buf.getvalue()
+
+
+def _to_voice_rate(pcm: array.array, rate: int, channels: int) -> array.array:
+    """Downmix to mono and linearly resample to VOICE_RATE_HZ."""
+    if channels > 1:
+        pcm = array.array(
+            "h",
+            (
+                sum(pcm[i : i + channels]) // channels
+                for i in range(0, len(pcm) - channels + 1, channels)
+            ),
+        )
+    if rate == VOICE_RATE_HZ or not pcm:
+        return pcm
+    n = int(len(pcm) * VOICE_RATE_HZ / rate)
+    out = array.array("h", bytes(2 * n))
+    step = rate / VOICE_RATE_HZ
+    last = len(pcm) - 1
+    for i in range(n):
+        pos = i * step
+        k = min(int(pos), last)
+        frac = pos - k
+        out[i] = int(pcm[k] + (pcm[min(k + 1, last)] - pcm[k]) * frac)
+    return out
+
+
+def _read_wav(path: str) -> array.array:
+    with wave.open(path, "rb") as w:
+        if w.getsampwidth() != 2:
+            raise ValueError(f"{path}: only 16-bit PCM WAV is supported")
+        pcm = array.array("h", w.readframes(w.getnframes()))
+        return _to_voice_rate(pcm, w.getframerate(), w.getnchannels())
+
+
+def _speak(tgt: harness.Target, text: str) -> array.array:
+    """Generate speech with no voice prompt and return it at VOICE_RATE_HZ."""
+    conn = http.client.HTTPConnection(tgt.host, tgt.port, timeout=tgt.timeout)
+    try:
+        conn.request(
+            "POST",
+            tgt.path,
+            body=json.dumps({"text": text}),
+            headers={
+                "Authorization": f"Bearer {tgt.key}",
+                "Content-Type": "application/json",
+            },
+        )
+        resp = conn.getresponse()
+        body = resp.read()
+        if resp.status != 200:
+            raise RuntimeError(f"voice bootstrap: http {resp.status}: {body[:200]!r}")
+    finally:
+        conn.close()
+    audio = body[harness.WAV_HEADER_BYTES :]
+    pcm = array.array("h", audio[: len(audio) // 2 * 2])
+    return _to_voice_rate(pcm, harness.SAMPLE_RATE, 1)
+
+
+class VoiceBank:
+    """One reference WAV per voice size, created on first use and kept on disk."""
+
+    def __init__(self, voice_dir: str, ids_per_s: float) -> None:
+        self.voice_dir = voice_dir
+        self.ids_per_s = ids_per_s
+        self.clips: dict = {}
+
+    def path(self, ids: int) -> str:
+        return os.path.join(self.voice_dir, f"voice_{ids}.wav")
+
+    def ensure(
+        self,
+        sizes: list,
+        source_dir: str | None = None,
+        tgt: harness.Target | None = None,
+        bootstrap_text: str = "",
+    ) -> None:
+        sizes = sorted({s for s in sizes if s > 0})
+        missing = [s for s in sizes if not os.path.exists(self.path(s))]
+        if missing:
+            os.makedirs(self.voice_dir, exist_ok=True)
+            longest = int(max(missing) / self.ids_per_s * VOICE_RATE_HZ)
+            source = self._source(longest, source_dir, tgt, bootstrap_text)
+            for i, ids in enumerate(missing):
+                need = int(ids / self.ids_per_s * VOICE_RATE_HZ)
+                # Different offsets keep the clips distinct beyond their length.
+                room = len(source) - need
+                off = (i * 7919 * 37) % room if room > 0 else 0
+                with open(self.path(ids), "wb") as f:
+                    f.write(_wav_bytes(source[off : off + need]))
+            logger.info("voice clips: wrote %d to %s", len(missing), self.voice_dir)
+        for s in sizes:
+            with open(self.path(s), "rb") as f:
+                self.clips[s] = f.read()
+
+    def _source(
+        self,
+        need: int,
+        source_dir: str | None,
+        tgt: harness.Target | None,
+        text: str,
+    ) -> array.array:
+        pcm = array.array("h")
+        if source_dir:
+            for name in sorted(os.listdir(source_dir)):
+                if name.lower().endswith(".wav"):
+                    pcm.extend(_read_wav(os.path.join(source_dir, name)))
+            if not pcm:
+                raise SystemExit(f"no 16-bit WAV files in {source_dir}")
+        else:
+            if tgt is None:
+                raise SystemExit("voice clips missing and no server to bootstrap from")
+            logger.info(
+                "voice clips: generating %.0f s of reference speech",
+                need / VOICE_RATE_HZ,
+            )
+            for _ in range(8):
+                pcm.extend(_speak(tgt, text))
+                if len(pcm) >= need:
+                    break
+        while len(pcm) < need:  # loop short sources rather than fail
+            pcm.extend(pcm[: need - len(pcm)])
+        return pcm
+
+    def get(self, ids: int) -> bytes:
+        return self.clips[ids] if ids else b""
+
+
+class SpeechIdBank:
+    """One voice prompt of speech token IDs per voice size, kept on disk.
+
+    ``--voice-ids`` takes a JSON list of real ID sequences; each size is cut from
+    them (looping a sequence shorter than the size). Without it the IDs are seeded
+    uniform draws from the codec codebook: right prompt length, meaningless voice.
+    """
+
+    def __init__(self, voice_dir: str, source: str | None, seed: int = 0) -> None:
+        self.file = os.path.join(voice_dir, "speech_ids.json")
+        self.source = source
+        self.seed = seed
+        self.ids: dict = {}
+
+    def ensure(self, sizes: list, *_args) -> None:
+        sizes = sorted({s for s in sizes if s > 0})
+        if os.path.exists(self.file):
+            with open(self.file) as f:
+                self.ids = {int(k): v for k, v in json.load(f).items()}
+        missing = [s for s in sizes if s not in self.ids]
+        if not missing:
+            return
+        if self.source:
+            with open(self.source) as f:
+                seqs = [list(map(int, q)) for q in json.load(f) if q]
+            if not seqs:
+                raise SystemExit(f"no speech ID sequences in {self.source}")
+        rng = random.Random(self.seed)
+        for i, n in enumerate(missing):
+            if self.source:
+                q = seqs[i % len(seqs)]
+                self.ids[n] = (q * (n // len(q) + 1))[:n]
+            else:
+                self.ids[n] = [rng.randrange(CODEBOOK_SIZE) for _ in range(n)]
+        os.makedirs(os.path.dirname(self.file) or ".", exist_ok=True)
+        with open(self.file, "w") as f:
+            json.dump({str(k): v for k, v in sorted(self.ids.items())}, f)
+        logger.info(
+            "voice IDs: wrote %d sizes to %s (%s)",
+            len(missing),
+            self.file,
+            self.source or "random",
+        )
+
+    def get(self, ids: int) -> list:
+        return self.ids[ids] if ids else []
+
+
+# ------------------------------------------------------------------- execution
+
+
+class Sampler:
+    """Seeded independent draws of a text and a voice size, weighted by count."""
+
+    def __init__(self, ladder: dict, seed: int) -> None:
+        self.rng = random.Random(seed)
+        self.lock = threading.Lock()
+        self.texts = ladder["texts"]
+        self.text_w = [t["count"] for t in self.texts]
+        self.voices = [v["voice_speech_ids"] for v in ladder["voices"]]
+        self.voice_w = [v["count"] for v in ladder["voices"]]
+
+    def draw(self) -> dict:
+        with self.lock:
+            t = self.rng.choices(self.texts, self.text_w)[0]
+            v = self.rng.choices(self.voices, self.voice_w)[0]
+        return {
+            "text": t["text"],
+            "text_tokens": t["text_tokens"],
+            "voice_speech_ids": v,
+        }
+
+
+class Runner:
+    def __init__(self, base: dict, bank: VoiceBank) -> None:
+        self.base = base
+        self.bank = bank
+        self.records: list = []
+        self.lock = threading.Lock()
+
+    def _send(self, spec: dict, stage: str, conc: int, max_chunks: int = 0) -> None:
+        voice = self.bank.get(spec["voice_speech_ids"])
+        tgt = harness.Target(
+            text=spec["text"],
+            voice_wav=voice if isinstance(voice, bytes) else b"",
+            speech_ids=voice if isinstance(voice, list) else [],
+            max_chunks=max_chunks,
+            **self.base,
+        )
+        rec = {
+            "stage": stage,
+            "conc": conc,
+            "voice_speech_ids": spec["voice_speech_ids"],
+            "isl": isl_tokens(spec["text_tokens"], spec["voice_speech_ids"]),
+            "t_send": time.time(),
+            "t_end": None,
+        }
+        with self.lock:
+            self.records.append(rec)  # registered BEFORE the send, never vanishes
+        harness.request(tgt, -1, rec)
+        rec["gaps"] = [round(g, 6) for g in rec["gaps"][:MAX_GAPS]]
+        rec.pop("marks", None)
+        rec.pop("uid", None)
+
+    def burst(self, specs: list, stage: str) -> None:
+        gate = threading.Event()
+
+        def fire(spec: dict) -> None:
+            gate.wait()
+            self._send(spec, stage, len(specs))
+
+        threads = [threading.Thread(target=fire, args=(s,), daemon=True) for s in specs]
+        for t in threads:
+            t.start()
+        time.sleep(0.2)
+        gate.set()
+        self._join(threads)
+
+    def closed(
+        self,
+        sampler: Sampler,
+        conc: int,
+        duration: float,
+        stage: str,
+        ramp: list | None = None,
+    ) -> None:
+        """Closed loop; worker i sends its first request ramp[i] s after the start."""
+        stop = threading.Event()
+        offsets = list(ramp or [])[:conc]
+        offsets += [0.0] * (conc - len(offsets))
+        t0 = time.monotonic()
+
+        def worker(offset: float) -> None:
+            stop.wait(max(0.0, t0 + offset - time.monotonic()))
+            while not stop.is_set():
+                self._send(sampler.draw(), stage, conc)
+
+        threads = [
+            threading.Thread(target=worker, args=(o,), daemon=True) for o in offsets
+        ]
+        for t in threads:
+            t.start()
+        time.sleep(duration)
+        stop.set()
+        self._join(threads)  # drain: the next level starts only once this one is idle
+
+    def sequential(self, specs: list, stage: str, max_chunks: int) -> None:
+        for spec in specs:
+            self._send(spec, stage, 1, max_chunks)
+
+    def _join(self, threads: list) -> None:
+        deadline = time.time() + self.base["timeout"] + 5
+        for t in threads:
+            t.join(max(0, deadline - time.time()))
+
+
+def _ramp_for(ramps: dict, conc: int) -> list | None:
+    """Captured start offsets for this level, or for an uncaptured level the
+    nearest captured level's ramp shape resampled to ``conc`` workers."""
+    if not ramps:
+        return None
+    if conc in ramps:
+        return ramps[conc]
+    src = sorted(ramps[min(ramps, key=lambda c: (abs(c - conc), -c))])
+    if conc == 1:
+        return [src[0]]
+    return [src[round(i * (len(src) - 1) / (conc - 1))] for i in range(conc)]
+
+
+def run(args: argparse.Namespace) -> dict:
+    with open(args.dataset) as f:
+        ds = json.load(f)
+    ladder = ds["ladder"]
+    levels = [int(x) for x in args.levels.split(",") if x.strip()]
+    duration = args.duration if args.duration else ladder["duration_s"]
+    phases = set(args.phases.split(","))
+    harness.REUSE_CONNECTIONS = args.reuse_connections
+    base = {
+        "host": args.host,
+        "port": args.port,
+        "path": args.path,
+        "key": args.key,
+        "timeout": args.timeout,
+    }
+
+    sizes = [v["voice_speech_ids"] for v in ladder["voices"]]
+    sizes += [s["voice_speech_ids"] for rnd in ds["warmup"] for s in rnd["requests"]]
+    sizes += [s["voice_speech_ids"] for s in ds["probe"]["requests"]]
+    if args.voice_format == "ids":
+        bank = SpeechIdBank(args.voice_dir, args.voice_ids, args.seed)
+    else:
+        bank = VoiceBank(args.voice_dir, args.speech_ids_per_s)
+    bootstrap = " ".join(t["text"] for t in ladder["texts"] if t["text_tokens"] > 40)
+    bank.ensure(
+        sizes,
+        args.voice_source,
+        harness.Target(**base),
+        bootstrap[: args.bootstrap_chars],
+    )
+
+    runner = Runner(base, bank)
+    stages: list = []
+    doc = {
+        "meta": {
+            "dataset": os.path.basename(args.dataset),
+            "source": ds["source"],
+            "host": args.host,
+            "port": args.port,
+            "seed": args.seed,
+            "levels": levels,
+            "duration_s": duration,
+            "speech_ids_per_s": args.speech_ids_per_s,
+            "voice_dir": os.path.abspath(args.voice_dir),
+            "reuse_connections": args.reuse_connections,
+            "started": time.time(),
+        },
+        "stages": stages,
+        "records": runner.records,
+    }
+
+    def checkpoint(
+        name: str, kind: str, conc: int, t0: float, captured: dict | None
+    ) -> None:
+        stages.append(
+            {
+                "stage": name,
+                "kind": kind,
+                "conc": conc,
+                "start": t0,
+                "end": time.time(),
+                "captured": captured,
+            }
+        )
+        n = sum(r["stage"] == name for r in runner.records)
+        logger.info("[%s] done: %d requests in %.0f s", name, n, time.time() - t0)
+        with open(args.out, "w") as f:
+            json.dump(doc, f)
+
+    if "warmup" in phases:
+        for i, rnd in enumerate(ds["warmup"]):
+            name = f"warmup{i + 1}"
+            logger.info("[%s] %d simultaneous requests", name, len(rnd["requests"]))
+            t0 = time.time()
+            runner.burst(rnd["requests"], name)
+            checkpoint(name, "burst", len(rnd["requests"]), t0, rnd["captured"])
+
+    if "ladder" in phases:
+        captured = {s["concurrency"]: s["captured"] for s in ladder["stages"]}
+        ramps = {s["concurrency"]: s.get("ramp_s") for s in ladder["stages"]}
+        ramps = {c: r for c, r in ramps.items() if r}
+        sampler = Sampler(ladder, args.seed)
+        for conc in levels:
+            name = f"c{conc}"
+            if args.ramp == "capture":
+                ramp = _ramp_for(ramps, conc)
+            elif args.ramp == "linear":
+                ramp = [i / args.ramp_rate for i in range(conc)]
+            elif args.ramp == "random":
+                rng = random.Random(f"{args.seed}-{conc}")
+                ramp = sorted(rng.uniform(0, args.ramp_window) for _ in range(conc))
+            else:
+                ramp = None
+            logger.info(
+                "[%s] closed loop, %d workers, %.0f s, start %s",
+                name,
+                conc,
+                duration,
+                f"ramped over {max(ramp):.1f} s ({args.ramp})" if ramp else "all at once",
+            )
+            t0 = time.time()
+            runner.closed(sampler, conc, duration, name, ramp)
+            checkpoint(name, "closed", conc, t0, captured.get(conc))
+
+    if "probe" in phases:
+        probe = ds["probe"]
+        logger.info(
+            "[probe] %d sequential requests, cancelled after %d chunks",
+            len(probe["requests"]),
+            probe["cancel_after_chunks"],
+        )
+        t0 = time.time()
+        runner.sequential(probe["requests"], "probe", probe["cancel_after_chunks"])
+        points = [
+            [isl_tokens(s["text_tokens"], s["voice_speech_ids"]), s["captured_fc_ms"]]
+            for s in probe["requests"]
+            if "captured_fc_ms" in s
+        ]
+        checkpoint("probe", "sequential", 1, t0, dict(probe["captured"], points=points))
+
+    doc["meta"]["finished"] = time.time()
+    with open(args.out, "w") as f:
+        json.dump(doc, f)
+    logger.info("wrote %s (%d requests)", args.out, len(runner.records))
+    return doc
+
+
+# ---------------------------------------------------------------------- report
+
+
+def stage_stats(recs: list) -> dict:
+    ok = [r for r in recs if r["ok"]]
+    t0 = min(r["t_send"] for r in recs)
+    span = max(r["t_send"] for r in recs) - t0
+    fc = [r["ttfb_s"] * 1e3 for r in ok if r["ttfb_s"] is not None]
+    gaps = [g * 1e3 for r in ok for g in r["gaps"]]
+    audio = [r["audio_s"] for r in ok]
+    isl = [r["isl"] for r in recs]
+    full = [r for r in ok if not r["capped"]]
+    return {
+        "n": len(recs),
+        "errors": len(recs) - len(ok),
+        "arrival_span_s": round(span, 1),
+        "req_per_s": round(len(recs) / span, 2) if span > 0 else None,
+        "isl_p50": round(pct(isl, 50)),
+        "isl_p90": round(pct(isl, 90)),
+        "isl_max": max(isl),
+        "fc_p50_ms": round(pct(fc, 50), 1),
+        "fc_p95_ms": round(pct(fc, 95), 1),
+        "fc_p99_ms": round(pct(fc, 99), 1),
+        "tc_p50_ms": round(pct(gaps, 50), 1),
+        "audio_p50_s": round(pct(audio, 50), 2),
+        "capped_pct": round(
+            100 * sum(r["audio_s"] >= OUTPUT_CAP_S for r in full) / max(1, len(full)), 1
+        ),
+        "runaway_pct": round(
+            100
+            * sum(is_runaway(r["audio_s"], r["chars"]) for r in full)
+            / max(1, len(full)),
+            1,
+        ),
+    }
+
+
+COLS = [
+    ("n", "n", "{:d}"),
+    ("errors", "err", "{:d}"),
+    ("req_per_s", "req/s", "{:.2f}"),
+    ("isl_p50", "ISL p50", "{:.0f}"),
+    ("isl_p90", "ISL p90", "{:.0f}"),
+    ("isl_max", "ISL max", "{:.0f}"),
+    ("fc_p50_ms", "FC p50", "{:.0f}"),
+    ("fc_p95_ms", "FC p95", "{:.0f}"),
+    ("fc_p99_ms", "FC p99", "{:.0f}"),
+    ("tc_p50_ms", "TC p50", "{:.0f}"),
+    ("audio_p50_s", "audio p50", "{:.1f}"),
+    ("capped_pct", "120s %", "{:.1f}"),
+    ("runaway_pct", "runaway %", "{:.1f}"),
+]
+
+
+def _fmt(value, spec: str) -> str:
+    if value is None or math.isnan(value):
+        return "-"
+    return spec.format(value)
+
+
+def report_table(doc: dict) -> str:
+    by_stage = collections.defaultdict(list)
+    for r in doc["records"]:
+        by_stage[r["stage"]].append(r)
+    head = ["stage", "conc", "src"] + [c[1] for c in COLS]
+    rows = [head]
+    for s in doc["stages"]:
+        recs = by_stage.get(s["stage"])
+        if not recs:
+            continue
+        got = stage_stats(recs)
+        rows.append(
+            [s["stage"], str(s["conc"]), "run"]
+            + [_fmt(got.get(k), f) for k, _, f in COLS]
+        )
+        cap = s.get("captured")
+        if cap:
+            cap = dict(cap, errors=0)
+            rows.append(["", "", "capture"] + [_fmt(cap.get(k), f) for k, _, f in COLS])
+    widths = [max(len(r[i]) for r in rows) for i in range(len(head))]
+    lines = ["  ".join(c.rjust(w) for c, w in zip(r, widths)) for r in rows]
+    lines.insert(1, "  ".join("-" * w for w in widths))
+    notes = (
+        "FC = first chunk, TC = later chunk gaps (ms). ISL = prompt tokens "
+        "(text + voice + 2). 120s % = hit the output cap; runaway % = audio > "
+        f"{RUNAWAY_FACTOR:g} x {RUNAWAY_S_PER_CHAR} s/char + {RUNAWAY_SLACK_S:g} s. "
+        "Capture req/s is over its arrival span; capture 'err' is not recorded."
+    )
+    return "\n".join(lines) + "\n\n" + notes
+
+
+def probe_table(doc: dict) -> str:
+    groups = collections.defaultdict(list)
+    for r in doc["records"]:
+        if r["stage"] == "probe" and r["ttfb_s"] is not None:
+            groups[r["isl"]].append(r["ttfb_s"] * 1e3)
+    if not groups:
+        return ""
+    lines = ["probe: first chunk vs ISL", "     ISL   n   FC mean ms"]
+    for isl in sorted(groups):
+        v = groups[isl]
+        lines.append(f"  {isl:6d} {len(v):3d}   {sum(v) / len(v):8.1f}")
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------- charts
+
+# Categorical slots 1-2 of the reference palette; capture reuses the hue, dashed.
+P50_COLOR = "#2a78d6"
+P95_COLOR = "#eb6834"
+INK = "#0b0b0b"
+INK_MUTED = "#52514e"
+GRID = "#e4e3df"
+
+
+def _ladder_points(doc: dict) -> list:
+    """(conc, run stats, captured stats) for every ladder level that ran."""
+    by_stage = collections.defaultdict(list)
+    for r in doc["records"]:
+        by_stage[r["stage"]].append(r)
+    out = []
+    for s in doc["stages"]:
+        if s["kind"] == "closed" and by_stage.get(s["stage"]):
+            out.append(
+                (s["conc"], stage_stats(by_stage[s["stage"]]), s.get("captured"))
+            )
+    return out
+
+
+def _style(ax, title: str, xlabel: str, ylabel: str) -> None:
+    ax.set_title(title, loc="left", fontsize=12, color=INK)
+    ax.set_xlabel(xlabel, color=INK_MUTED)
+    ax.set_ylabel(ylabel, color=INK_MUTED)
+    ax.grid(True, color=GRID, lw=0.8)
+    ax.set_axisbelow(True)
+    for side in ("top", "right"):
+        ax.spines[side].set_visible(False)
+    for side in ("left", "bottom"):
+        ax.spines[side].set_color(GRID)
+    ax.tick_params(colors=INK_MUTED, labelsize=9)
+
+
+def _series(ax, xs, ys, color: str, label: str, captured: bool) -> None:
+    pts = [(x, y) for x, y in zip(xs, ys) if x is not None and y is not None]
+    if not pts:
+        return
+    ax.plot(
+        *zip(*pts),
+        ls="--" if captured else "-",
+        lw=1.5 if captured else 2,
+        marker="o",
+        ms=7,
+        color=color,
+        mfc="white" if captured else color,
+        mew=1.5,
+        alpha=0.75 if captured else 1.0,
+        label=label,
+    )
+
+
+def render_charts(doc: dict, prefix: str) -> list:
+    """Write ladder and probe charts as ``<prefix>_*.png``; returns the paths."""
+    try:
+        import matplotlib
+    except ImportError:
+        logger.warning("charts skipped: matplotlib is not installed")
+        return []
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from matplotlib.ticker import FixedLocator, FuncFormatter, NullLocator
+
+    paths = []
+    ladder = _ladder_points(doc)
+    if ladder:
+        concs = [c for c, _, _ in ladder]
+        run_s = [r for _, r, _ in ladder]
+        cap_s = [c or {} for _, _, c in ladder]
+        has_cap = any(cap_s)
+
+        # Throughput vs first-chunk latency, one point per level.
+        fig, ax = plt.subplots(figsize=(10, 6.5))
+        for key, color, name in (
+            ("fc_p50_ms", P50_COLOR, "P50"),
+            ("fc_p95_ms", P95_COLOR, "P95"),
+        ):
+            _series(
+                ax,
+                [r[key] for r in run_s],
+                [r["req_per_s"] for r in run_s],
+                color,
+                f"run {name}",
+                False,
+            )
+            if has_cap:
+                _series(
+                    ax,
+                    [c.get(key) for c in cap_s],
+                    [c.get("req_per_s") for c in cap_s],
+                    color,
+                    f"capture {name}",
+                    True,
+                )
+        for conc, r in zip(concs, run_s):
+            ax.annotate(
+                str(conc),
+                (r["fc_p50_ms"], r["req_per_s"]),
+                xytext=(6, 5),
+                textcoords="offset points",
+                fontsize=8,
+                color=INK_MUTED,
+            )
+        _style(
+            ax,
+            "Throughput vs first-chunk latency (ladder)",
+            "first-chunk latency (ms); point label = concurrency",
+            "throughput (requests/s, log scale)",
+        )
+        ax.set_yscale("log")
+        ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:g}"))
+        ax.legend(frameon=False, fontsize=9)
+        fig.tight_layout()
+        paths.append(f"{prefix}_throughput_fc.png")
+        fig.savefig(paths[-1], dpi=130)
+        plt.close(fig)
+
+        # First-chunk latency vs concurrency.
+        fig, ax = plt.subplots(figsize=(10, 6.5))
+        for key, color, name in (
+            ("fc_p50_ms", P50_COLOR, "P50"),
+            ("fc_p95_ms", P95_COLOR, "P95"),
+        ):
+            _series(ax, concs, [r[key] for r in run_s], color, f"run {name}", False)
+            if has_cap:
+                _series(
+                    ax,
+                    concs,
+                    [c.get(key) for c in cap_s],
+                    color,
+                    f"capture {name}",
+                    True,
+                )
+        ax.set_xscale("log", base=2)
+        ax.xaxis.set_major_locator(FixedLocator(concs))
+        ax.xaxis.set_minor_locator(NullLocator())
+        ax.set_xticklabels([str(c) for c in concs])
+        _style(
+            ax,
+            "First-chunk latency vs concurrency (ladder)",
+            "concurrency (closed-loop clients)",
+            "first-chunk latency (ms)",
+        )
+        ax.set_ylim(bottom=0)
+        ax.legend(frameon=False, fontsize=9)
+        fig.tight_layout()
+        paths.append(f"{prefix}_concurrency_fc.png")
+        fig.savefig(paths[-1], dpi=130)
+        plt.close(fig)
+
+    probe = [r for r in doc["records"] if r["stage"] == "probe" and r["ttfb_s"]]
+    if probe:
+        stage = next((s for s in doc["stages"] if s["stage"] == "probe"), {})
+        captured = (stage.get("captured") or {}).get("points") or []
+        fig, ax = plt.subplots(figsize=(10, 6.5))
+
+        def means(points):
+            groups = collections.defaultdict(list)
+            for isl, fc in points:
+                groups[isl].append(fc)
+            return sorted((k, sum(v) / len(v)) for k, v in groups.items())
+
+        run_pts = [(r["isl"], r["ttfb_s"] * 1e3) for r in probe]
+        ax.scatter(
+            *zip(*run_pts),
+            s=14,
+            color=P50_COLOR,
+            alpha=0.35,
+            lw=0,
+            label="run, each request",
+        )
+        _series(ax, *zip(*means(run_pts)), P50_COLOR, "run, mean per ISL", False)
+        if captured:
+            _series(
+                ax, *zip(*means(captured)), P50_COLOR, "capture, mean per ISL", True
+            )
+        _style(
+            ax,
+            "First-chunk latency vs prompt size (probe, one request at a time)",
+            "prompt tokens (text + voice)",
+            "first-chunk latency (ms)",
+        )
+        ax.set_ylim(bottom=0)
+        ax.legend(frameon=False, fontsize=9)
+        fig.tight_layout()
+        paths.append(f"{prefix}_probe_fc_isl.png")
+        fig.savefig(paths[-1], dpi=130)
+        plt.close(fig)
+
+    for path in paths:
+        logger.info("wrote %s", path)
+    return paths
+
+
+# ------------------------------------------------------------------------- CLI
+
+
+def build_parser() -> argparse.ArgumentParser:
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    sub = ap.add_subparsers(dest="command", required=True)
+
+    p = sub.add_parser("build-dataset", help="capture JSONL -> dataset JSON")
+    p.add_argument("--capture", required=True, help="server capture JSONL")
+    p.add_argument("--start", required=True, help="UTC ISO time, e.g. 2026-10-27T21:15")
+    p.add_argument("--end", required=True, help="UTC ISO time, exclusive")
+    p.add_argument("--levels", default=DEFAULT_LEVELS)
+    p.add_argument("--duration", type=float, default=LEVEL_DURATION_S)
+    p.add_argument("--out", default=DEFAULT_DATASET)
+
+    p = sub.add_parser("run", help="run the staged test -> results JSON")
+    p.add_argument("--host", default=os.environ.get("TTS_HOST", "localhost"))
+    p.add_argument("--port", type=int, default=int(os.environ.get("TTS_PORT", "8000")))
+    p.add_argument("--path", default=harness.DEFAULT_PATH)
+    p.add_argument("--key", default=os.environ.get("TTS_KEY", harness.DEFAULT_KEY))
+    p.add_argument("--timeout", type=float, default=300)
+    p.add_argument(
+        "--reuse-connections",
+        action="store_true",
+        help="keep each worker's connection open between requests (HTTP keep-alive); "
+        "default opens a new connection per request",
+    )
+    p.add_argument("--dataset", default=DEFAULT_DATASET)
+    p.add_argument("--levels", default=DEFAULT_LEVELS)
+    p.add_argument(
+        "--duration", type=float, default=0, help="seconds per level; 0 = dataset's"
+    )
+    p.add_argument(
+        "--phases", default="warmup,ladder,probe", help="comma list of phases to run"
+    )
+    p.add_argument("--seed", type=int, default=42)
+    p.add_argument(
+        "--ramp",
+        choices=("capture", "linear", "random", "none"),
+        default="capture",
+        help="ladder worker start times: replay the capture's ramp (default), "
+        "start one worker every 1/--ramp-rate s, start each at a seeded uniform "
+        "random time within --ramp-window s, or start every worker at once",
+    )
+    p.add_argument(
+        "--ramp-window",
+        type=float,
+        default=30.0,
+        help="seconds over which --ramp random spreads worker starts",
+    )
+    p.add_argument(
+        "--ramp-rate",
+        type=float,
+        default=16.0,
+        help="workers started per second with --ramp linear",
+    )
+    p.add_argument("--voice-dir", default="tts_voices")
+    p.add_argument(
+        "--voice-format",
+        choices=("ids", "wav"),
+        default="ids",
+        help="send voice prompts as JSON speech_ids (default) or as multipart WAV",
+    )
+    p.add_argument(
+        "--voice-ids",
+        help="JSON list of real speech ID sequences to cut voice prompts from; "
+        "default is seeded random IDs",
+    )
+    p.add_argument(
+        "--voice-source",
+        default=None,
+        help="directory of 16-bit WAV recordings to cut voice clips from "
+        "(default: generate them on the server under test)",
+    )
+    p.add_argument("--speech-ids-per-s", type=float, default=50.0)
+    p.add_argument("--bootstrap-chars", type=int, default=1600)
+    p.add_argument("--out", default="tts_staged_results.json")
+    p.add_argument("--no-table", action="store_true")
+    p.add_argument(
+        "--chart",
+        default=None,
+        help="chart file prefix (default: --out without .json); 'none' to skip",
+    )
+
+    p = sub.add_parser("report", help="tables and charts from a run's results JSON")
+    p.add_argument("--results", required=True)
+    p.add_argument(
+        "--chart",
+        default=None,
+        help="chart file prefix (default: --results without .json); 'none' to skip",
+    )
+    return ap
+
+
+def main(argv: list | None = None) -> None:
+    args = build_parser().parse_args(argv)
+    logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stderr)
+
+    if args.command == "build-dataset":
+        levels = [int(x) for x in args.levels.split(",") if x.strip()]
+        ds = build_dataset(args.capture, args.start, args.end, levels, args.duration)
+        os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
+        with open(args.out, "w") as f:
+            json.dump(ds, f, indent=1)
+            f.write("\n")
+        lad = ds["ladder"]
+        logger.info(
+            "wrote %s: %d texts, %d voices, %d warmup rounds, %d probe requests",
+            args.out,
+            len(lad["texts"]),
+            len(lad["voices"]),
+            len(ds["warmup"]),
+            len(ds["probe"]["requests"]),
+        )
+        return
+
+    if args.command == "report":
+        with open(args.results) as f:
+            doc = json.load(f)
+        results = args.results
+    else:
+        doc = run(args)
+        results = args.out
+    if args.chart != "none":
+        render_charts(doc, args.chart or os.path.splitext(results)[0])
+    if getattr(args, "no_table", False):
+        return
+    print(report_table(doc))
+    probe = probe_table(doc)
+    if probe:
+        print("\n" + probe)
+
+
+if __name__ == "__main__":
+    main()
