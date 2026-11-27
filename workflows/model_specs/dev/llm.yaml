@@ -1728,6 +1728,12 @@ templates:
         trace_region_size: 1073741824
         l1_small_size: 24576
         sample_on_device_mode: decode_only
+        # A prefill step stalls every running request of its engine; these keys bound that. The last two need
+        # vllm-tt-plugin viktorpus/feat.long-prompt-scheduling; the plugin logs a "TT scheduler:" line for each at
+        # startup and ignores a misspelt key without a warning.
+        decode_interleave_prefill_steps: 1  # one decode step after each prefill (chunk) step
+        max_concurrent_partial_prefills: 1  # prompts that need more than one chunk advance one at a time (oldest first)
+        prefill_chunk_cap_table: [[0, 16384], [131072, 8192]]  # [start depth, max chunk tokens]
     - device: BLACKHOLE_GALAXY
       max_concurrency: 32  # 4 engines x 8 requests
       max_context: 262144
@@ -1759,6 +1765,10 @@ templates:
         trace_region_size: 1073741824
         l1_small_size: 24576
         sample_on_device_mode: decode_only
+        # Per engine; see the P150X8 entry.
+        decode_interleave_prefill_steps: 1
+        max_concurrent_partial_prefills: 1
+        prefill_chunk_cap_table: [[0, 16384], [131072, 8192]]
   status: EXPERIMENTAL
   has_builtin_warmup: true
   metadata:
