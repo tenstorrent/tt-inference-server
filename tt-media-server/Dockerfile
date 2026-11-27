@@ -18,6 +18,9 @@ LABEL org.opencontainers.image.source=https://github.com/tenstorrent/tt-inferenc
 ARG DEBIAN_FRONTEND=noninteractive
 # default commit sha, override with --build-arg TT_METAL_COMMIT_SHA_OR_TAG=<sha>
 ARG TT_METAL_COMMIT_SHA_OR_TAG=915d9e67ad572b97fbaf5339bd3e518db6dc05e3
+# --build-arg BUILD_TT_TRAIN=true also builds tt-train (ttml) for the
+# ttml-training-lora runner, which needs a tt-metal commit with ttml.experimental.trainer.
+ARG BUILD_TT_TRAIN=false
 
 # make build commit SHA available in the image for reference and debugging
 ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG}
@@ -120,7 +123,8 @@ RUN git clone --depth 1 https://github.com/tenstorrent-metal/tt-metal.git ${TT_M
     && test -f "${PYTHON_ENV_DIR}/bin/activate" \
     && echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc \
     && uv pip install --upgrade setuptools wheel \
-    && bash ./build_metal.sh --release -e \
+    && bash ./build_metal.sh --release -e $(if [ "${BUILD_TT_TRAIN}" = "true" ]; then echo --build-tt-train; fi) \
+    # Leaves BUILD_TT_TRAIN as the build above set it: build_metal.sh only passes it when asked to.
     && bash ./build_metal.sh --release -e --build-metal-tests -c --configure-only \
     && cmake --build build_Release --target test_system_health -j$(nproc) \
     && uv pip install --upgrade cmake \
@@ -133,7 +137,19 @@ RUN git clone --depth 1 https://github.com/tenstorrent-metal/tt-metal.git ${TT_M
     && rm -rf ${TT_METAL_HOME}/releases \
     && rm -rf ${TT_METAL_HOME}/dockerfile \
     && rm -rf ${TT_METAL_HOME}/infra/tests \
-    && rm -rf ${TT_METAL_HOME}/tt-train \
+    # ttml is its Python package in tt-train/sources/ttml plus the _ttml extension in
+    # the build tree. create_venv.sh ran before the build, so it could not add the
+    # extension's path; the find_spec check fails the build if either is missing.
+    # The import of ttml.experimental.trainer is checked after the server
+    # requirements are installed, before the merge venv is built.
+    && if [ "${BUILD_TT_TRAIN}" = "true" ]; then \
+         site_packages=$(${PYTHON_ENV_DIR}/bin/python -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])') \
+         && echo "${TT_METAL_HOME}/tt-train/sources/ttml" > "${site_packages}/ttml.pth" \
+         && echo "${TT_METAL_HOME}/build/tt-train/sources/ttml" > "${site_packages}/_ttml.pth" \
+         && ${PYTHON_ENV_DIR}/bin/python -c 'import importlib.util as u; assert u.find_spec("ttml") and u.find_spec("_ttml")'; \
+       else \
+         rm -rf ${TT_METAL_HOME}/tt-train; \
+       fi \
     # Parenthesized so `|| true` only forgives the .git cleanup: unscoped, it
     # would swallow a failure anywhere in this && chain and let the build
     # continue without a venv or a tt-metal build.
@@ -205,6 +221,27 @@ RUN /bin/bash -c "python3 -m venv ${AUDIO_VENV_DIR} \
     && cd ${TT_METAL_HOME} \
     && uv pip install --no-cache-dir --index-strategy unsafe-best-match --overrides uv-overrides.txt -r audio-requirements.txt \
     && echo 'Audio venv created successfully with whisperx and torch 2.7.x'"
+
+# Dedicated CPU venv for merging LoRA adapters under the *inference* transformers version,
+# used by the ttml-training-lora runner's checkpoint merge. build_merge_venv.py needs
+# Python 3.11+ (tomllib) but python_env is 3.10, so it runs under a uv-managed 3.12.
+# UV_PYTHON_INSTALL_DIR keeps that interpreter under TT_METAL_HOME, so the merge venv's
+# symlinks still resolve after the runtime stage copies HOME_DIR.
+# Must run before the cleanup step, which deletes server/scripts.
+# The first command imports ttml.experimental.trainer, which the runner imports, in
+# the main venv now that its last install is done. os._exit skips ttml's atexit
+# hook, which opens the device to close it and can block without one.
+ENV ADAPTER_MERGE_VENV_DIR=${TT_METAL_HOME}/merge-venv
+RUN if [ "${BUILD_TT_TRAIN}" = "true" ]; then \
+      ${PYTHON_ENV_DIR}/bin/python -c 'import os, ttml.experimental.trainer; os._exit(0)' \
+      && uv="${PYTHON_ENV_DIR}/bin/uv" \
+      && "${uv}" python install 3.12 \
+      && "$("${uv}" python find --managed-python 3.12)" "${TT_METAL_HOME}/server/scripts/build_merge_venv.py" \
+           "${ADAPTER_MERGE_VENV_DIR}" "${TT_METAL_HOME}/tt-vllm-plugin/pyproject.toml" \
+           --forge-python "${PYTHON_ENV_DIR}/bin/python" \
+      && cd "${TT_METAL_HOME}/server" \
+      && PYTHONPATH=. "${ADAPTER_MERGE_VENV_DIR}/bin/python" -c 'import peft, transformers, torch, utils.adapter_merge_utils'; \
+    fi
 
 # Fix GPG keys before installing cpp_server dependencies
 RUN apt-get clean && rm -rf /var/lib/apt/lists/* \
@@ -295,6 +332,8 @@ ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
     PYTHONPATH=${HOME_DIR}/tt-metal \
     PYTHON_ENV_DIR=${HOME_DIR}/tt-metal/python_env \
     AUDIO_VENV_PYTHON=${HOME_DIR}/tt-metal/audio_venv/bin/python \
+    # Only exists in BUILD_TT_TRAIN=true images; nothing else launches the merge.
+    ADAPTER_MERGE_PYTHON=${HOME_DIR}/tt-metal/merge-venv/bin/python \
     LD_LIBRARY_PATH=${HOME_DIR}/tt-metal/build/lib \
     VLLM_USE_V1=1 \
     TT_METAL_LOGS_PATH=${HOME_DIR}/logs
@@ -319,7 +358,8 @@ COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} 
     /home/container_app_user ${HOME_DIR}
 
 # Fix venv permissions (COPY --chown can break symlink permissions)
-RUN chmod -R +x ${PYTHON_ENV_DIR}/bin
+RUN chmod -R +x ${PYTHON_ENV_DIR}/bin \
+    && if [ -d "${HOME_DIR}/tt-metal/merge-venv/bin" ]; then chmod -R +x "${HOME_DIR}/tt-metal/merge-venv/bin"; fi
 
 USER ${CONTAINER_APP_USERNAME}
 WORKDIR ${HOME_DIR}/tt-metal

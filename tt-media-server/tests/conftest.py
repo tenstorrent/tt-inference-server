@@ -366,15 +366,14 @@ for submodule, mock in submodules.items():
         sys.modules[submodule] = mock
 
 
-def _install_blacksmith_stubs():
-    """Import shims for tt-blacksmith, which only ships in the crank worker image.
+def _install_ttml_stubs():
+    """Import shims for ttml, which only ships in images built with tt-train.
 
     Job callbacks subclass Callback at import time, so it cannot be a MagicMock.
-    CrankLLMTrainer is a real class so tests can exercise setup/cleanup. Config
-    stubs just record kwargs.
+    SFTTrainer is a real class so tests can exercise setup/cleanup; like ttml's,
+    it saves its own checkpoints and reports its learning rate. Config stubs
+    just record kwargs.
     """
-
-    torch_dtypes = {"torch.bfloat16": "bfloat16", "torch.float32": "float32"}
 
     class StubConfig:
         def __init__(self, **kwargs):
@@ -387,35 +386,37 @@ def _install_blacksmith_stubs():
         def __init__(self, trainer, callbacks):
             self.trainer = trainer
             self.callbacks = list(callbacks)
+            self.state = {}
 
         def __call__(self, method_name, *args, **kwargs):
             for callback in self.callbacks:
                 if hasattr(callback, method_name):
                     getattr(callback, method_name)(self.trainer, *args, **kwargs)
 
-    class StubCrankLLMTrainer:
+    class StubSFTTrainer:
         def __init__(self, callbacks=None):
             self.callback_handler = StubCallbackHandler(self, callbacks or [])
             self.config = None
-            self.reproducibility_manager = None
-            self.logger = None
             self.global_step = 0
             self.epoch = 0
-            self.step_loss = None
 
-        def setup(self, config=None, **kwargs):
-            if self.config is not None:
-                self.cleanup()
-            self.config = config
-            self.model = self._load_model()
-            self.train_dataloader, self.val_dataloader = self._load_dataloaders()
-            self.optimizer = self._load_optimizer()
-
-        def _load_model(self):
-            return MagicMock()
+        def setup(self, config):
+            try:
+                if self.config is not None:
+                    self.cleanup()
+                self.config = config
+                self.train_dataloader, self.val_dataloader = self._load_dataloaders()
+                self.model = self._load_model()
+                self.optimizer = self._load_optimizer()
+            except Exception as exception:
+                self.callback_handler("on_setup_error", exception)
+                raise
 
         def _load_dataloaders(self):
             return MagicMock(), MagicMock()
+
+        def _load_model(self):
+            return MagicMock()
 
         def _load_optimizer(self):
             return MagicMock()
@@ -423,23 +424,27 @@ def _install_blacksmith_stubs():
         def train(self):
             if self.config is None:
                 raise RuntimeError(
-                    "Trainer.setup(config) must be called before train()."
+                    "Trainer.setup(config) must be called before train()"
                 )
 
         def loss_to_float(self, loss):
             return float(loss)
+
+        def current_learning_rate(self):
+            return [optimizer["lr"] for optimizer in self.config.optimizer]
+
+        def save_checkpoint(self, path, metadata=None):
+            pass
 
         def cleanup(self):
             preserved = {"callback_handler"}
             for attr in list(self.__dict__):
                 if attr not in preserved:
                     delattr(self, attr)
+            self.callback_handler.state.clear()
             self.config = None
-            self.reproducibility_manager = None
-            self.logger = None
             self.global_step = 0
             self.epoch = 0
-            self.step_loss = None
 
     def module(name, **attrs):
         stub = types.ModuleType(name)
@@ -448,38 +453,38 @@ def _install_blacksmith_stubs():
             setattr(stub, key, value)
         sys.modules[name] = stub
 
-    module("blacksmith")
+    module("ttml")
+    module("ttml.experimental")
     module(
-        "blacksmith.configs",
+        "ttml.experimental.trainer",
+        Callback=StubCallback,
+        SFTTrainer=StubSFTTrainer,
+        # Like ttml's, a save strategy's type defaults to its own.
+        StepSave=type("StepSave", (StubConfig,), {"type": "step"}),
+        NoSave=type("NoSave", (StubConfig,), {"type": "none"}),
         **{
             name: type(name, (StubConfig,), {})
             for name in (
                 "CheckpointConfig",
                 "CustomDatasetConfig",
-                "LLMTrainerConfig",
+                "DatasetConfig",
                 "LoggingConfig",
                 "LoraConfig",
                 "MetricsConfig",
+                "ModelConfig",
+                "SFTTrainerConfig",
+                "StoppingCriteria",
+                "TrainMetricsConfig",
+                "ValidationMetricsConfig",
             )
         },
-    )
-    module("blacksmith.models")
-    module("blacksmith.models.hf_models", TORCH_DTYPES=torch_dtypes)
-    module("blacksmith.tools")
-    module("blacksmith.tools.trainer")
-    module("blacksmith.tools.trainer.callback", Callback=StubCallback)
-    module("blacksmith.tools.trainer.strategies")
-    module(
-        "blacksmith.tools.trainer.strategies.crank_llm_trainer",
-        CrankLLMTrainer=StubCrankLLMTrainer,
-        IGNORED_INDEX=-100,
     )
 
 
 try:
-    import blacksmith  # noqa: F401
+    import ttml.experimental.trainer  # noqa: F401
 except ImportError:
-    _install_blacksmith_stubs()
+    _install_ttml_stubs()
 
 # Mock open_ai_api modules that use FastAPI decorators with Pydantic models
 # This prevents import errors when test_device_worker.py mocks domain objects.
@@ -757,9 +762,6 @@ runner_mocks = {
     },
     "tt_model_runners.mock_runner": {
         "MockRunner": create_mock_runner_class("MockRunner")
-    },
-    "tt_model_runners.forge_training_runners.training_gemma_lora_runner": {
-        "TrainingGemmaLoraRunner": create_mock_runner_class("TrainingGemmaLoraRunner")
     },
     "tt_model_runners.speecht5_runner": {
         "TTSpeechT5Runner": create_mock_runner_class("TTSpeechT5Runner")

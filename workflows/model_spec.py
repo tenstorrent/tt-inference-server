@@ -74,6 +74,8 @@ def generate_default_docker_link(
             _default_docker_repo = "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64"
     elif inference_engine == "forge":
         _default_docker_repo = "ghcr.io/tenstorrent/tt-media-inference-server-forge"
+    elif inference_engine == "training":
+        _default_docker_repo = "ghcr.io/tenstorrent/tt-media-inference-server-training"
     else:
         _default_docker_repo = "ghcr.io/tenstorrent/tt-media-inference-server"
     return f"{_default_docker_repo}:{_default_docker_tag}"
@@ -391,15 +393,16 @@ diffusion_gemma_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/experimental/diffusion_gemma",
 )
-training_lora_impl = ImplSpec(
-    impl_id="training_lora",
-    impl_name="training-lora",
+# ttml-backed LoRA runner (tt-metal's tt-train SFTTrainer), on the tt-metal media
+# server image rather than the forge one; selectable via --impl ttml-training-lora.
+ttml_training_lora_impl = ImplSpec(
+    impl_id="ttml_training_lora",
+    impl_name="ttml-training-lora",
     repo_url="https://github.com/tenstorrent/tt-inference-server",
-    code_path="tt-media-server/tt_model_runners/forge_training_runners/training_lora_runner.py",
+    code_path="tt-media-server/tt_model_runners/training_runners/ttml_training_lora_runner.py",
 )
-# tt-blacksmith-backed LoRA runner (CrankLLMTrainer). Distinct impl_id so it does
-# not collide with the legacy `training_lora` on the same (model_name, device);
-# selectable via --impl trainer-training-lora.
+# tt-blacksmith-backed LoRA runner (CrankLLMTrainer), referenced only by the prod
+# catalog: its code ships in the pinned Forge image, not in this tree.
 trainer_training_lora_impl = ImplSpec(
     impl_id="trainer_training_lora",
     impl_name="trainer-training-lora",
@@ -579,7 +582,7 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "qwen36_blackhole": qwen36_blackhole_impl,
     "qwen36_blackhole_vlm": qwen36_blackhole_vlm_impl,
     "diffusion_gemma": diffusion_gemma_impl,
-    "training_lora": training_lora_impl,
+    "ttml_training_lora": ttml_training_lora_impl,
     "trainer_training_lora": trainer_training_lora_impl,
     "blaze": blaze_impl,
 }
@@ -777,11 +780,8 @@ class ModelSpec:
     cli_args: Dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self):
-        # Skipped for forge/media: Forge vLLM relies on torch.compile/dynamo for its compilation pipeline; TORCHDYNAMO_DISABLE=1 breaks warmup.
-        if self.inference_engine in (
-            InferenceEngine.FORGE.value,
-            InferenceEngine.MEDIA.value,
-        ):
+        # Skipped for media-server engines: Forge vLLM relies on torch.compile/dynamo for its compilation pipeline; TORCHDYNAMO_DISABLE=1 breaks warmup.
+        if self.inference_engine in InferenceEngine.media_server_values():
             default_env_vars = {}
         else:
             default_env_vars = {
@@ -1372,7 +1372,7 @@ class ProdModelSpecTemplate(ModelSpecTemplate):
 
     ``version`` and ``tt_metal_commit`` are required (a prod YAML missing either
     fails to construct); ``vllm_commit`` and ``docker_image`` are optional
-    (FORGE/MEDIA specs have no vllm_commit; most specs synthesize their image).
+    (FORGE/MEDIA/TRAINING specs have no vllm_commit; most specs synthesize their image).
     Construction enforces the prod contract directly — no separate field check.
     """
 

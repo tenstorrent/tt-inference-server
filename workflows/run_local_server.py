@@ -191,10 +191,7 @@ def build_local_server_env(
     if runtime_config.disable_metal_timeout:
         env["DISABLE_METAL_OP_TIMEOUT"] = "1"
 
-    if model_spec.inference_engine in (
-        InferenceEngine.MEDIA.value,
-        InferenceEngine.FORGE.value,
-    ):
+    if model_spec.inference_engine in InferenceEngine.media_server_values():
         api_key = os.getenv("API_KEY")
         if api_key:
             env["API_KEY"] = api_key

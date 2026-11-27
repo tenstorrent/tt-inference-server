@@ -22,9 +22,7 @@ from workflows.workflow_types import InferenceEngine
 logger = logging.getLogger(__name__)
 
 # Engines whose servers validate a literal ``Bearer $API_KEY`` (no JWT decode).
-_LITERAL_KEY_ENGINE_VALUES = frozenset(
-    {InferenceEngine.FORGE.value, InferenceEngine.MEDIA.value}
-)
+_LITERAL_KEY_ENGINE_VALUES = InferenceEngine.media_server_values()
 
 
 class TenstorrentServerLifecycle(ServerLifecycle):

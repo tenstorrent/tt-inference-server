@@ -254,6 +254,7 @@ class InferenceEngine(Enum):
     VLLM = "vLLM"
     MEDIA = "media"
     FORGE = "forge"
+    TRAINING = "training"
 
     @property
     def display_name(self) -> str:
@@ -261,7 +262,14 @@ class InferenceEngine(Enum):
             InferenceEngine.VLLM: "vLLM (tt-metal integration fork)",
             InferenceEngine.MEDIA: "tt-media-server",
             InferenceEngine.FORGE: "tt-media-server (forge plugin)",
+            InferenceEngine.TRAINING: "tt-media-server (training)",
         }[self]
+
+    @classmethod
+    def media_server_values(cls) -> frozenset:
+        """Engine values whose server is tt-media-server (run_uvicorn.sh on :8000,
+        literal ``Bearer $API_KEY`` auth, config via container env vars)."""
+        return frozenset({cls.MEDIA.value, cls.FORGE.value, cls.TRAINING.value})
 
     @classmethod
     def from_string(cls, name: str):

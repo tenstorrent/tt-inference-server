@@ -89,9 +89,7 @@ class LoraSingleChipRunner(BaseDeviceRunner):
             prompt = sst2_utils.PROMPT_TEMPLATE.substitute(input=prompt)
         elif dataset_name == DatasetLoaders.ALPACA.value:
             self.logger.info("Using Alpaca template for prompt")
-            prompt = alpaca_utils.PROMPT_TEMPLATE_NO_INPUT.substitute(
-                instruction=prompt
-            )
+            prompt = alpaca_utils.alpaca_prompt(prompt)
         else:
             self.logger.info("Using no template for prompt")
 

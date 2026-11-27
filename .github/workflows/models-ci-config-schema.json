@@ -80,17 +80,12 @@
               "properties": {
                 "inference_engine": {
                   "type": "string",
-                  "enum": ["vLLM", "MEDIA", "FORGE"],
+                  "enum": ["vLLM", "MEDIA", "FORGE", "TRAINING"],
                   "description": "The inference engine to use for this model"
-                },
-                "model_type": {
-                  "type": "string",
-                  "enum": ["TRAINING"],
-                  "description": "Optional. Marks a non-inference workload. Absent = regular inference model."
                 },
                 "impl": {
                   "type": "string",
-                  "description": "Optional. run.py --impl value (hyphenated impl_name), e.g. trainer-training-lora."
+                  "description": "Optional. run.py --impl value (hyphenated impl_name), e.g. ttml-training-lora."
                 },
                 "ci": {
                   "type": "object",
@@ -129,17 +124,12 @@
                     "properties": {
                       "inference_engine": {
                         "type": "string",
-                        "enum": ["vLLM", "MEDIA", "FORGE"],
+                        "enum": ["vLLM", "MEDIA", "FORGE", "TRAINING"],
                         "description": "The inference engine for this implementation"
-                      },
-                      "model_type": {
-                        "type": "string",
-                        "enum": ["TRAINING"],
-                        "description": "Optional. Marks a non-inference workload. Absent = regular inference model."
                       },
                       "impl": {
                         "type": "string",
-                        "description": "Optional. run.py --impl value (hyphenated impl_name), e.g. trainer-training-lora."
+                        "description": "Optional. run.py --impl value (hyphenated impl_name), e.g. ttml-training-lora."
                       },
                       "ci": {
                         "type": "object",

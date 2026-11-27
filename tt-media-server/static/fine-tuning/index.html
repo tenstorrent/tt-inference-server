@@ -83,10 +83,13 @@
                     <legend>Dataset</legend>
                     <div class="form-grid">
                         <label>Dataset
-                            <select id="dataset_loader"></select>
+                            <select id="dataset_id">
+                                <option value="sst2">sst2</option>
+                                <option value="alpaca">alpaca</option>
+                            </select>
                         </label>
-                        <label>Max Sequence Length
-                            <input type="number" id="dataset_max_sequence_length" value="32" min="1">
+                        <label>Max Length
+                            <input type="number" id="max_length" value="64" min="32" step="32">
                         </label>
                     </div>
                 </fieldset>
@@ -98,21 +101,26 @@
                             <input type="number" id="batch_size" value="4" min="1">
                         </label>
                         <label>Learning Rate
-                            <input type="text" id="learning_rate" value="6e-5">
+                            <input type="text" id="optimizer_lr" value="6e-5">
                         </label>
-                        <label>Epochs
-                            <input type="number" id="num_epochs" value="1" min="1">
+                        <label>Stop After
+                            <select id="stopping_type">
+                                <option value="step">steps</option>
+                                <option value="epoch">epochs</option>
+                            </select>
+                        </label>
+                        <label>Limit
+                            <input type="number" id="stopping_limit" value="500" min="1">
                         </label>
                         <label>Validation Steps Freq
-                            <input type="number" id="val_steps_freq" value="50" min="1">
+                            <input type="number" id="validation_frequency" value="50" min="0">
                         </label>
                         <label>Log Steps Freq
-                            <input type="number" id="steps_freq" value="10" min="1">
+                            <input type="number" id="train_frequency" value="10" min="1">
                         </label>
                         <label>Dtype
                             <select id="dtype">
-                                <option value="torch.bfloat16">torch.bfloat16</option>
-                                <option value="torch.float32">torch.float32</option>
+                                <option value="bfloat16">bfloat16</option>
                             </select>
                         </label>
                     </div>
@@ -128,7 +136,7 @@
                             <input type="number" id="lora_alpha" value="8" min="1">
                         </label>
                         <label>Target Modules (comma-separated)
-                            <input type="text" id="lora_target_modules" value="q_proj, v_proj">
+                            <input type="text" id="lora_target_modules" value="q_proj, k_proj, v_proj, o_proj">
                         </label>
                         <label>Task Type
                             <select id="lora_task_type">

@@ -7,10 +7,9 @@ from torch.utils.data import DataLoader
 from transformers import AutoTokenizer, DataCollatorForSeq2Seq
 from utils.dataset_loaders.alpaca.alpaca_utils import (
     DATASET_PATH,
-    PROMPT_TEMPLATE,
-    PROMPT_TEMPLATE_NO_INPUT,
     SEED,
     TRAIN_SPLIT_RATIO,
+    alpaca_prompt,
 )
 from utils.dataset_loaders.base_dataset import BaseDataset
 
@@ -39,16 +38,8 @@ class AlpacaDataset(BaseDataset):
         self._prepare_dataset()
 
     def _tokenize_function(self, example):
-        instruction = example["instruction"]
-        input_text = example.get("input", "")
+        prompt = alpaca_prompt(example["instruction"], example.get("input", ""))
         output = example["output"]
-
-        if input_text.strip():
-            prompt = PROMPT_TEMPLATE.substitute(
-                instruction=instruction, input=input_text
-            )
-        else:
-            prompt = PROMPT_TEMPLATE_NO_INPUT.substitute(instruction=instruction)
 
         full_text = prompt + output
 

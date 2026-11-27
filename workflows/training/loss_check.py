@@ -4,7 +4,7 @@
 
 """Pure loss-trajectory checking for the training workflow.
 
-The forge server exposes per-step LoRA training loss via
+The media server exposes per-step LoRA training loss via
 ``GET /v1/jobs/{id}/metrics`` as a list of records shaped like::
 
     {"global_step": 5, "metric_name": "train_loss", "value": 5.71, ...}
@@ -15,10 +15,8 @@ produces ``spec_tests``-shaped report records (consumed by
 
 It is deliberately free of any HTTP / server / torch dependency so the whole
 grading logic is unit-testable on a laptop. The expectation is intentionally
-LOOSE ("did it converge?"), mirroring tt-blacksmith's own golden checks
-(``rtol=0.5, atol=0.1``): the forge runner trains non-deterministically
-(``seed=0`` but ``deterministic=False``), so exact per-step equality is not a
-usable gate.
+LOOSE ("did it converge?"): the trajectory moves with the tt-metal build the
+server image carries, so exact per-step equality is not a usable gate.
 """
 
 from __future__ import annotations
@@ -55,7 +53,7 @@ class LossCheckConfig:
     final_train_loss_max: Optional[float] = None
     expectations: List[LossExpectation] = field(default_factory=list)
     # Opaque request overrides forwarded verbatim into the TrainingRequest body
-    # (batch_size, max_steps, steps_freq, lora_r, ...). Kept here so the run's
+    # (batch_size, stopping_criteria, metrics, model.lora, ...). Kept here so the run's
     # hyperparameters and its expected losses live in one file and version
     # together.
     request: Dict[str, Any] = field(default_factory=dict)
@@ -211,26 +209,48 @@ def evaluate(
 
     train_curve = _train_losses_in_step_order(indexed)
 
-    # 3) Roughly-decreasing check: final training loss should not exceed the
-    # first recorded training loss (LoRA fine-tuning must make progress).
-    if config.require_decreasing and len(train_curve) >= 2:
+    # 3) The checks below grade train_loss; a run that reports only val_loss
+    # has nothing for them to grade.
+    if not train_curve:
+        records.append(
+            _record(
+                model=model,
+                device=device,
+                test_name="training_produced_train_loss",
+                status=TestStatus_FAIL,
+                description=f"server returned no {TRAIN_LOSS} metrics",
+            )
+        )
+
+    # 4) Decreasing check: the final training loss must be strictly below the
+    # first recorded one (LoRA fine-tuning must make progress). Fewer than two
+    # points cannot show a decrease, so they fail rather than skip the check.
+    if config.require_decreasing and train_curve:
         first_step, first_loss = train_curve[0]
         last_step, last_loss = train_curve[-1]
-        decreasing = last_loss <= first_loss + config.atol
+        if len(train_curve) < 2:
+            decreasing = False
+            description = (
+                f"need >= 2 {TRAIN_LOSS} points to check a decrease, "
+                f"got 1 (step{first_step})"
+            )
+        else:
+            decreasing = last_loss < first_loss
+            description = (
+                f"first(step{first_step})={first_loss:.4f} "
+                f"last(step{last_step})={last_loss:.4f}"
+            )
         records.append(
             _record(
                 model=model,
                 device=device,
                 test_name="train_loss_decreasing",
                 status=TestStatus_PASS if decreasing else TestStatus_FAIL,
-                description=(
-                    f"first(step{first_step})={first_loss:.4f} "
-                    f"last(step{last_step})={last_loss:.4f}"
-                ),
+                description=description,
             )
         )
 
-    # 4) Absolute final-loss threshold, if configured.
+    # 5) Absolute final-loss threshold, if configured.
     if config.final_train_loss_max is not None and train_curve:
         last_step, last_loss = train_curve[-1]
         within = last_loss <= config.final_train_loss_max
@@ -243,6 +263,21 @@ def evaluate(
                 description=(
                     f"final(step{last_step})={last_loss:.4f} "
                     f"max={config.final_train_loss_max:.4f}"
+                ),
+            )
+        )
+
+    # 6) A config with every check disabled grades nothing; that is not a pass.
+    if not records:
+        records.append(
+            _record(
+                model=model,
+                device=device,
+                test_name="training_checks_configured",
+                status=TestStatus_FAIL,
+                description=(
+                    "no checks ran: set expected_losses, require_decreasing, "
+                    "or final_train_loss_max"
                 ),
             )
         )

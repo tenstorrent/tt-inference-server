@@ -996,13 +996,13 @@ def handle_secrets(runtime_config):
 
     if (
         workflow_type == WorkflowType.SERVER
-        and runtime_config.engine in ("media", "forge")
+        and runtime_config.engine in InferenceEngine.media_server_values()
         and not runtime_config.no_auth
         and not runtime_config.interactive
         and not os.getenv("API_KEY")
     ):
         logger.warning(
-            "API_KEY is not set. Using a default key for media/forge server auth. "
+            "API_KEY is not set. Using a default key for media/forge/training server auth. "
             "Set API_KEY in .env or as an environment variable."
         )
 
