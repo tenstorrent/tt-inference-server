@@ -39,6 +39,84 @@ def shannon_entropy(tokens):
     return -sum((c / total) * math.log2(c / total) for c in counts.values())
 
 
+def top_word_share(stats):
+    """The most common word's share of a reply's words (0 for an empty reply): a
+    repetition measure that does not grow with the reply's length."""
+    return stats["most_common"][0][1] / stats["len"] if stats["len"] else 0.0
+
+
+def _excerpt(text, limit=300):
+    text = " ".join(text.split())
+    return text if len(text) <= limit else f"{text[:limit]}... ({len(text)} chars)"
+
+
+def _seed_pairs(runs):
+    return "\n".join(
+        f"  seed {seed}: baseline {_excerpt(base)!r} | penalized {_excerpt(test)!r}"
+        for seed, base, test in runs
+    )
+
+
+def judge_penalty_runs(prompt_name, penalty_param, runs):
+    """The test_penalties verdict: None when the penalty passes, else why it failed.
+
+    ``runs`` holds one ``(seed, baseline_text, penalized_text)`` per seed. One completion
+    at temperature 0.1 is one draw, so the diversity rules compare means over the seeds.
+    A failure names its rule and carries the seeds that decide it: the offending seeds
+    for a per-reply rule, every seed for a rule on means. The rules, in order:
+
+    1. Every reply, baseline and penalized, has non-whitespace text.
+    2. The penalty changes at least one seed's output. A correctly applied penalty moves
+       token probabilities, not necessarily a temperature-0.1 draw, so an unchanged seed
+       is not a failure; every seed unchanged means the penalty was ignored.
+    3. The mean unique-word ratio does not drop below 90% of the baseline's. Not for
+       presence_penalty on repeat_trap: the prompt asks for repetition and a presence
+       penalty is charged once per token, so it changes which words repeat, not how
+       often. Rule 1 still holds there.
+    4. On repeat_trap, frequency and repetition penalties do not raise the mean share of
+       the most common word. Shares, not counts: a longer reply can use its top word more
+       often while the word's share of the reply falls.
+    5. repetition_penalty raises the mean unique-word ratio.
+    """
+    runs = [(seed, base or "", test or "") for seed, base, test in runs]
+    empty = [run for run in runs if not run[1].strip() or not run[2].strip()]
+    if empty:
+        return "empty reply (no non-whitespace text):\n" + _seed_pairs(empty)
+    if all(base == test for _, base, test in runs):
+        return (
+            "the penalty had no effect: every seed's output is identical to its "
+            "baseline:\n" + _seed_pairs(runs)
+        )
+    base_stats = [repetition_stats(base) for _, base, _ in runs]
+    test_stats = [repetition_stats(test) for _, _, test in runs]
+    base_ratio = statistics.mean(stats["unique_ratio"] for stats in base_stats)
+    test_ratio = statistics.mean(stats["unique_ratio"] for stats in test_stats)
+    per_seed = "; ".join(
+        f"seed {seed}: unique ratio {b['unique_ratio']:.4f} -> {t['unique_ratio']:.4f}, "
+        f"top-word share {top_word_share(b):.4f} -> {top_word_share(t):.4f}"
+        for (seed, _, _), b, t in zip(runs, base_stats, test_stats)
+    )
+    means = f"mean unique ratio {base_ratio:.4f} -> {test_ratio:.4f} ({per_seed})"
+    exempt = prompt_name == "repeat_trap" and penalty_param == "presence_penalty"
+    if not exempt and test_ratio < base_ratio * 0.90:
+        return f"the penalty reduced diversity: {means}\n" + _seed_pairs(runs)
+    if prompt_name == "repeat_trap" and penalty_param != "presence_penalty":
+        base_share = statistics.mean(top_word_share(stats) for stats in base_stats)
+        test_share = statistics.mean(top_word_share(stats) for stats in test_stats)
+        if test_share > base_share:
+            return (
+                "the penalty did not reduce repetition on the repetition-trap prompt: "
+                f"mean top-word share {base_share:.4f} -> {test_share:.4f}; {means}\n"
+                + _seed_pairs(runs)
+            )
+    if penalty_param == "repetition_penalty" and not test_ratio > base_ratio:
+        return (
+            f"repetition_penalty did not increase diversity: {means}\n"
+            + _seed_pairs(runs)
+        )
+    return None
+
+
 # --- Reusable Prompts ---
 BASE_PROMPT = [{"role": "user", "content": "Tell me a short joke."}]
 REPRO_PROMPT = [
@@ -304,8 +382,7 @@ def test_penalties(
     """Tests repetition, presence, and frequency penalties.
 
     Every seed in PENALTY_SEEDS sends a baseline request and the same request with the
-    penalty. The penalty must change every seed's output; the diversity rules hold on the
-    means over the seeds, since one seed is one draw.
+    penalty; ``judge_penalty_runs`` holds the rules, judged over all the seeds.
     """
 
     def run(seed):
@@ -327,61 +404,7 @@ def test_penalties(
     with ThreadPoolExecutor(max_workers=len(PENALTY_SEEDS)) as pool:
         runs = list(pool.map(run, PENALTY_SEEDS))
 
-    base_stats = [repetition_stats(text_base) for _, text_base, _ in runs]
-    test_stats = [repetition_stats(text_test) for _, _, text_test in runs]
-    base_ratio = statistics.mean(stats["unique_ratio"] for stats in base_stats)
-    test_ratio = statistics.mean(stats["unique_ratio"] for stats in test_stats)
-    per_seed = "; ".join(
-        f"seed {seed}: unique ratio {b['unique_ratio']:.4f} -> {t['unique_ratio']:.4f}"
-        for (seed, _, _), b, t in zip(runs, base_stats, test_stats)
+    failure = judge_penalty_runs(prompt_name, penalty_param, runs)
+    assert failure is None, (
+        f"Test failed: {penalty_param}={penalty_val} on {prompt_name}: {failure}"
     )
-
-    try:
-        # 1. Diversity should not decrease (penalties push diversity up). Not for
-        #    presence_penalty on the repeat-trap prompt, for the reason rule 2 skips it:
-        #    the prompt asks for repetition and a presence penalty is charged once per
-        #    token, so it changes which words repeat, not how often.
-        if not (prompt_name == "repeat_trap" and penalty_param == "presence_penalty"):
-            assert test_ratio >= base_ratio * 0.90, (
-                "Penalty unexpectedly reduced diversity."
-            )
-
-        # 2. Heavy repetition should decrease
-        #    For repetition-heavy prompts, penalties reduce top-token dominance
-        if prompt_name == "repeat_trap" and penalty_param != "presence_penalty":
-            most_common_penalty = statistics.mean(
-                stats["most_common"][0][1] for stats in test_stats
-            )
-            most_common_baseline = statistics.mean(
-                stats["most_common"][0][1] for stats in base_stats
-            )
-            assert most_common_penalty <= most_common_baseline, (
-                "Penalty didn't reduce repetition on repetition-trap prompt."
-            )
-
-        # 3. The penalty must actually change the output, on every seed.
-        #    Compare the text itself rather than its word count: `len` is a
-        #    whitespace token count, so two genuinely different completions
-        #    routinely share it and fail this check even though the penalty
-        #    worked. Comparing the text is both stricter (any change counts)
-        #    and correct (only a true no-op fails).
-        unchanged = [
-            seed for seed, text_base, text_test in runs if text_base == text_test
-        ]
-        assert not unchanged, (
-            "Penalty had no measurable effect: output is byte-identical to the "
-            f"baseline for seeds {unchanged}."
-        )
-
-        # For vLLM-specific repetition_penalty, check more aggressive behavior
-        if penalty_param == "repetition_penalty":
-            assert test_ratio > base_ratio, (
-                "vLLM repetition_penalty did not increase diversity enough."
-            )
-    except AssertionError as e:
-        seed, text_base, text_test = runs[0]
-        msg = (
-            f"Test failed: {str(e)}. Mean unique ratio {base_ratio:.4f} -> "
-            f"{test_ratio:.4f} ({per_seed}). Seed {seed} base: {text_base}, Test: {text_test}"
-        )
-        raise AssertionError(msg)
