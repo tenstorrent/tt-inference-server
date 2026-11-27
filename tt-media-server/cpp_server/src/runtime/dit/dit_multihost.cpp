@@ -108,6 +108,7 @@ void LockstepRunner::close() {
 }
 
 int Follower::run() {
+  int status = 0;
   try {
     TT_LOG_INFO("[DiTMultihost] Rank {}: opening mesh", rank_);
     runner_->openDevice();
@@ -129,15 +130,19 @@ int Follower::run() {
     }
   } catch (const std::exception& e) {
     TT_LOG_ERROR("[DiTMultihost] Rank {}: fatal error: {}", rank_, e.what());
-    return 1;
+    status = 1;
   }
-  TT_LOG_INFO("[DiTMultihost] Rank {}: shutdown from rank 0", rank_);
+  if (status == 0) {
+    TT_LOG_INFO("[DiTMultihost] Rank {}: shutdown from rank 0", rank_);
+  }
+  // Also after a fatal error: release the chips as the normal shutdown does
+  // (close() returns at once when the mesh was never opened).
   try {
     runner_->close();
   } catch (const std::exception& e) {
     TT_LOG_WARN("[DiTMultihost] Rank {}: close failed: {}", rank_, e.what());
   }
-  return 0;
+  return status;
 }
 
 }  // namespace tt::dit

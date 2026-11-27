@@ -492,6 +492,7 @@ struct StubRunner : IDiTRunner {
   std::runtime_error* failure = nullptr;
   bool requestError = false;
   bool exportError = false;
+  bool closeFails = false;
   explicit StubRunner(std::vector<std::string>* e) : events(e) {}
   void validate(const DiTRequest& r) override {
     events->push_back("validate " + r.prompt);
@@ -512,7 +513,10 @@ struct StubRunner : IDiTRunner {
     events->push_back("infer " + r.prompt);
     if (r.prompt == "bad") throw RequestError("refused");
   }
-  void close() override { events->push_back("close"); }
+  void close() override {
+    events->push_back("close");
+    if (closeFails) throw std::runtime_error("close failed");
+  }
 };
 
 DiTRequest prompt(const std::string& p) {
@@ -616,4 +620,18 @@ TEST(DiTMultihost, FollowerReportsAFatalError) {
   comm->inbox = {"garbage"};
   Follower follower(1, std::make_unique<StubRunner>(&events), comm);
   EXPECT_EQ(follower.run(), 1);
+  // The chips are released after a fatal error too.
+  const std::vector<std::string> expected = {"open", "warmup", "close"};
+  EXPECT_EQ(events, expected);
+}
+
+TEST(DiTMultihost, FollowerStillReportsTheFatalErrorWhenCloseFails) {
+  std::vector<std::string> events;
+  auto comm = std::make_shared<FakeComm>();
+  comm->inbox = {"garbage"};
+  auto runner = std::make_unique<StubRunner>(&events);
+  runner->closeFails = true;
+  Follower follower(1, std::move(runner), comm);
+  EXPECT_EQ(follower.run(), 1);
+  EXPECT_EQ(events.back(), "close");
 }

@@ -143,7 +143,7 @@ class MpiComm : public Comm {
   void broadcast(const std::string& message) override {
     py::module_ ttnn = py::module_::import("ttnn");
     const int rank = ttnn.attr("distributed_context_get_rank")().cast<int>();
-    if (rank != kRootRank) {
+    if (rank != ROOT_RANK) {
       throw std::runtime_error("broadcast called on rank " +
                                std::to_string(rank));
     }
@@ -152,23 +152,23 @@ class MpiComm : public Comm {
       header[7 - i] = static_cast<char>((message.size() >> (8 * i)) & 0xFF);
     }
     const int size = ttnn.attr("distributed_context_get_size")().cast<int>();
-    for (int dest = kRootRank + 1; dest < size; ++dest) {
+    for (int dest = ROOT_RANK + 1; dest < size; ++dest) {
       ttnn.attr("distributed_context_send_bytes")(py::bytes(header), dest,
-                                                  kMessageTag);
+                                                  MESSAGE_TAG);
       ttnn.attr("distributed_context_send_bytes")(py::bytes(message), dest,
-                                                  kMessageTag);
+                                                  MESSAGE_TAG);
     }
   }
 
   std::string receive() override {
     py::module_ ttnn = py::module_::import("ttnn");
     const std::string header =
-        ttnn.attr("distributed_context_recv_bytes")(8, kRootRank, kMessageTag)
+        ttnn.attr("distributed_context_recv_bytes")(8, ROOT_RANK, MESSAGE_TAG)
             .cast<std::string>();
     uint64_t length = 0;
     for (unsigned char c : header) length = (length << 8) | c;
     return ttnn
-        .attr("distributed_context_recv_bytes")(length, kRootRank, kMessageTag)
+        .attr("distributed_context_recv_bytes")(length, ROOT_RANK, MESSAGE_TAG)
         .cast<std::string>();
   }
 
