@@ -399,8 +399,7 @@ class SdxlSectionTimings:
     list forever that nothing in the media server drains.
 
     Process-global state is safe here because image runners run one ``run()`` at
-    a time per device-worker process; only ``sp_runner`` fans out concurrently
-    and it is not an image runner. An unreachable profiler, or a missing
+    a time per device-worker process. An unreachable profiler, or a missing
     ``image_gen`` span, falls back to wall clock of this context so engine
     time is never absent while conditioning is exported.
     """

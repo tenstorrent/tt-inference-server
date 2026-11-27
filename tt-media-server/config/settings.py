@@ -4,7 +4,7 @@
 
 import os
 from functools import lru_cache
-from typing import Optional
+from typing import Literal, Optional
 
 from config.constants import (
     MODEL_NAME_OVERRIDES,
@@ -22,6 +22,7 @@ from config.constants import (
     SupportedModels,
 )
 from config.vllm_settings import VLLMSettings
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from utils.device_manager import DeviceManager
 from utils.logger import TTLogger
@@ -80,14 +81,6 @@ class Settings(BaseSettings):
     # Timeout settings
     request_processing_timeout_seconds: int = 1000
     weights_distribution_timeout_seconds: int = 1200
-    # SHM response deadline in SPRunner (server-side proxy to video_runner).
-    # Was hardcoded to 300s; exposed here so it can be tuned per deployment.
-    video_request_timeout_seconds: float = 300.0
-    # Deadline for SPRunner's warmup round-trip against the video pipeline.
-    # The ping is only sent when SP_REQUIRE_WARMUP_PING=true; default is a full
-    # hour because cold-start WAN with weight load + first compile across a
-    # 4×32 Galaxy mesh can take tens of minutes. Set higher on slower stacks.
-    sp_warmup_timeout_seconds: float = 6000.0
 
     # Canary monitor settings (see health_monitoring/).
     canary_enabled: bool = True
@@ -102,7 +95,6 @@ class Settings(BaseSettings):
     # Consecutive misses before the model is declared Dead.
     canary_dead_misses: int = 3
     # Startup grace period after is_ready before the first probe fires.
-    # For multihost pipelines set this >= sp_warmup_timeout_seconds.
     canary_startup_grace_seconds: float = 30.0
     # When True, every Nth probe replays the compiled warmup forward to certify device liveness.
     # Off by default: consumes device cycles and requires the warmup shape to avoid recompiles.
@@ -157,6 +149,23 @@ class Settings(BaseSettings):
     # reads included. A full Ref2VA set at the caps is ~420 MB.
     media_url_timeout_seconds: float = 300.0
     media_url_max_redirects: int = 5
+
+    # Prompt enhancer for Ideogram 4. "ideogram-api" sends each plain `prompt` to
+    # Ideogram's hosted magic-prompt API, which needs a key, and gets back a
+    # structured caption. "none" serves `structured_prompt` only; a request
+    # with `prompt` is then a 422.
+    ideogram_prompt_enhancer: Literal["ideogram-api", "none"] = "none"
+    # Never logged or stored with a job.
+    ideogram_api_key: SecretStr = SecretStr("")
+    ideogram_magic_prompt_url: str = (
+        "https://api.ideogram.ai/v1/ideogram-v4/magic-prompt"
+    )
+    # Per call. The reference client waits up to 120 s.
+    prompt_enhancer_timeout_seconds: float = 30.0
+    # Calls in flight per server process.
+    prompt_enhancer_max_in_flight: int = 8
+    # Retries of a timeout, 429 or 5xx, each after a backoff.
+    prompt_enhancer_max_retries: int = 2
 
     # Telemetry settings
     enable_telemetry: bool = True
@@ -357,7 +366,10 @@ class Settings(BaseSettings):
             ModelRunners.TT_SD3_5.value,
             ModelRunners.TT_FLUX_1_SCHNELL.value,
             ModelRunners.TT_FLUX_1_DEV.value,
+            ModelRunners.TT_FLUX_3_IMAGE_KLEIN.value,
+            ModelRunners.TT_FLUX_2_KLEIN_4B.value,
             ModelRunners.TT_QWEN_IMAGE.value,
+            ModelRunners.TT_QWEN_IMAGE_EDIT_2511.value,
             ModelRunners.TT_MOCHI_1.value,
             ModelRunners.TT_WAN_2_2.value,
             ModelRunners.TT_WAN_2_2_T2V_PRODIA.value,
@@ -367,12 +379,11 @@ class Settings(BaseSettings):
             ModelRunners.TT_WAN_2_2_I2V_DISTILL.value,
             ModelRunners.TT_WAN_2_2_I2V_LORA.value,
             ModelRunners.TT_WAN_2_2_I2V_LIGHTNING.value,
-            ModelRunners.TT_MINIMAX_H3_T2VA.value,
             ModelRunners.TT_MINIMAX_H3_FL2VA.value,
             ModelRunners.TT_MINIMAX_H3_REF2VA.value,
-            ModelRunners.TT_MINIMAX_H3_FASTH3.value,
             ModelRunners.TT_MINIMAX_H3_FL2VA_LIGHTX2V.value,
             ModelRunners.TT_MINIMAX_H3_REF2VA_LIGHTX2V.value,
+            ModelRunners.TT_IDEOGRAM_4.value,
         ]:
             self.default_throttle_level = None
 
@@ -381,7 +392,6 @@ class Settings(BaseSettings):
             "SD_3_5_FAST": (4, 8),
             "SD_3_5_BASE": (2, 4),
             "TP2": (2, 1),
-            "SP_MESH_4X32": (4, 32),
         }
         for env_var, mesh_shape in env_mesh_map.items():
             value = os.getenv(env_var)

@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import io
 import logging
@@ -25,6 +26,9 @@ DEFAULT_API_KEY = "your-secret-key"
 
 TTS_API_MEDIA_SERVER = "media_server"
 TTS_API_QWEN3_CPP = "qwen3_cpp"
+# tt-tts C++ server: JSON {text, speech_ids} in, one HTTP chunk per audio chunk out.
+# Benchmarked by the chunk-aware load harness, evaluated by tts_correctness.
+TTS_API_TT_TTS = "tt_tts"
 
 QWEN3_RELEASES = ("base", "custom_voice", "voice_design")
 # in_context also puts the clip's codec tokens and transcript in the prompt.
@@ -369,6 +373,116 @@ def make_tts_client(targets: Mapping[str, Any]) -> TTSClient:
     )
 
 
+# ------------------------------------------------------------ chunked streaming
+# The tt-tts stream: a 44-byte WAV header, then mono 16-bit PCM, one HTTP chunk
+# per audio chunk.
+STREAM_WAV_HEADER_BYTES = 44
+STREAM_BYTES_PER_SAMPLE = 2
+
+
+def tt_tts_payload(text: str, speech_ids: Optional[list] = None) -> dict:
+    """Request body for the tt-tts server; ``speech_ids`` is the voice prompt."""
+    payload: dict = {"text": text}
+    if speech_ids:
+        payload["speech_ids"] = list(speech_ids)
+    return payload
+
+
+async def stream_speech(
+    session: aiohttp.ClientSession,
+    url: str,
+    payload: dict,
+    *,
+    sample_rate: int,
+    timeout_s: float = 300,
+    max_chunks: int = 0,
+    rec: Optional[dict] = None,
+    body: Optional[bytearray] = None,
+) -> dict:
+    """POST one request and time every HTTP chunk of the streamed WAV.
+
+    Returns ``rec`` (a new dict if none is given) with monotonic offsets from the
+    send: ``marks`` (arrival of each audio chunk), ``ttfb_s`` (first chunk),
+    ``sc_s`` (first->second gap) and ``gaps`` (every later gap), plus
+    ``audio_s``, ``nchunks``, ``ok`` and ``error``. ``t_send``/``t_end`` are wall
+    clock and always set, so a failed or cancelled request still has a lifetime.
+    ``max_chunks`` > 0 stops reading after that many audio chunks (``capped``).
+    ``body`` receives the raw response bytes (WAV header and PCM).
+    """
+    if rec is None:
+        rec = {"t_send": time.time()}
+    rec.update(
+        ok=False,
+        capped=False,
+        status=None,
+        error=None,
+        ttfb_s=None,
+        sc_s=None,
+        gen_s=None,
+        gaps=[],
+        marks=[],
+        nchunks=0,
+        bytes=0,
+        audio_s=0.0,
+        t_end=None,
+    )
+    marks: list = rec["marks"]
+    header_left = STREAM_WAV_HEADER_BYTES
+    audio_bytes = 0
+    t0 = time.perf_counter()
+    try:
+        async with session.post(
+            url, json=payload, timeout=aiohttp.ClientTimeout(total=timeout_s)
+        ) as response:
+            rec["status"] = response.status
+            if response.status != 200:
+                text = (await response.text())[:512].strip()
+                rec["error"] = f"http {response.status}: {text}"
+                return rec
+            if "chunked" not in response.headers.get("Transfer-Encoding", "").lower():
+                rec["error"] = "response not chunked: cannot time audio chunks"
+                return rec
+            pending = 0
+            async for data, end_of_chunk in response.content.iter_chunks():
+                if body is not None:
+                    body.extend(data)
+                take = min(header_left, len(data))
+                header_left -= take
+                pending += len(data) - take
+                if not end_of_chunk or not pending:
+                    continue
+                # One whole HTTP chunk of audio has arrived.
+                audio_bytes += pending
+                pending = 0
+                marks.append(time.perf_counter() - t0)
+                if max_chunks and len(marks) >= max_chunks:
+                    rec["capped"] = True
+                    response.close()
+                    break
+            audio_bytes += pending
+        rec["ok"] = audio_bytes > 0
+        if not rec["ok"]:
+            rec["error"] = "empty audio (header only)"
+    except asyncio.CancelledError:
+        rec["error"] = "cancelled (still running at the drain deadline)"
+        raise
+    except Exception as e:
+        rec["error"] = f"{type(e).__name__}: {e}"
+    finally:
+        # gen_s is the whole request, terminating chunk included: the time the slot was held.
+        rec["gen_s"] = time.perf_counter() - t0
+        rec["t_end"] = time.time()
+        rec["nchunks"] = len(marks)
+        rec["bytes"] = audio_bytes + STREAM_WAV_HEADER_BYTES - header_left
+        rec["audio_s"] = audio_bytes / STREAM_BYTES_PER_SAMPLE / sample_rate
+        if marks:
+            rec["ttfb_s"] = marks[0]
+            if len(marks) > 1:
+                rec["sc_s"] = marks[1] - marks[0]
+            rec["gaps"] = [b - a for a, b in zip(marks[1:], marks[2:])]
+    return rec
+
+
 # ------------------------------------------------------------------ WAV decode
 def decode_wav_file(wav_bytes: bytes) -> SynthesizedAudio:
     """Decode a finalized WAV file (any format soundfile reads) to mono float32."""
@@ -434,6 +548,7 @@ __all__ = [
     "TTSClient",
     "TTS_API_MEDIA_SERVER",
     "TTS_API_QWEN3_CPP",
+    "TTS_API_TT_TTS",
     "TimedSynthesis",
     "VoiceClip",
     "auth_headers",
@@ -441,4 +556,6 @@ __all__ = [
     "decode_wav_file",
     "make_tts_client",
     "parse_pcm16_wav_header",
+    "stream_speech",
+    "tt_tts_payload",
 ]

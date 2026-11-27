@@ -33,26 +33,6 @@ _NORMALIZED_RANGE_MAX = 1.0
 _AV_TIME_BASE = 1_000_000
 
 
-@dataclass(frozen=True)
-class VideoAudioResult:
-    """A runner's raw (un-encoded) output when the model emits a soundtrack.
-
-    An audio model returns this in place of a bare frame array so the encoder
-    muxes video + audio via ``export_to_mp4_with_audio``. Fields map 1:1 to that
-    exporter's arguments, so any future audio runner can reuse this contract.
-    """
-
-    frames: NDArray
-    audio: NDArray
-    sampling_rate: int
-    fps: int = 16
-    # "rgb24": frames are (N, H, W, 3) uint8. "yuv420p": frames are planar (N, H * 3 // 2, W)
-    # uint8 -- exactly ffmpeg's rawvideo yuv420p layout, which the MiniMax-H3 pipeline hands back
-    # under vae_output_type="yuv420" (see MiniMaxH3Output.video_format) so no colour conversion
-    # ever runs on host.
-    pixel_format: str = "rgb24"
-
-
 class VideoManager:
     """MP4 export via FFmpeg subprocess pipe (raw RGB → libx264)."""
 
@@ -119,8 +99,9 @@ class VideoManager:
         """Export frames plus a soundtrack to a single muxed MP4.
 
         `audio` is `(channels, samples)` float in [-1, 1]. It goes to a temp WAV rather than a
-        pipe because ffmpeg reads only one stream from stdin. `-shortest` trims the two streams
-        to the common length; they round independently and differ slightly.
+        pipe because ffmpeg reads only one stream from stdin. Both streams are kept whole: they
+        round independently and differ slightly, and trimming to the shorter would drop video
+        frames whenever the audio rounds down.
         """
         if hasattr(frames, "frames"):
             pixel_format = getattr(frames, "pixel_format", pixel_format)
@@ -164,7 +145,6 @@ class VideoManager:
                     "aac",
                     "-b:a",
                     "192k",
-                    "-shortest",
                     "-movflags",
                     "+faststart",
                     output_path,
@@ -218,10 +198,7 @@ class VideoManager:
         """Report encode cost to Prometheus without ever failing the export.
 
         Encoding runs in whichever process owns the frames — a CPU
-        postprocessing worker, an in-process runner, or (for SP_RUNNER) the
-        external peer. Only the first two are in the server's process tree and
-        therefore visible on /metrics; the peer's observations land nowhere,
-        which is why this is best-effort and silent on error.
+        postprocessing worker or an in-process runner.
         """
         try:
             get_telemetry_client().record_video_encode(
@@ -341,13 +318,16 @@ class VideoManager:
             error_msg = stderr.decode(errors="replace") if stderr else "Unknown error"
             raise RuntimeError(f"FFmpeg failed: {error_msg}")
 
-    @staticmethod
+    @classmethod
     def _stream_to_ffmpeg(
+        cls,
         cmd: list[str],
         frames: NDArray,
         timeout: int = _FFMPEG_ENCODE_TIMEOUT_S,
     ) -> None:
         """Stream frames one-by-one to ffmpeg, converting dtype per-frame."""
+        if cmd and cmd[0] == "ffmpeg":
+            cmd = [cls._ffmpeg_binary(), *cmd[1:]]
         process = subprocess.Popen(
             cmd,
             stdin=subprocess.PIPE,
@@ -453,10 +433,7 @@ def _normalize_dtype_single(frame: NDArray) -> NDArray[np.uint8]:
 class VideoProbe:
     """Shape and length facts read back off a produced mp4.
 
-    Every field is optional. The server side of a multihost video deployment
-    (SP_RUNNER) receives only a file path from its peer — it never sees the
-    frame tensors — so probing the container is the only way to learn what was
-    actually generated. A probe that partly fails yields partly-populated
+    Every field is optional. A probe that partly fails yields partly-populated
     stats rather than nothing, and callers skip the unknown fields.
     """
 
@@ -465,6 +442,10 @@ class VideoProbe:
     height: Optional[int] = None
     num_frames: Optional[int] = None
     duration_seconds: Optional[float] = None
+    # Of the first audio stream; None without one.
+    audio_codec: Optional[str] = None
+    audio_sample_rate: Optional[int] = None
+    audio_channels: Optional[int] = None
 
 
 def probe_video(path: str) -> VideoProbe:
@@ -511,12 +492,22 @@ def probe_video(path: str) -> VideoProbe:
                 if rate:
                     num_frames = round(duration * float(rate)) or None
 
+            audio_codec = audio_sample_rate = audio_channels = None
+            if container.streams.audio:
+                audio = container.streams.audio[0].codec_context
+                audio_codec = audio.name
+                audio_sample_rate = audio.sample_rate
+                audio_channels = audio.channels
+
             return VideoProbe(
                 size_bytes=size_bytes,
                 width=width,
                 height=height,
                 num_frames=num_frames,
                 duration_seconds=duration,
+                audio_codec=audio_codec,
+                audio_sample_rate=audio_sample_rate,
+                audio_channels=audio_channels,
             )
     except Exception:
         return VideoProbe(size_bytes=size_bytes)

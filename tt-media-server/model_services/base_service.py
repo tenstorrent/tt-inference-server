@@ -4,7 +4,7 @@
 
 import asyncio
 from abc import ABC
-from typing import Optional
+from typing import ClassVar, Optional
 
 from config.settings import settings
 from domain.base_request import BaseRequest
@@ -18,11 +18,14 @@ from utils.logger import TTLogger
 
 
 class BaseService(ABC):
+    # Whether the service downloads the model's weights before the workers start.
+    DOWNLOADS_WEIGHTS: ClassVar[bool] = True
+
     @log_execution_time("Base service init")
     def __init__(self):
         self.scheduler: Scheduler = get_scheduler()
         self.logger = TTLogger()
-        if settings.download_weights_from_service:
+        if self.DOWNLOADS_WEIGHTS and settings.download_weights_from_service:
             HuggingFaceUtils().download_weights()
 
     def create_segment_request(

@@ -669,12 +669,18 @@ def _vllm_argv_for(run_vllm_api_server_module, monkeypatch, passthrough, default
     return sys.argv[1:]
 
 
-@pytest.fixture(params=["openai", "launchers"])
+@pytest.fixture(params=["openai", "launchers", "common"])
 def vllm_cli_args(monkeypatch, run_vllm_api_server_module, request):
     monkeypatch.delitem(sys.modules, "vllm.entrypoints.openai.cli_args")
-    return _install_mock_vllm_serve_parser(
+    cli_args = _install_mock_vllm_serve_parser(
         monkeypatch, sys.modules["vllm"], namespace=request.param
     )
+    if request.param == "launchers":
+        # vLLM 0.32 ships the common package without cli_args
+        common = types.ModuleType("vllm.entrypoints.common")
+        common.__path__ = []
+        monkeypatch.setitem(sys.modules, common.__name__, common)
+    return cli_args
 
 
 def test_set_vllm_sys_argv_supports_vllm_parser_locations(
@@ -713,14 +719,18 @@ def test_multi_value_arg_names_falls_back_when_launchers_has_no_cli_args(
     assert "allowed_origins" not in names
 
 
+@pytest.mark.parametrize(
+    "failing_location",
+    ["vllm.entrypoints.common.cli_args", "vllm.entrypoints.launchers.cli_args"],
+)
 def test_multi_value_arg_names_preserves_missing_dependency_error(
-    monkeypatch, run_vllm_api_server_module
+    monkeypatch, run_vllm_api_server_module, failing_location
 ):
     real_import = builtins.__import__
     missing_dependency = ModuleNotFoundError("No module named 'torch'", name="torch")
 
     def import_with_missing_dependency(name, *args, **kwargs):
-        if name == "vllm.entrypoints.launchers.cli_args":
+        if name == failing_location:
             raise missing_dependency
         return real_import(name, *args, **kwargs)
 

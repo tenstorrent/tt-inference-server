@@ -7739,3 +7739,397 @@ templates:
     ibm-granite/granite-4.2-30b:
       reasoning_parser_name: qwen3
       tool_call_parser_name: qwen3_xml
+
+# =============================================================================
+# GLM-5.3-Flash on the Blackhole Galaxy: one persistent megakernel stack over all 32 chips
+# (tt-metal models/autoports/zai_org_glm_5_3_flash; vLLM adapter models/demos/glm53_flash/tt/generator_vllm_stack.py).
+# The six profiles share one code path and differ in slots x context and decode features:
+#   glm53_flash          1 M x 8 users (B 16 build); plain decode; async scheduling
+#   glm53_flash_mtp      1 M x 4 users (B 4 build); MTP speculation for a lone greedy request, up to 256 K
+#   glm53_flash_mtp_mu   1 M x 16 users (B 16 build); multi-user MTP steps (4 users x 3 drafts, 8 x 1)
+#   glm53_flash_1m       default; 1 M x 8 users (B 16 build); narrow width 4, exact-position prefix snapshots with
+#                        a 64 GiB host tier, lone / 4-user / 8-user MTP steps, 4 device steps per verify, one prefill
+#                        chunk per 4 decode steps (the others: 8)
+#   glm53_flash_128k     128 K x 16 users (B 16 build); plain decode; packed short prefills; async scheduling
+#   glm53_flash_128k_mm  glm53_flash_128k with image input
+# Sampling: top_k 10 (the default) keeps a request on the device sampler; a request with top_k above 10, 0 or -1
+# moves the steps it shares to the host sampler, without MTP.
+# Reproducible seeds (glm53_flash, glm53_flash_128k, glm53_flash_128k_mm; the plugin rejects it with speculation):
+# seeded_sampling_policy: host in override_tt_config.
+- weights:
+    - zai-org/GLM-5.3-Flash
+  min_disk_gb: 900
+  min_ram_gb: 256
+  impl: glm53_flash
+  inference_engine: VLLM
+  model_type: LLM
+  supported_modalities:
+    - text
+  device_model_specs:
+    - device: BLACKHOLE_GALAXY
+      max_concurrency: 8
+      max_context: 1048576
+      max_tokens_all_users_override: 8388608
+      default_impl: false
+      tensor_cache_timeout: 14400.0
+      env_vars:
+        TT_MODEL_CLASS_OVERRIDES: "Glm5NextForConditionalGeneration=models.demos.glm53_flash.tt.generator_vllm_stack:GLM53StackForCausalLM,TTGlm5NextForConditionalGeneration=models.demos.glm53_flash.tt.generator_vllm_stack:GLM53StackForCausalLM,Glm5NextForCausalLM=models.demos.glm53_flash.tt.generator_vllm_stack:GLM53StackForCausalLM,TTGlm5NextForCausalLM=models.demos.glm53_flash.tt.generator_vllm_stack:GLM53StackForCausalLM"
+        GLM53_MESH_SHAPE: "8,4"
+        GLM53_STACK_BUILD_B: "16"  # stack rows (>= max_num_seqs)
+        GLM53_STACK_PREFIX: "1"
+        TT_METAL_OPERATION_TIMEOUT_SECONDS: "300.0"  # long-context prefill chunks exceed the 5 s default
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        fabric_reliability_mode: RELAXED_INIT
+        trace_region_size: 8589934592
+        l1_small_size: 32768
+        worker_l1_size: 1280896
+        sample_on_device_mode: all
+        prefill_chunk_alignment: 8192
+        decode_interleave_enabled: true
+        decode_interleave_prefill_steps: 1
+        decode_interleave_decode_steps: 8
+      vllm_args:
+        max_num_seqs: 8
+        async_scheduling: true
+        block_size: 64
+        max_num_batched_tokens: 8200  # one 8192-token prefill bucket + one step's decode / verify tokens
+        enable_chunked_prefill: true
+        enable-prefix-caching: true
+        enable-prompt-tokens-details: true
+        enable-auto-tool-choice: true
+        tool-call-parser: glm47
+        reasoning-parser: glm45
+        override_generation_config: '{"top_k": 10}'  # keeps sampling on the device sampler (top-k <= 10)
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    zai-org/GLM-5.3-Flash:
+      reasoning_parser_name: glm45
+      tool_call_parser_name: glm47
+
+- weights:
+    - zai-org/GLM-5.3-Flash
+  min_disk_gb: 900
+  min_ram_gb: 256
+  impl: glm53_flash_mtp
+  inference_engine: VLLM
+  model_type: LLM
+  supported_modalities:
+    - text
+  device_model_specs:
+    - device: BLACKHOLE_GALAXY
+      max_concurrency: 4
+      max_context: 1048576
+      max_tokens_all_users_override: 4194304
+      default_impl: false
+      tensor_cache_timeout: 14400.0
+      env_vars:
+        TT_MODEL_CLASS_OVERRIDES: "Glm5NextForConditionalGeneration=models.demos.glm53_flash.tt.generator_vllm_stack:GLM53StackForCausalLM,TTGlm5NextForConditionalGeneration=models.demos.glm53_flash.tt.generator_vllm_stack:GLM53StackForCausalLM,Glm5NextForCausalLM=models.demos.glm53_flash.tt.generator_vllm_stack:GLM53StackForCausalLM,TTGlm5NextForCausalLM=models.demos.glm53_flash.tt.generator_vllm_stack:GLM53StackForCausalLM"
+        GLM53_MESH_SHAPE: "8,4"
+        GLM53_STACK_PREFIX: "1"
+        TT_METAL_OPERATION_TIMEOUT_SECONDS: "300.0"  # long-context prefill chunks exceed the 5 s default
+        GLM53_SPEC_K: "3"
+        GLM53_SPEC_ON_SHARD: "1"
+        GLM53_STACK_VLLM_SPEC: "1"
+        GLM53_SPEC_MAX_CTX: "262144"  # speculation stops past 256 K positions
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        fabric_reliability_mode: RELAXED_INIT
+        trace_region_size: 8589934592
+        l1_small_size: 32768
+        worker_l1_size: 1280896
+        sample_on_device_mode: all
+        prefill_chunk_alignment: 8192
+        decode_interleave_enabled: true
+        decode_interleave_prefill_steps: 1
+        decode_interleave_decode_steps: 8
+      vllm_args:
+        max_num_seqs: 4
+        no-async-scheduling: true
+        speculative_config: '{"method": "custom_class", "model": "vllm_tt_plugin.model_owned_drafter", "num_speculative_tokens": 3}'
+        block_size: 64
+        max_num_batched_tokens: 8208  # one 8192-token prefill bucket + one step's decode / verify tokens
+        enable_chunked_prefill: true
+        enable-prefix-caching: true
+        enable-prompt-tokens-details: true
+        enable-auto-tool-choice: true
+        tool-call-parser: glm47
+        reasoning-parser: glm45
+        override_generation_config: '{"top_k": 10}'  # keeps sampling on the device sampler (top-k <= 10)
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    zai-org/GLM-5.3-Flash:
+      reasoning_parser_name: glm45
+      tool_call_parser_name: glm47
+
+- weights:
+    - zai-org/GLM-5.3-Flash
+  min_disk_gb: 900
+  min_ram_gb: 256
+  impl: glm53_flash_mtp_mu
+  inference_engine: VLLM
+  model_type: LLM
+  supported_modalities:
+    - text
+  device_model_specs:
+    - device: BLACKHOLE_GALAXY
+      max_concurrency: 16
+      max_context: 1048576
+      max_tokens_all_users_override: 16777216
+      default_impl: false
+      tensor_cache_timeout: 14400.0
+      env_vars:
+        TT_MODEL_CLASS_OVERRIDES: "Glm5NextForConditionalGeneration=models.demos.glm53_flash.tt.generator_vllm_stack:GLM53StackForCausalLM,TTGlm5NextForConditionalGeneration=models.demos.glm53_flash.tt.generator_vllm_stack:GLM53StackForCausalLM,Glm5NextForCausalLM=models.demos.glm53_flash.tt.generator_vllm_stack:GLM53StackForCausalLM,TTGlm5NextForCausalLM=models.demos.glm53_flash.tt.generator_vllm_stack:GLM53StackForCausalLM"
+        GLM53_MESH_SHAPE: "8,4"
+        GLM53_STACK_PREFIX: "1"
+        TT_METAL_OPERATION_TIMEOUT_SECONDS: "300.0"  # long-context prefill chunks exceed the 5 s default
+        GLM53_SPEC_K: "3"
+        GLM53_SPEC_ON_SHARD: "1"
+        GLM53_STACK_VLLM_SPEC: "1"
+        GLM53_SPEC_MULTI: "1"
+        GLM53_SPEC_MULTI_USERS: "4"
+        GLM53_SPEC_MTP_SPARSE: "1"
+        GLM53_SPEC_MULTI_ALT: "8:1"
+        GLM53_SPEC_PARTIAL: "1"
+        GLM53_SPEC_SAMPLED: "1"
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        fabric_reliability_mode: RELAXED_INIT
+        trace_region_size: 8589934592
+        l1_small_size: 32768
+        worker_l1_size: 1280896
+        sample_on_device_mode: all
+        prefill_chunk_alignment: 8192
+        decode_interleave_enabled: true
+        decode_interleave_prefill_steps: 1
+        decode_interleave_decode_steps: 8
+      vllm_args:
+        max_num_seqs: 16
+        no-async-scheduling: true
+        speculative_config: '{"method": "custom_class", "model": "vllm_tt_plugin.model_owned_drafter", "num_speculative_tokens": 3}'
+        block_size: 64
+        max_num_batched_tokens: 8256  # one 8192-token prefill bucket + one step's decode / verify tokens
+        enable_chunked_prefill: true
+        enable-prefix-caching: true
+        enable-prompt-tokens-details: true
+        enable-auto-tool-choice: true
+        tool-call-parser: glm47
+        reasoning-parser: glm45
+        override_generation_config: '{"top_k": 10}'  # keeps sampling on the device sampler (top-k <= 10)
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    zai-org/GLM-5.3-Flash:
+      reasoning_parser_name: glm45
+      tool_call_parser_name: glm47
+
+- weights:
+    - zai-org/GLM-5.3-Flash
+  min_disk_gb: 900
+  min_ram_gb: 384
+  impl: glm53_flash_1m
+  inference_engine: VLLM
+  model_type: LLM
+  supported_modalities:
+    - text
+  device_model_specs:
+    - device: BLACKHOLE_GALAXY
+      max_concurrency: 8
+      max_context: 1048576
+      max_tokens_all_users_override: 8388608
+      default_impl: true
+      tensor_cache_timeout: 14400.0
+      env_vars:
+        TT_MODEL_CLASS_OVERRIDES: "Glm5NextForConditionalGeneration=models.demos.glm53_flash.tt.generator_vllm_stack:GLM53StackForCausalLM,TTGlm5NextForConditionalGeneration=models.demos.glm53_flash.tt.generator_vllm_stack:GLM53StackForCausalLM,Glm5NextForCausalLM=models.demos.glm53_flash.tt.generator_vllm_stack:GLM53StackForCausalLM,TTGlm5NextForCausalLM=models.demos.glm53_flash.tt.generator_vllm_stack:GLM53StackForCausalLM"
+        GLM53_MESH_SHAPE: "8,4"
+        GLM53_STACK_PREFIX: "1"
+        GLM53_STACK_PREFIX_EXACT: "1"
+        GLM53_PREFIX_HOST_BYTES: "68719476736"
+        GLM53_PREFIX_SPILL_MIN: "16384"
+        GLM53_KDA_EXPORT_STAGE_LAYERS: "34"
+        GLM53_DSA_EXPORT_STAGE_TILES: "2048"
+        TT_METAL_OPERATION_TIMEOUT_SECONDS: "300.0"  # long-context prefill chunks exceed the 5 s default
+        GLM53_STACK_NARROW_WIDTHS: "4"
+        GLM53_DSA_NARROW_S1_DRAM: "1"
+        GLM53_STACK_NARROW_PC_DRAM: "1"
+        GLM53_KDA_POOL_BORROW: "1"
+        GLM53_STACK_PREFIX_REDO: "1"
+        GLM53_SPEC_K: "3"
+        GLM53_SPEC_ON_SHARD: "1"
+        GLM53_STACK_VLLM_SPEC: "1"
+        GLM53_SPEC_MULTI: "1"
+        GLM53_SPEC_MULTI_USERS: "4"
+        GLM53_SPEC_MULTI_ALT: "8:1"
+        GLM53_SPEC_MULTI_LONE: "1"
+        GLM53_STACK_BUILD_B: "16"  # stack rows (>= max_num_seqs)
+        GLM53_STACK_PREFIX_KEEP_PREV: "1"
+        GLM53_PREFIX_ASYNC_EXPORT: "1"
+        VLLM_HTTP_TIMEOUT_KEEP_ALIVE: "600"
+        GLM53_PREFILL_BUCKETS: "1024,2048,8192"
+        GLM53_STACK_PREFIX_KEEP_PREV_MIN: "32768"
+        GLM53_PREFIX_FAST_HASH: "1"
+        GLM53_PF_TAIL_SPLIT: "auto"
+        GLM53_SPEC_MTP_SPARSE: "1"
+        GLM53_SPEC_SNAPSHOT_MTP: "1"
+        GLM53_SPEC_PARTIAL: "1"
+        GLM53_SPEC_SAMPLED: "1"
+        GLM53_PF_SPARSE_RESHARD: "a2a"
+        GLM53_DSA_SHARD_PREFILTER: "1"
+        GLM53_SPEC_STEPS_PER_CALL: "4"
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        fabric_reliability_mode: RELAXED_INIT
+        trace_region_size: 8589934592
+        l1_small_size: 32768
+        worker_l1_size: 1280896
+        sample_on_device_mode: all
+        prefill_chunk_alignment: 8192
+        decode_interleave_enabled: true
+        decode_interleave_prefill_steps: 1
+        decode_interleave_decode_steps: 4
+      vllm_args:
+        max_num_seqs: 8
+        no-async-scheduling: true
+        # num_speculative_tokens 15 = 4 device steps x (K 3 + 1) - 1
+        speculative_config: '{"method": "custom_class", "model": "vllm_tt_plugin.model_owned_drafter", "num_speculative_tokens": 15}'
+        block_size: 64
+        max_num_batched_tokens: 8256  # one 8192-token prefill bucket + one step's decode / verify tokens
+        enable_chunked_prefill: true
+        enable-prefix-caching: true
+        enable-prompt-tokens-details: true
+        renderer-num-workers: 8
+        enable-auto-tool-choice: true
+        tool-call-parser: glm47
+        reasoning-parser: glm45
+        override_generation_config: '{"top_k": 10}'  # keeps sampling on the device sampler (top-k <= 10)
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    zai-org/GLM-5.3-Flash:
+      reasoning_parser_name: glm45
+      tool_call_parser_name: glm47
+
+- weights:
+    - zai-org/GLM-5.3-Flash
+  min_disk_gb: 900
+  min_ram_gb: 256
+  impl: glm53_flash_128k
+  inference_engine: VLLM
+  model_type: LLM
+  supported_modalities:
+    - text
+  device_model_specs:
+    - device: BLACKHOLE_GALAXY
+      max_concurrency: 16
+      max_context: 131072
+      max_tokens_all_users_override: 2097152
+      default_impl: false
+      tensor_cache_timeout: 14400.0
+      env_vars:
+        TT_MODEL_CLASS_OVERRIDES: "Glm5NextForConditionalGeneration=models.demos.glm53_flash.tt.generator_vllm_stack:GLM53StackForCausalLM,TTGlm5NextForConditionalGeneration=models.demos.glm53_flash.tt.generator_vllm_stack:GLM53StackForCausalLM,Glm5NextForCausalLM=models.demos.glm53_flash.tt.generator_vllm_stack:GLM53StackForCausalLM,TTGlm5NextForCausalLM=models.demos.glm53_flash.tt.generator_vllm_stack:GLM53StackForCausalLM"
+        GLM53_MESH_SHAPE: "8,4"
+        GLM53_STACK_PREFIX: "1"
+        GLM53_PF_PACKED: "2048:8"  # prompts <= 2048 tokens prefill packed, up to 8 per replay
+        GLM53_PF_PACKED_DEVMASK: "1"
+        TT_METAL_OPERATION_TIMEOUT_SECONDS: "300.0"  # long-context prefill chunks exceed the 5 s default
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        fabric_reliability_mode: RELAXED_INIT
+        trace_region_size: 3221225472
+        l1_small_size: 32768
+        worker_l1_size: 1280896
+        sample_on_device_mode: all
+        prefill_chunk_alignment: 8192
+        decode_interleave_enabled: true
+        decode_interleave_prefill_steps: 1
+        decode_interleave_decode_steps: 8
+      vllm_args:
+        max_num_seqs: 16
+        async_scheduling: true
+        block_size: 64
+        max_num_batched_tokens: 8208  # one 8192-token prefill bucket + one step's decode / verify tokens
+        enable_chunked_prefill: true
+        enable-prefix-caching: true
+        enable-prompt-tokens-details: true
+        enable-auto-tool-choice: true
+        tool-call-parser: glm47
+        reasoning-parser: glm45
+        override_generation_config: '{"top_k": 10}'  # keeps sampling on the device sampler (top-k <= 10)
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    zai-org/GLM-5.3-Flash:
+      reasoning_parser_name: glm45
+      tool_call_parser_name: glm47
+
+- weights:
+    - zai-org/GLM-5.3-Flash
+  min_disk_gb: 900
+  min_ram_gb: 256
+  impl: glm53_flash_128k_mm
+  inference_engine: VLLM
+  model_type: LLM
+  supported_modalities:
+    - text
+    - image
+  device_model_specs:
+    - device: BLACKHOLE_GALAXY
+      max_concurrency: 16
+      max_context: 131072
+      max_tokens_all_users_override: 2097152
+      default_impl: false
+      tensor_cache_timeout: 14400.0
+      env_vars:
+        TT_MODEL_CLASS_OVERRIDES: "Glm5NextForConditionalGeneration=models.demos.glm53_flash.tt.generator_vllm_stack:GLM53StackForConditionalGeneration,TTGlm5NextForConditionalGeneration=models.demos.glm53_flash.tt.generator_vllm_stack:GLM53StackForConditionalGeneration,Glm5NextForCausalLM=models.demos.glm53_flash.tt.generator_vllm_stack:GLM53StackForCausalLM,TTGlm5NextForCausalLM=models.demos.glm53_flash.tt.generator_vllm_stack:GLM53StackForCausalLM"
+        GLM53_STACK_MM: "1"
+        GLM53_STACK_MM_ENCODER: device  # vision tower on the same mesh
+        GLM53_STACK_MM_TOWER_PATCHES: "4096"  # patch buckets warmed at boot (4 patches per image token)
+        GLM53_MESH_SHAPE: "8,4"
+        GLM53_STACK_PREFIX: "1"
+        TT_METAL_OPERATION_TIMEOUT_SECONDS: "300.0"  # long-context prefill chunks exceed the 5 s default
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        fabric_reliability_mode: RELAXED_INIT
+        trace_region_size: 3221225472
+        l1_small_size: 32768
+        worker_l1_size: 1280896
+        sample_on_device_mode: all
+        prefill_chunk_alignment: 8192
+        decode_interleave_enabled: true
+        decode_interleave_prefill_steps: 1
+        decode_interleave_decode_steps: 8
+      vllm_args:
+        max_num_seqs: 16
+        async_scheduling: true
+        block_size: 64
+        max_num_batched_tokens: 8208  # one 8192-token prefill bucket + one step's decode / verify tokens
+        enable_chunked_prefill: true
+        enable-prefix-caching: true
+        enable-prompt-tokens-details: true
+        enable-auto-tool-choice: true
+        tool-call-parser: glm47
+        reasoning-parser: glm45
+        override_generation_config: '{"top_k": 10}'  # keeps sampling on the device sampler (top-k <= 10)
+        limit-mm-per-prompt: '{"image": 4, "video": 0}'
+        mm-processor-kwargs: '{"max_image_tokens": 1024}'
+        mm-processor-cache-gb: 0  # the adapter caches image features itself
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    zai-org/GLM-5.3-Flash:
+      reasoning_parser_name: glm45
+      tool_call_parser_name: glm47

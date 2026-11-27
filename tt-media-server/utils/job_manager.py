@@ -17,6 +17,7 @@ from typing import Any, Callable, Dict, Optional
 from config.constants import (
     JobTypes,
     adapters_root,
+    generations_root,
     job_database_path,
     merged_models_root,
 )
@@ -38,6 +39,17 @@ AUTO_CLEANUP_EXEMPT_JOB_TYPES = frozenset(
         JobTypes.ADAPTER_MERGE.value,
     }
 )
+
+
+class JobFailure(Exception):
+    """An error that fails its job with ``code`` rather than ``processing_error``.
+
+    ``str(error)`` becomes the job's error message, which clients see.
+    """
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
 
 
 class JobStatus(str, Enum):
@@ -276,6 +288,12 @@ class JobManager:
         job._task = asyncio.create_task(self._process_job(job, request, task_function))
 
         return job.to_public_dict()
+
+    def check_admission(self) -> None:
+        """Raise the 429 or 503 that ``create_job`` would, before costly
+        request preparation. ``create_job`` checks again."""
+        with self._jobs_lock:
+            self._enforceAdmissionLimits()
 
     def _enforceAdmissionLimits(self) -> None:
         """Reject new work when outstanding jobs or stored records are full."""
@@ -615,7 +633,8 @@ class JobManager:
             raise
         except Exception as e:
             self._logger.error(f"Job {job.id} failed: {e}")
-            job.mark_failed(error_code="processing_error", error_message=str(e))
+            code = e.code if isinstance(e, JobFailure) else "processing_error"
+            job.mark_failed(error_code=code, error_message=str(e))
             self._sync_status_to_db(job)
             if job.cancel_event:
                 self._cleanup_job(job)
@@ -734,6 +753,7 @@ class JobManager:
         result_roots = {
             JobTypes.TRAINING.value: adapters_root,
             JobTypes.ADAPTER_MERGE.value: merged_models_root,
+            JobTypes.GENERATION.value: generations_root,
         }
         root_factory = result_roots.get(job.job_type)
         if root_factory is not None:

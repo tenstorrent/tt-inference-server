@@ -211,11 +211,9 @@ The setup for other supported DiT models is very similar to [Standard SD-3.5 Set
 | qwen-image-2512 | galaxy, t3k |
 | mochi-1-preview | galaxy, t3k |
 | Wan2.2-T2V-A14B-Diffusers | galaxy, t3k, qbge, galaxy_quad |
-| Wan2.2-I2V-A14B-Diffusers | galaxy, t3k, p150x4, p150x8, p300x2, galaxy_quad |
-| MiniMax-H3 | galaxy, galaxy_quad |
+| Wan2.2-I2V-A14B-Diffusers | galaxy, t3k, p150x4, p150x8, p300x2 |
 | MiniMax-H3-FL2VA | galaxy, galaxy_quad |
 | MiniMax-H3-Ref2VA | galaxy, galaxy_quad |
-| MiniMax-H3-FastH3 | galaxy, galaxy_quad |
 | MiniMax-H3-FL2VA-LightX2V | galaxy, galaxy_quad |
 | MiniMax-H3-Ref2VA-LightX2V | galaxy, galaxy_quad |
 
@@ -660,10 +658,6 @@ The video API supports both **async** (job-based) and **sync** modes, controlled
 - `USE_ASYNC_VIDEO=True` (default): the server creates a job and returns metadata with a `job_id`. Use the `GET /v1/videos/generations/{job_id}` and `/download` endpoints to track progress and retrieve the video.
 - `USE_ASYNC_VIDEO=False`: the server processes synchronously and streams the MP4 back directly in the same request.
 
-## Input and Output Requirements
-
-- [MiniMax H3](docs/minimax-h3-specs.md)
-
 ## Submit text-to-video generation job
 
 ```bash
@@ -1024,7 +1018,6 @@ export MAX_BATCH_DELAY_TIME_MS=50
 |---------------------|---------------|-------------|
 | `REQUEST_PROCESSING_TIMEOUT_SECONDS` | `1000` | Default timeout for processing requests in seconds |
 | `WEIGHTS_DISTRIBUTION_TIMEOUT_SECONDS` | `1200` | Maximum time in seconds to wait for weights to be distributed to all workers before failing startup |
-| `VIDEO_REQUEST_TIMEOUT_SECONDS` | `300.0` | SHM response deadline used by the video sub-process runner (`SPRunner` proxy to `video_runner`). Tune for long video generations |
 
 ## Job Management Settings
 
@@ -1071,12 +1064,16 @@ These settings configure VLLM-based model runners and are grouped under `setting
 | Environment Variable | Default Value | Description |
 |---------------------|---------------|-------------|
 | `USE_ASYNC_VIDEO` | `True` | When `True`, video generation creates a job and returns metadata; when `False`, the request blocks and the MP4 is streamed back directly |
-| `VIDEO_ASYNC_ENCODE` | `False` | When `True`, the device worker encodes MP4s on a background thread so the device starts the next request while ffmpeg runs. Runners that export inside `run()` (MiniMax-H3, Wan Prodia) hand back raw frames instead |
-| `TT_VIDEO_SHM_INPUT` | `"tt_video_in"` | Name of the shared-memory segment used to send requests to the video runner sub-process |
-| `TT_VIDEO_SHM_OUTPUT` | `"tt_video_out"` | Name of the shared-memory segment used to receive results from the video runner sub-process |
-| `TT_VIDEO_FILE_DIR` | `"/dev/shm"` | Directory used by the video pipeline to write intermediate / output video files |
+| `VIDEO_ASYNC_ENCODE` | `False` | When `True`, the device worker encodes MP4s on a background thread so the device starts the next request while ffmpeg runs. Runners that export inside `run()` (Wan Prodia) hand back raw frames instead. Applies to video-service runners only: generation deployments (Wan2.2 I2V A14B, LTX-2.3, MiniMax-H3) encode in the runner and ignore it |
 | `TT_VIDEO_EXPORT_CRF` | `"23"` | x264 CRF used when exporting MP4 (lower = higher quality) |
 | `TT_VIDEO_EXPORT_PRESET` | `"ultrafast"` | x264 preset used when exporting MP4 (e.g. `ultrafast`, `fast`, `medium`) |
+
+## Image Generation Settings
+
+| Environment Variable | Default Value | Description |
+|---------------------|---------------|-------------|
+| `FLUX3_PROMPT_UPSAMPLER_FROZEN` | `false` | FLUX.3 Image klein: `true` when prompts are upsampled before they reach the server; the pipeline is built without its upsampler and also serves `4K`. With the default (upsampler in the deployment), a `4K` request is refused with 422. `1`/`true` or `0`/`false` |
+| `FLUX3_WARMUP_REFERENCE_SHAPES` | _unset_ | FLUX.3 Image klein: extra reference image shapes to warm up, `WxH` separated by commas (e.g. `4032x3024,3024x4032`). A reference of an unwarmed shape compiles the VAE encoder the first time it is seen. |
 
 ## Operational TT Settings
 
@@ -1106,6 +1103,19 @@ These environment variables are typically set automatically by the worker bootst
 |---------------------|---------------|-------------|
 | `API_KEY` | `"your-secret-key"` | Secret key used for API authentication. All requests must include `Authorization: Bearer <API_KEY>` header |
 | `ORG_ID_HEADER` | `"X-TT-Organization"` | Name of the HTTP header that fine-tuning endpoints read to scope jobs to a tenant. Requests to `/v1/fine_tuning/*` must include this header |
+
+## Prompt Enhancer (Ideogram 4)
+
+Off by default: an Ideogram 4 deployment serves `structured_prompt` only, and a request with a plain `prompt` is a 422. With `IDEOGRAM_PROMPT_ENHANCER=ideogram-api`, a plain `prompt` is expanded into a structured caption by Ideogram's hosted magic-prompt API while the job is queued, before it reaches the device. A request with `structured_prompt` skips it. If the enhancer fails, the job fails with `prompt_enhancement_error`.
+
+| Environment Variable | Default Value | Description |
+|---------------------|---------------|-------------|
+| `IDEOGRAM_PROMPT_ENHANCER` | `"none"` | `none` to serve `structured_prompt` only (a `prompt` request is then a 422), or `ideogram-api` to expand a `prompt` with Ideogram's hosted API |
+| `IDEOGRAM_API_KEY` | _required with `ideogram-api`_ | Ideogram API key. An Ideogram 4 deployment with the enhancer on and no key fails at startup. Never logged |
+| `IDEOGRAM_MAGIC_PROMPT_URL` | `"https://api.ideogram.ai/v1/ideogram-v4/magic-prompt"` | The magic-prompt endpoint |
+| `PROMPT_ENHANCER_TIMEOUT_SECONDS` | `30.0` | Timeout of one call |
+| `PROMPT_ENHANCER_MAX_IN_FLIGHT` | `8` | Calls in flight per server process; keep it under the key's in-flight limit |
+| `PROMPT_ENHANCER_MAX_RETRIES` | `2` | Retries of a timeout, 429 or 5xx, after `Retry-After` (at most 30 s) or 1 s |
 
 ## Hugging Face Configuration
 
@@ -1193,7 +1203,6 @@ The server supports special environment variables for configuring device mesh sh
 | `SD_3_5_FAST` | `None` | Configures device mesh for SD-3.5 in fast configuration (4x8 mesh = 32 devices total) when set to `"true"` (case-insensitive) |
 | `SD_3_5_BASE` | `None` | Configures device mesh for SD-3.5 in base configuration (2x4 mesh = 8 devices total) when set to `"true"` (case-insensitive) |
 | `TP2` | `None` | Enables tensor parallelism across 2 devices (2x1 mesh) when set to `"true"` (case-insensitive). **Compatible with SDXL models only** |
-| `SP_MESH_4X32` | `None` | Configures device mesh as 4x32 (sequence-parallel mesh) when set to `"true"` (case-insensitive). Used for very large mesh deployments |
 
 ### Usage Examples
 

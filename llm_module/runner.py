@@ -30,7 +30,12 @@ import requests
 from report_module.schema import Block
 
 from .benchmark_configs import ensure_custom_dataset
-from .config import DriverContext, LLMRunConfig, ServerConnection
+from .config import (
+    DriverContext,
+    LLMRunConfig,
+    ServerConnection,
+    sweep_point_timeout_s,
+)
 from .drivers.base import LLMDriver
 from .server_control import ServerController
 from .target_checks import apply_target_checks
@@ -142,11 +147,19 @@ class LLMPerformanceRunner:
             phases = (["warmup"] if full_warmup else []) + [
                 f"rep{rep}" for rep in range(1, repetitions + 1)
             ]
+            point_timeout_s = sweep_point_timeout_s(cfg, context.per_run_timeout_s)
+            if point_timeout_s != context.per_run_timeout_s:
+                logger.info(
+                    "Sweep point %d/%d per-run timeout raised to %.0f s for its token volume",
+                    i,
+                    total,
+                    point_timeout_s,
+                )
             for phase in phases:
-                run_context = context
+                run_context = replace(context, per_run_timeout_s=point_timeout_s)
                 if full_warmup or repetitions > 1:
                     run_context = replace(
-                        context,
+                        run_context,
                         output_dir=context.output_dir / f"point-{i}" / phase,
                     )
                 outcome = self.driver.run(cfg, server, run_context)

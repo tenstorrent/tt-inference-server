@@ -1111,16 +1111,26 @@ def _vllm_multi_value_arg_names() -> set[str]:
     """
     import importlib
 
-    try:
-        # vLLM 0.29 moved the serve parser from openai to launchers.
-        from vllm.entrypoints.launchers.cli_args import make_arg_parser
-    except ModuleNotFoundError as exc:
-        if exc.name not in (
-            "vllm.entrypoints.launchers",
-            "vllm.entrypoints.launchers.cli_args",
-        ):
-            raise
-        from vllm.entrypoints.openai.cli_args import make_arg_parser
+    # The serve parser lives in common from vLLM 0.33, in launchers in 0.29-0.32 and
+    # in openai before that. A location whose module or package is missing moves on
+    # to the next one; any other import error (a missing dependency) is raised.
+    locations = (
+        "vllm.entrypoints.common.cli_args",
+        "vllm.entrypoints.launchers.cli_args",
+        "vllm.entrypoints.openai.cli_args",
+    )
+    for i, location in enumerate(locations):
+        try:
+            make_arg_parser = __import__(
+                location, fromlist=["make_arg_parser"]
+            ).make_arg_parser
+            break
+        except ModuleNotFoundError as exc:
+            if i == len(locations) - 1 or exc.name not in (
+                location,
+                location.rpartition(".")[0],
+            ):
+                raise
     from vllm.utils.argparse_utils import FlexibleArgumentParser
 
     # Building the serve parser runs vLLM's general plugins (EngineArgs.add_cli_args

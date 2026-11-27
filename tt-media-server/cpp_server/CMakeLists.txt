@@ -48,9 +48,13 @@ option(CLANG_TIDY "Run clang-tidy during build" OFF)
 
 list(PREPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
-# Find Drogon and JsonCpp (tokenizer_config parsing)
+# Find Drogon and JsonCpp (tokenizer_config parsing).
+# Drogon's own config already imports JsonCpp::JsonCpp. A second find_package
+# hits Ubuntu's jsoncpp file, which creates that target again and fails.
 find_package(Drogon REQUIRED)
-find_package(jsoncpp REQUIRED)
+if(NOT TARGET JsonCpp::JsonCpp)
+    find_package(jsoncpp REQUIRED)
+endif()
 find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
 
 # Try to find cereal, or fetch it if not available
@@ -283,7 +287,8 @@ if(ENABLE_BLAZE)
             "(find_package failed) nor present in source tree at "
             "${CMAKE_CURRENT_SOURCE_DIR}/tt-llm-engine. "
             "Either ensure the prebuilt image's /opt/tt-llm-engine is on "
-            "CMAKE_PREFIX_PATH, or initialize the tt-llm-engine submodule.")
+            "CMAKE_PREFIX_PATH, or set TT_LLM_ENGINE_SOURCE_DIR to an "
+            "external source checkout.")
     endif()
 else()
     message(STATUS "tt-llm-engine: DISABLED (use -DENABLE_BLAZE=ON to enable)")
@@ -1230,6 +1235,38 @@ target_include_directories(image_generate_request_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
+add_executable(video_generate_request_test
+    tests/unit/api/video_generate_request_test.cpp
+    tests/unit/api/video_job_store_test.cpp)
+target_link_libraries(video_generate_request_test PRIVATE
+    JsonCpp::JsonCpp
+    GTest::gtest_main
+)
+target_include_directories(video_generate_request_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+add_executable(dit_runner_test
+    tests/unit/dit/dit_runner_test.cpp
+    src/runtime/dit/dit_types.cpp
+    src/runtime/dit/device_params.cpp
+    src/runtime/dit/dit_model.cpp
+    src/runtime/dit/dit_registry.cpp
+    src/runtime/dit/models_wan.cpp
+    src/runtime/dit/media_export.cpp
+    src/utils/logger.cpp)
+target_link_libraries(dit_runner_test PRIVATE
+    spdlog::spdlog
+    JsonCpp::JsonCpp
+    GTest::gtest_main
+)
+target_include_directories(dit_runner_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+target_compile_definitions(dit_runner_test PRIVATE
+    DIT_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/unit/dit"
+)
+
 add_executable(embedding_ipc_test tests/unit/ipc/embedding_ipc_test.cpp)
 target_link_libraries(embedding_ipc_test PRIVATE
     llm_runner_lib
@@ -1371,6 +1408,18 @@ set(SERVICE_TEST_COMMON_SOURCES
     src/services/llm_service.cpp
     src/services/embedding_service.cpp
     src/services/image_service.cpp
+    src/services/video_service.cpp
+    src/runtime/runners/video_ipc_runner.cpp
+    src/runtime/runners/mock_video_runner.cpp
+    src/runtime/runners/video_device_runner.cpp
+    src/runtime/runners/video_python_env.cpp
+    src/runtime/dit/dit_types.cpp
+    src/runtime/dit/device_params.cpp
+    src/runtime/dit/dit_model.cpp
+    src/runtime/dit/dit_registry.cpp
+    src/runtime/dit/models_wan.cpp
+    src/runtime/dit/media_export.cpp
+    src/runtime/dit/dit_python_runner.cpp
     src/services/tts_service.cpp
     src/services/tts_request_preprocessor.cpp
     src/services/qwen3_tts_request_validator.cpp
@@ -1512,6 +1561,18 @@ set(INTEGRATION_TEST_COMMON_SOURCES
     src/runtime/runners/sdxl/sdxl_edit_runner.cpp
     src/runtime/runners/sdxl/sdxl_python_helpers.cpp
     src/services/image_service.cpp
+    src/services/video_service.cpp
+    src/runtime/runners/video_ipc_runner.cpp
+    src/runtime/runners/mock_video_runner.cpp
+    src/runtime/runners/video_device_runner.cpp
+    src/runtime/runners/video_python_env.cpp
+    src/runtime/dit/dit_types.cpp
+    src/runtime/dit/device_params.cpp
+    src/runtime/dit/dit_model.cpp
+    src/runtime/dit/dit_registry.cpp
+    src/runtime/dit/models_wan.cpp
+    src/runtime/dit/media_export.cpp
+    src/runtime/dit/dit_python_runner.cpp
     src/services/tts_service.cpp
     src/services/tts_request_preprocessor.cpp
     src/services/qwen3_tts_request_validator.cpp
@@ -1705,6 +1766,8 @@ set_tests_properties(EmbeddingServiceIntegrationTest PROPERTIES
 gtest_discover_tests(model_service_registry_test)
 gtest_discover_tests(health_controller_test)
 gtest_discover_tests(image_generate_request_test)
+gtest_discover_tests(video_generate_request_test)
+gtest_discover_tests(dit_runner_test)
 gtest_discover_tests(embedding_ipc_test)
 gtest_discover_tests(embedding_json_test)
 gtest_discover_tests(mock_embedding_runner_test)
@@ -1717,12 +1780,14 @@ target_include_directories(apply_delta_prompt_test PRIVATE
 )
 add_test(NAME ApplyDeltaPrompt COMMAND apply_delta_prompt_test)
 
-# Cancellation E2E test (starts mock server, runs Python tests, stops server)
-add_test(NAME CancellationE2E
-    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/e2e/scripts/run_e2e_with_server.sh
-    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-)
-set_tests_properties(CancellationE2E PROPERTIES TIMEOUT 120)
+if(ENABLE_BLAZE)
+    # Cancellation E2E test (starts Blaze mock server, runs Python tests, stops server)
+    add_test(NAME CancellationE2E
+        COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/e2e/scripts/run_e2e_with_server.sh
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    )
+    set_tests_properties(CancellationE2E PROPERTIES TIMEOUT 120)
+endif()
 
 # Prefix cache E2E test (requires external Dynamo server)
 add_executable(prefix_cache_e2e_test tests/e2e/prefix_cache_e2e_test.cpp)
@@ -2024,6 +2089,8 @@ set(SOURCES
     src/runtime/runners/embedding_ipc_runner.cpp
     src/services/embedding_service.cpp
     src/api/image_controller.cpp
+    src/api/video_controller.cpp
+    src/api/video_ui_controller.cpp
     src/runtime/runners/sdxl/sdxl_runner.cpp
     src/runtime/runners/media_ipc_runner.cpp
     src/runtime/runners/image_ipc_runner.cpp
@@ -2036,6 +2103,18 @@ set(SOURCES
     src/runtime/runners/sdxl/sdxl_edit_runner.cpp
     src/runtime/runners/sdxl/sdxl_python_helpers.cpp
     src/services/image_service.cpp
+    src/services/video_service.cpp
+    src/runtime/runners/video_ipc_runner.cpp
+    src/runtime/runners/mock_video_runner.cpp
+    src/runtime/runners/video_device_runner.cpp
+    src/runtime/runners/video_python_env.cpp
+    src/runtime/dit/dit_types.cpp
+    src/runtime/dit/device_params.cpp
+    src/runtime/dit/dit_model.cpp
+    src/runtime/dit/dit_registry.cpp
+    src/runtime/dit/models_wan.cpp
+    src/runtime/dit/media_export.cpp
+    src/runtime/dit/dit_python_runner.cpp
     src/services/tts_service.cpp
     src/services/tts_request_preprocessor.cpp
     src/services/qwen3_tts_request_validator.cpp

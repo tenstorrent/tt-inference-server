@@ -5,9 +5,11 @@
 
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <stdexcept>
+#include <thread>
 #include <utility>
 
 #include "config/settings.hpp"
@@ -91,8 +93,52 @@ void MediaIpcRunner::run() {
       break;
     }
 
+    // A cancel is a marker file next to the request (see VideoService::
+    // cancelJob). It is checked twice: right after the pop, and again after
+    // CLAIMED was sent. A cancel that lands between the two (before the service
+    // saw CLAIMED) would otherwise still send the task to the device.
+    auto cancelledBeforeStart = [&]() {
+      const auto marker = tt::ipc::media_payload::cancelMarkerPath(
+          task.request_path, task.task_id);
+      return !marker.empty() && std::filesystem::exists(marker);
+    };
+    // Report it without running the model, so the device stays free for the
+    // next job. The service finishes the job as cancelled without an error.
+    auto skipCancelled = [&](const char* when) {
+      tt::ipc::media_payload::MediaPayloadResult skipped;
+      skipped.task_id = task.task_id;
+      skipped.response_path = task.response_path;
+      skipped.error = tt::ipc::media_payload::kCancelledBeforeStartError;
+      TT_LOG_INFO("[MediaIpcRunner] Worker {} skipping cancelled task {} ({})",
+                  workerIndex, task.task_id, when);
+      resultQueue->push(skipped);
+      std::error_code removeEc;
+      std::filesystem::remove(task.request_path, removeEc);
+    };
+
+    if (cancelledBeforeStart()) {
+      skipCancelled("before claim");
+      continue;
+    }
+
+    // Test hook: widens the window between the first check and CLAIMED so a
+    // cancel that lands in it can be reproduced (server_cases.py, phase
+    // cancel-race). Not set in production.
+    static const long preClaimDelayMs = [] {
+      const char* v = std::getenv("TT_MEDIA_TEST_PRECLAIM_DELAY_MS");
+      return (v && *v) ? std::strtol(v, nullptr, 10) : 0L;
+    }();
+    if (preClaimDelayMs > 0) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(preClaimDelayMs));
+    }
+
     resultQueue->push(
         tt::ipc::media_payload::MediaPayloadResult::claimed(task.task_id));
+
+    if (cancelledBeforeStart()) {
+      skipCancelled("after claim");
+      continue;
+    }
 
     tt::ipc::media_payload::MediaPayloadResult result;
     result.task_id = task.task_id;

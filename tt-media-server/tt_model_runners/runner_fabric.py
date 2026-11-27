@@ -31,15 +31,27 @@ AVAILABLE_RUNNERS = {
     ModelRunners.TT_FLUX_1_KONTEXT_DEV: lambda wid: __import__(
         "tt_model_runners.dit_runners", fromlist=["TTFluxKontextRunner"]
     ).TTFluxKontextRunner(wid),
+    ModelRunners.TT_FLUX_3_IMAGE_KLEIN: lambda wid: __import__(
+        "tt_model_runners.generation_runners", fromlist=["TTFlux3ImageKleinRunner"]
+    ).TTFlux3ImageKleinRunner(wid),
+    ModelRunners.TT_FLUX_2_KLEIN_4B: lambda wid: __import__(
+        "tt_model_runners.generation_runners", fromlist=["TTFlux2Klein4BRunner"]
+    ).TTFlux2Klein4BRunner(wid),
     ModelRunners.TT_MOTIF_IMAGE_6B_PREVIEW: lambda wid: __import__(
         "tt_model_runners.dit_runners", fromlist=["TTMotifImage6BPreviewRunner"]
     ).TTMotifImage6BPreviewRunner(wid),
+    ModelRunners.TT_IDEOGRAM_4: lambda wid: __import__(
+        "tt_model_runners.generation_runners", fromlist=["TTIdeogram4Runner"]
+    ).TTIdeogram4Runner(wid),
     ModelRunners.TT_QWEN_IMAGE: lambda wid: __import__(
         "tt_model_runners.dit_runners", fromlist=["TTQwenImageRunner"]
     ).TTQwenImageRunner(wid),
     ModelRunners.TT_QWEN_IMAGE_2512: lambda wid: __import__(
         "tt_model_runners.dit_runners", fromlist=["TTQwenImage2512Runner"]
     ).TTQwenImageRunner(wid),
+    ModelRunners.TT_QWEN_IMAGE_EDIT_2511: lambda wid: __import__(
+        "tt_model_runners.generation_runners", fromlist=["TTQwenImageEdit2511Runner"]
+    ).TTQwenImageEdit2511Runner(wid),
     ModelRunners.TT_MOCHI_1: lambda wid: __import__(
         "tt_model_runners.dit_runners", fromlist=["TTMochi1Runner"]
     ).TTMochi1Runner(wid),
@@ -50,8 +62,8 @@ AVAILABLE_RUNNERS = {
         "tt_model_runners.dit_runners", fromlist=["TTWan22T2VProdiaRunner"]
     ).TTWan22T2VProdiaRunner(wid),
     ModelRunners.TT_WAN_2_2_I2V: lambda wid: __import__(
-        "tt_model_runners.dit_runners", fromlist=["TTWan22I2VRunner"]
-    ).TTWan22I2VRunner(wid),
+        "tt_model_runners.generation_runners", fromlist=["TTWan22I2VA14BRunner"]
+    ).TTWan22I2VA14BRunner(wid),
     ModelRunners.TT_WAN_2_2_I2V_PRODIA: lambda wid: __import__(
         "tt_model_runners.dit_runners", fromlist=["TTWan22I2VProdiaRunner"]
     ).TTWan22I2VProdiaRunner(wid),
@@ -68,26 +80,21 @@ AVAILABLE_RUNNERS = {
         "tt_model_runners.dit_runners", fromlist=["TTWan22I2VLightningRunner"]
     ).TTWan22I2VLightningRunner(wid),
     ModelRunners.TT_LTX_2_3_DISTILLED: lambda wid: __import__(
-        "tt_model_runners.dit_runners", fromlist=["TTLTX23DistilledRunner"]
-    ).TTLTX23DistilledRunner(wid),
-    ModelRunners.TT_MINIMAX_H3_T2VA: lambda wid: __import__(
-        "tt_model_runners.dit_runners", fromlist=["TTMiniMaxH3Runner"]
-    ).TTMiniMaxH3Runner(wid),
+        "tt_model_runners.generation_runners", fromlist=["TTLtx23DistilledRunner"]
+    ).TTLtx23DistilledRunner(wid),
     ModelRunners.TT_MINIMAX_H3_FL2VA: lambda wid: __import__(
-        "tt_model_runners.dit_runners", fromlist=["TTMiniMaxH3FL2VARunner"]
-    ).TTMiniMaxH3FL2VARunner(wid),
+        "tt_model_runners.generation_runners", fromlist=["TTMiniMaxH3Runner"]
+    ).TTMiniMaxH3Runner(wid),
     ModelRunners.TT_MINIMAX_H3_REF2VA: lambda wid: __import__(
-        "tt_model_runners.dit_runners", fromlist=["TTMiniMaxH3Ref2VARunner"]
+        "tt_model_runners.generation_runners", fromlist=["TTMiniMaxH3Ref2VARunner"]
     ).TTMiniMaxH3Ref2VARunner(wid),
-    ModelRunners.TT_MINIMAX_H3_FASTH3: lambda wid: __import__(
-        "tt_model_runners.dit_runners", fromlist=["TTMiniMaxFastH3Runner"]
-    ).TTMiniMaxFastH3Runner(wid),
     ModelRunners.TT_MINIMAX_H3_FL2VA_LIGHTX2V: lambda wid: __import__(
-        "tt_model_runners.dit_runners", fromlist=["TTMiniMaxH3FL2VALightX2VRunner"]
-    ).TTMiniMaxH3FL2VALightX2VRunner(wid),
+        "tt_model_runners.generation_runners", fromlist=["TTMiniMaxH3TurboRunner"]
+    ).TTMiniMaxH3TurboRunner(wid),
     ModelRunners.TT_MINIMAX_H3_REF2VA_LIGHTX2V: lambda wid: __import__(
-        "tt_model_runners.dit_runners", fromlist=["TTMiniMaxH3Ref2VALightX2VRunner"]
-    ).TTMiniMaxH3Ref2VALightX2VRunner(wid),
+        "tt_model_runners.generation_runners",
+        fromlist=["TTMiniMaxH3TurboRef2VARunner"],
+    ).TTMiniMaxH3TurboRef2VARunner(wid),
     ModelRunners.TT_WHISPER: lambda wid: __import__(
         "tt_model_runners.whisper_runner", fromlist=["TTWhisperRunner"]
     ).TTWhisperRunner(wid),
@@ -181,9 +188,6 @@ AVAILABLE_RUNNERS = {
     ModelRunners.MOCK: lambda wid: __import__(
         "tt_model_runners.mock_runner", fromlist=["MockRunner"]
     ).MockRunner(wid),
-    ModelRunners.SP_RUNNER: lambda wid: __import__(
-        "tt_model_runners.sp_runner", fromlist=["SPRunner"]
-    ).SPRunner(wid),
     ModelRunners.TT_SPEECHT5_TTS: lambda wid: __import__(
         "tt_model_runners.speecht5_runner", fromlist=["TTSpeechT5Runner"]
     ).TTSpeechT5Runner(wid),

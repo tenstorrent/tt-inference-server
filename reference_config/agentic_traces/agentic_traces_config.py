@@ -447,6 +447,48 @@ _agentic_traces_config_list: List[AgenticTracesConfig] = [
             ),
         ),
     ),
+    # GLM-5.3-Flash on BLACKHOLE_GALAXY (dev catalog, the 8x4 persistent-stack 1 M profile: tt-metal #64931).
+    # Full (1M) dataset to match the spec's 1048576 max_context; concurrency 8 = one lane per resident slot
+    # (max_concurrency 8: no lane's request queues). Same InferenceX pin as Kimi above.
+    AgenticTracesConfig(
+        model_id="id_glm53-flash_GLM-5.3-Flash_blackhole_galaxy",
+        inferencex_git_ref=INFERENCEX_AGENTX_GIT_REF,
+        runs=(
+            AgenticTracesRunSpec(
+                trace_source=TraceSource.INFERENCEX_AGENTX,
+                public_dataset="semianalysis_cc_traces_weka_062126",
+                concurrency=_agentx_concurrency(8),
+            ),
+        ),
+    ),
+    # The 1 M profile with the stack's MTP speculative step (glm53_flash_mtp, EXPERIMENTAL): same dataset and 8 lanes
+    # (two per resident slot: it admits 4).
+    AgenticTracesConfig(
+        model_id="id_glm53-flash-mtp_GLM-5.3-Flash_blackhole_galaxy",
+        inferencex_git_ref=INFERENCEX_AGENTX_GIT_REF,
+        runs=(
+            AgenticTracesRunSpec(
+                trace_source=TraceSource.INFERENCEX_AGENTX,
+                public_dataset="semianalysis_cc_traces_weka_062126",
+                concurrency=_agentx_concurrency(8),
+            ),
+        ),
+    ),
+    # The 1 M agentic-loop profile (glm53_flash_1m, EXPERIMENTAL: 8 resident 1 M users on the B 16 build, narrow width 4,
+    # exact snapshots + host spill, sparse multi-user MTP with the lone / 4 x 3 / 8 x 1 steps): same dataset; concurrency 8
+    # = one lane per resident slot; AGENTX_CONCURRENCY sweeps 4 / 8 / 16 (16 is above the 8 resident slots: half the
+    # lanes queue).
+    AgenticTracesConfig(
+        model_id="id_glm53-flash-1m_GLM-5.3-Flash_blackhole_galaxy",
+        inferencex_git_ref=INFERENCEX_AGENTX_GIT_REF,
+        runs=(
+            AgenticTracesRunSpec(
+                trace_source=TraceSource.INFERENCEX_AGENTX,
+                public_dataset="semianalysis_cc_traces_weka_062126",
+                concurrency=_agentx_concurrency(8),
+            ),
+        ),
+    ),
     # Gemma-4 31B on SUPER_CLUSTER (dev catalog). InferenceX agentx replay
     # only; no SwarmOne scenario is recorded for this model. Same InferenceX
     # pin as Kimi above so numbers stay comparable across the two models.
