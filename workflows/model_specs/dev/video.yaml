@@ -278,6 +278,8 @@ templates:
     # setup_host fetches it per hf_extra_files below.
     MINIMAX_H3_LORA_PATH: /home/container_app_user/cache_root/weights/MiniMax-H3-FL2VA-LightX2V/lightx2v/minimax_h3_fl2v_turbo_4step_v1.2_768p_bf16.safetensors
     MINIMAX_H3_VAE_OUTPUT: yuv420
+    # High profile, as for Wan above: the default ultrafast gives Constrained Baseline.
+    TT_VIDEO_EXPORT_PRESET: superfast
     # Open FABRIC_1D and run Linear CCLs (needs tt-metal with the MINIMAX_H3_TOPOLOGY preset override).
     MINIMAX_H3_TOPOLOGY: linear
     TT_METAL_FABRIC_ROUTER_SYNC_TIMEOUT_MS: "120000"
@@ -330,6 +332,8 @@ templates:
     MINIMAX_H3_MODEL_PATH: /home/container_app_user/cache_root/weights/MiniMax-H3-Ref2VA-LightX2V
     MINIMAX_H3_LORA_PATH: /home/container_app_user/cache_root/weights/MiniMax-H3-Ref2VA-LightX2V/lightx2v/minimax_h3_ref2v_turbo_4step_v1.0_768p_bf16.safetensors
     MINIMAX_H3_VAE_OUTPUT: yuv420
+    # High profile, as for Wan above: the default ultrafast gives Constrained Baseline.
+    TT_VIDEO_EXPORT_PRESET: superfast
     # Open FABRIC_1D and run Linear CCLs (needs tt-metal with the MINIMAX_H3_TOPOLOGY preset override).
     MINIMAX_H3_TOPOLOGY: linear
     TT_METAL_FABRIC_ROUTER_SYNC_TIMEOUT_MS: "120000"
@@ -362,4 +366,126 @@ templates:
       env_vars:
         ARCH_NAME: blackhole
         MESH_DEVICE: "(4, 8)"
+  status: EXPERIMENTAL
+
+# MiniMax-H3 first/last-keyframe-to-video-and-audio at the base model's own 50 steps, served as
+# minimaxai/minimax-h3-fl2va, on one Blackhole Galaxy. The LightX2V FL2VA entry above without its
+# adapter: the same weights partition (transformer/), mesh and fabric settings.
+- weights:
+    - MiniMaxAI/MiniMax-H3-FL2VA
+  impl: tt_transformers
+  min_disk_gb: 300
+  min_ram_gb: 64
+  model_type: VIDEO
+  inference_engine: MEDIA
+  hf_weights_repo: MiniMaxAI/MiniMax-H3
+  env_vars:
+    MODEL_RUNNER: tt-minimax-h3-fl2va
+    MAX_QUEUE_SIZE: "2"
+    TT_DIT_CACHE_DIR: /home/container_app_user/cache_root/tt_dit_cache
+    MINIMAX_H3_MODEL_PATH: /home/container_app_user/cache_root/weights/MiniMax-H3-FL2VA
+    MINIMAX_H3_VAE_OUTPUT: yuv420
+    # High profile, as for Wan above: the default ultrafast gives Constrained Baseline.
+    TT_VIDEO_EXPORT_PRESET: superfast
+    MINIMAX_H3_TOPOLOGY: linear
+    TT_METAL_FABRIC_ROUTER_SYNC_TIMEOUT_MS: "120000"
+  metadata:
+    MiniMaxAI/MiniMax-H3-FL2VA:
+      hf_download_excludes:
+        - "FL2VA/*"
+        - "Ref2VA/*"
+        - "transformer_ref/*"
+        - "assets/*"
+        - "docs/*"
+        - "scripts/*"
+      hf_required_globs:
+        - "model_index.json"
+        - "transformer/config.json"
+        - "transformer/*.safetensors"
+        - "text_encoder/*"
+        - "tokenizer/*"
+        - "vae/*"
+        - "audio_vae/*"
+  device_model_specs:
+    - device: BLACKHOLE_GALAXY
+      max_concurrency: 1
+      max_context: 65536
+      default_impl: true
+      env_vars:
+        ARCH_NAME: blackhole
+        MESH_DEVICE: "(4, 8)"
+  status: EXPERIMENTAL
+
+# MiniMax-H3 omni-reference-to-video-and-audio at the base model's own 50 steps, served as
+# minimaxai/minimax-h3-ref2va. The LightX2V Ref2VA entry above without its adapter (transformer_ref/).
+- weights:
+    - MiniMaxAI/MiniMax-H3-Ref2VA
+  impl: tt_transformers
+  min_disk_gb: 300
+  min_ram_gb: 64
+  model_type: VIDEO
+  inference_engine: MEDIA
+  hf_weights_repo: MiniMaxAI/MiniMax-H3
+  env_vars:
+    MODEL_RUNNER: tt-minimax-h3-ref2va
+    MAX_QUEUE_SIZE: "2"
+    TT_DIT_CACHE_DIR: /home/container_app_user/cache_root/tt_dit_cache
+    MINIMAX_H3_MODEL_PATH: /home/container_app_user/cache_root/weights/MiniMax-H3-Ref2VA
+    MINIMAX_H3_VAE_OUTPUT: yuv420
+    # High profile, as for Wan above: the default ultrafast gives Constrained Baseline.
+    TT_VIDEO_EXPORT_PRESET: superfast
+    MINIMAX_H3_TOPOLOGY: linear
+    TT_METAL_FABRIC_ROUTER_SYNC_TIMEOUT_MS: "120000"
+  metadata:
+    MiniMaxAI/MiniMax-H3-Ref2VA:
+      hf_download_excludes:
+        - "FL2VA/*"
+        - "Ref2VA/*"
+        - "transformer/*"
+        - "assets/*"
+        - "docs/*"
+        - "scripts/*"
+      hf_required_globs:
+        - "model_index.json"
+        - "transformer_ref/config.json"
+        - "transformer_ref/*.safetensors"
+        - "text_encoder/*"
+        - "tokenizer/*"
+        - "vae/*"
+        - "audio_vae/*"
+  device_model_specs:
+    - device: BLACKHOLE_GALAXY
+      max_concurrency: 1
+      max_context: 65536
+      default_impl: true
+      env_vars:
+        ARCH_NAME: blackhole
+        MESH_DEVICE: "(4, 8)"
+  status: EXPERIMENTAL
+
+# LTX-2.3 22B distilled through the generations API (TTLtx23DistilledRunner): text to video with
+# sound, one shape (1920x1088, 153 frames at 25 fps), on one Blackhole Galaxy (4x8 ring). The
+# weights basename is the MODEL the container receives and must match tt-media-server's ModelNames
+# (LTX-2.3-distilled). The pipeline loads its own weights by repo id: the distilled checkpoint of
+# the gated Lightricks/LTX-2.3 and google/gemma-3-12b-it-qat-q4_0-unquantized, so HF_TOKEN needs
+# access to both. Needs tt-metal's LTX pipeline with the conv3d blockings of the served shape
+# (tt-media-server/RUNBOOK_ltx23_distilled.md names the branch). Disk and RAM are estimates.
+- weights:
+    - Lightricks/LTX-2.3-distilled
+  impl: tt_transformers
+  min_disk_gb: 120
+  min_ram_gb: 64
+  model_type: VIDEO
+  inference_engine: MEDIA
+  hf_weights_repo: Lightricks/LTX-2.3
+  env_vars:
+    MODEL_RUNNER: tt-ltx-2.3-distilled
+    TT_DIT_CACHE_DIR: /home/container_app_user/cache_root/tt_dit_cache
+    # The server's faster yuv420p export path, as the hosted deployment runs.
+    LTX_YUV_EXPORT: "1"
+  device_model_specs:
+    - device: BLACKHOLE_GALAXY
+      max_concurrency: 1
+      max_context: 65536
+      default_impl: true
   status: EXPERIMENTAL

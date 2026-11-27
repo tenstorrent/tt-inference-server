@@ -31,6 +31,7 @@ GENERATIONS_API_SUBMIT_ENDPOINTS = {
     "MiniMax-H3-Ref2VA": "v1/generations/minimaxai/minimax-h3-ref2va",
     "MiniMax-H3-FL2VA-LightX2V": "v1/generations/tenstorrent/minimax-h3-fl2va-lightx2v",
     "MiniMax-H3-Ref2VA-LightX2V": "v1/generations/tenstorrent/minimax-h3-ref2va-lightx2v",
+    "LTX-2.3-distilled": "v1/generations/lightricks/ltx-2.3-22b-distilled",
 }
 FIXTURE_IMAGE_PATH = (
     Path("test_fixtures") / "datasets" / "imagenet_subset" / "imagenet_002_volcano.jpg"
@@ -38,6 +39,15 @@ FIXTURE_IMAGE_PATH = (
 DEFAULT_I2V_NEGATIVE_PROMPT = "blurry, low quality, distorted"
 DEFAULT_I2V_SEED = 42
 MINIMAX_H3_DURATION_SECONDS = 5
+# Wan2.2 I2V output shapes, as the generation API spec requests them
+# (tt-media-server docs/api/generation/models/wan-ai/wan2.2-i2v-a14b.yaml):
+# (width, height) -> (aspect_ratio, size).
+WAN22_I2V_SHAPES = {
+    (832, 480): ("16:9", "480p"),
+    (480, 832): ("9:16", "480p"),
+    (1280, 720): ("16:9", "720p"),
+    (720, 1280): ("9:16", "720p"),
+}
 # Every mesh serves Wan2.2's 480p 16:9; the tt_dit pipeline tests cover 720p.
 WAN_SIZE = "480p"
 WAN_ASPECT_RATIO = "16:9"
@@ -50,6 +60,10 @@ def is_i2v_video_model(model_name: str) -> bool:
 
 def is_minimax_h3_model(model_name: str) -> bool:
     return model_name.split("/")[-1].startswith("MiniMax-H3")
+
+
+def is_ltx_distilled_model(model_name: str) -> bool:
+    return model_name.split("/")[-1] == "LTX-2.3-distilled"
 
 
 def uses_generations_api(model_name: str) -> bool:
@@ -77,9 +91,11 @@ def build_video_generation_payload(
     num_inference_steps: int,
     model_name: str,
     image_b64: str | None = None,
+    seed: int | None = None,
 ) -> dict:
     """Build a T2V or I2V submit payload for ``model_name``. The generations
-    API takes no step count: it runs the model's reference default."""
+    API takes no step count: it runs the model's reference default. ``seed``
+    replaces LTX-2.3's default seed."""
     if is_minimax_h3_model(model_name):
         payload = {
             "prompt": prompt,
@@ -95,6 +111,9 @@ def build_video_generation_payload(
             # The clip takes the keyframe's shape.
             payload["first_frame"] = fixture_image_data_uri(image_b64)
         return payload
+    if is_ltx_distilled_model(model_name):
+        # Text to video at its one shape; every other field has one value.
+        return {"prompt": prompt, "seed": DEFAULT_I2V_SEED if seed is None else seed}
     if uses_generations_api(model_name):
         return {
             "prompt": prompt,

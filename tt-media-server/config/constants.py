@@ -1166,6 +1166,25 @@ ModelConfigs = {
         "download_weights_from_service": False,
         "request_processing_timeout_seconds": 5000,
     },
+    # The base models under the device's own name too, as their LightX2V
+    # deployments have it: run.py and Shield start a Blackhole Galaxy as
+    # DEVICE=blackhole_galaxy.
+    (ModelRunners.TT_MINIMAX_H3_FL2VA, DeviceTypes.BLACKHOLE_GALAXY): {
+        "device_mesh_shape": (4, 8),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+        "download_weights_from_service": False,
+        "request_processing_timeout_seconds": 5000,
+    },
+    (ModelRunners.TT_MINIMAX_H3_REF2VA, DeviceTypes.BLACKHOLE_GALAXY): {
+        "device_mesh_shape": (4, 8),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+        "download_weights_from_service": False,
+        "request_processing_timeout_seconds": 5000,
+    },
     (ModelRunners.TT_MINIMAX_H3_FL2VA_LIGHTX2V, DeviceTypes.GALAXY): {
         "device_mesh_shape": (4, 8),
         "is_galaxy": False,
@@ -1314,6 +1333,16 @@ ModelConfigs = {
         "max_batch_size": 1,
         # LTX 1080p ~6s AV generation (153 frames @ 25 fps) plus first-request
         # trace capture during warmup; give it a generous ceiling.
+        "request_processing_timeout_seconds": 7200,
+    },
+    # The same (4, 8) ring under the device's own name: run.py and Shield start
+    # a Blackhole Galaxy as DEVICE=blackhole_galaxy, and without an entry the
+    # server falls back to its default runner.
+    (ModelRunners.TT_LTX_2_3_DISTILLED, DeviceTypes.BLACKHOLE_GALAXY): {
+        "device_mesh_shape": (4, 8),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
         "request_processing_timeout_seconds": 7200,
     },
     # Galaxy quad: the 4x8 Galaxy configs above with the full (4, 32) mesh. One
