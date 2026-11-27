@@ -1,0 +1,31 @@
+# AIME 2025 graded the way OpenAI's gpt_oss.evals grades it (the harness behind gpt-oss-20b's GPU reference,
+# tt-inference-server issue #1323): the last \boxed{}/\framebox{} answer, else the last integer in the reply.
+# Prompt, dataset and generation settings are lm-eval's own aime25 task, unchanged; only the grading differs.
+task: aime25_openai
+tag:
+  - math_word_problems
+dataset_path: math-ai/aime25
+output_type: generate_until
+training_split: test
+fewshot_split: test
+test_split: test
+doc_to_text: "Question: {{problem}}\nPlease reason step by step, and put your answer within \\boxed{}."
+doc_to_target: "{{answer}}"
+process_results: !function utils.process_results
+metric_list:
+  - metric: exact_match
+    aggregation: mean
+    higher_is_better: true
+generation_kwargs:
+  until:
+    - "Question:"
+    - "</s>"
+    - "<|im_end|>"
+    - "<|eot_id|>"
+  do_sample: false
+  temperature: 0.0
+  max_gen_toks: 32768
+repeats: 1
+num_fewshot: 0
+metadata:
+  version: 0.0

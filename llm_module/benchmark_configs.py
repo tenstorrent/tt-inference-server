@@ -92,6 +92,8 @@ def get_llm_configs(
     }
 
     output_block_size = int(metadata.get("output_block_size", 1) or 1)
+    device_model_spec = getattr(model_spec, "device_model_spec", None)
+    endpoint = getattr(device_model_spec, "benchmark_endpoint", "chat") or "chat"
     configs: List[LLMRunConfig] = []
     seen = set()
     for params in text_params:
@@ -124,6 +126,7 @@ def get_llm_configs(
                 priority=priority_by_shape.get(shape),
                 target_priorities=target_priorities_by_shape.get(shape),
                 goodput=goodput_by_shape.get(shape),
+                endpoint=endpoint,
             )
         )
 
