@@ -32,6 +32,12 @@ class TenstorrentTargetPack(TargetPack):
 
         return EVAL_CONFIGS.get(hf_model_repo)
 
+    def eval_config_for_spec(self, model_spec: Any) -> Optional[Any]:
+        """The eval config for this profile: its ``eval_config_variant``, else the repo's."""
+        from reference_config.evals.eval_config import resolve_eval_config
+
+        return resolve_eval_config(model_spec.hf_model_repo, model_spec)
+
     def resolve_eval_reference(self, score: Any, limit_mode: Any) -> Mapping[str, Any]:
         from reference_config.evals.eval_config import resolve_eval_reference
 

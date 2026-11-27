@@ -112,7 +112,11 @@ def _eval_config_for(model_spec):
     except Exception as e:  # pragma: no cover - defensive
         logger.warning("Could not import the target pack (%s); skipping evals.", e)
         return None
-    return get_target_pack().eval_config(model_spec.hf_model_repo)
+    pack = get_target_pack()
+    for_spec = getattr(pack, "eval_config_for_spec", None)
+    if for_spec is not None:
+        return for_spec(model_spec)
+    return pack.eval_config(model_spec.hf_model_repo)
 
 
 def _llm_release_includes_agentic(model_spec) -> bool:

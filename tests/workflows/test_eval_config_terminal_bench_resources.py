@@ -8,9 +8,9 @@
 The Terminal-Bench leaderboard rejects resource overrides, and the published
 scores we compare against use the task budgets (TB 2.1 tasks ask for 1-4 CPUs
 and 2-8 GB). A Terminal-Bench task overrides them only where its published
-score states a different setting. The Qwen3.6 model cards report Terminal-Bench
-2.0 with 32 CPUs and 48 GB RAM; those models also run on QB2, whose 16 CPUs are
-the most Docker grants a container there.
+score states a different setting. No configured Terminal-Bench task does today:
+the Qwen3.6 rows run a five-task Terminal-Bench 2.1 subset with no published
+score, so they use the task budgets too.
 """
 
 from pathlib import Path
@@ -20,10 +20,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from reference_config.evals.eval_config import ALL_EVAL_CONFIGS
 
-PUBLISHED_OVERRIDES = {
-    "Qwen/Qwen3.6-27B": (16, 48 * 1024),
-    "Qwen/Qwen3.6-35B-A3B": (16, 48 * 1024),
-}
+# hf_model_repo -> (override_cpus, override_memory_mb) its published score states.
+PUBLISHED_OVERRIDES = {}
 
 
 def _terminal_bench_tasks():

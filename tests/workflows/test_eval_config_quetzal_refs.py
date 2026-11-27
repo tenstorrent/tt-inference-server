@@ -27,8 +27,11 @@ OLL_RESULTS = "https://huggingface.co/datasets/open-llm-leaderboard/results/blob
 
 # hf_model_repo -> {task_name: published_score or None (task grades NA)}
 EXPECTED = {
+    # The five-task agentic subsets are gated per mode (1 of 5 in CI), not on the card.
     "Qwen/Qwen3.6-35B-A3B": {
-        "terminal_bench_2": 51.5,
+        "r1_gpqa_diamond": 86.0,
+        "terminal_bench_2_1": None,
+        "swe_bench_verified": None,
     },
     "tiiuae/Falcon3-1B-Instruct": {
         "leaderboard_ifeval": 50.46,

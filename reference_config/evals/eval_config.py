@@ -693,6 +693,34 @@ _K2_HORIZON_LM_EVAL_TASKS = os.path.join(
 # requests exhausted retries as __INFERENCE_ERROR__.
 QWQ_R1_REQUEST_TIMEOUT_S = 3 * 60 * 60
 
+# The five-task Terminal-Bench 2.1 and five-instance SWE-bench Verified subsets the QB2
+# agentic-models configs (Qwen3.6-27B, Qwen3.6-35B-A3B, Ornith-1.5-9B, Ornith-1.5-35B-A3B;
+# Nemotron-3.5-Lightning runs the SWE-bench subset and its own Terminal-Bench tasks below)
+# run in every mode, each gated at 1 of 5 in CI.
+_QB2_TERMINAL_BENCH_2_1_SUBSET = (
+    "terminal-bench/openssl-selfsigned-cert",
+    "terminal-bench/sqlite-db-truncate",
+    "terminal-bench/fix-git",
+    "terminal-bench/nginx-request-logging",
+    "terminal-bench/overfull-hbox",
+)
+# Nemotron-3.5-Lightning's own five Terminal-Bench 2.1 tasks: the set its bring-up ran
+# locally (2/5 in both rounds, fix-git and crack-7z-hash solved each time).
+_QB2_NEMOTRON_TERMINAL_BENCH_2_1_SUBSET = (
+    "terminal-bench/fix-git",
+    "terminal-bench/crack-7z-hash",
+    "terminal-bench/overfull-hbox",
+    "terminal-bench/db-wal-recovery",
+    "terminal-bench/regex-log",
+)
+_QB2_SWE_BENCH_VERIFIED_SUBSET = (
+    "django__django-11099",
+    "astropy__astropy-14995",
+    "pytest-dev__pytest-7432",
+    "scikit-learn__scikit-learn-14141",
+    "pydata__xarray-4629",
+)
+
 _eval_config_list = [
     # Fixed Granite release cohorts; published scores are context, not GPU controls.
     EvalConfig(
@@ -3137,17 +3165,73 @@ _eval_config_list = [
             ),
         ],
     ),
+    # Qwen/Qwen3.6-27B, every profile (qwen36_blackhole, quetzal, qwen36-27b-qb2): GPQA
+    # Diamond plus the five-task Terminal-Bench 2.1 and SWE-bench Verified subsets of the QB2
+    # agentic-models configs, each gated at 1 of 5 in CI.
     EvalConfig(
         hf_model_repo="Qwen/Qwen3.6-27B",
         tasks=[
+            # The qwen36-27b-qb2 bring-up's GPQA Diamond setting (170/198 = 85.9, thinking on,
+            # card sampling, presence 0). The 131072-token budget is required: at 81,920 the
+            # misses are truncations (~80).
             EvalTask(
-                task_name="terminal_bench_2",
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    # Without a limit mode: graded against the card at 0.95 x card.
+                    published_score=87.8,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3.6-27B",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                thinking=True,
+                model_kwargs={
+                    "max_length": 262144,
+                    "timeout": 14400,
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 131072,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                    "top_k": 20,
+                },
+                # 20% ci-nightly subset (40) for the qwen36_blackhole and quetzal profiles,
+                # graded against the card; qwen36-27b-qb2 runs the first 80 against its own
+                # local subset reference (catalog metadata).
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                # Terminal-Bench 2.1, the five-task QB2 subset in every mode.
+                task_name="terminal_bench_2_1",
                 workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
                 score=EvalTaskScore(
-                    published_score=59.3,
-                    published_score_ref="https://huggingface.co/Qwen/Qwen3.6-27B",
-                    gpu_reference_score=53.9,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/3359#issuecomment-4450842511",
+                    # The subset is not comparable to a full-set published score.
+                    published_score=None,
+                    published_score_ref=None,
+                    # CI gate on the 5-task subset: at least one solved, floor(5 * 20%)
+                    # = 1; min_correct keeps it at 1 when an errored trial shrinks n.
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=20.0,
+                            ref="CI gate: at least 1 of 5 tasks solved",
+                            tolerance=0.0,
+                            min_correct=1,
+                        ),
+                    },
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["accuracy"],
@@ -3155,16 +3239,18 @@ _eval_config_list = [
                     },
                 ),
                 agentic_eval_config=TerminalBenchEvalConfig(
-                    dataset="terminal-bench/terminal-bench-2",
+                    dataset="terminal-bench/terminal-bench-2-1",
                     agent="terminus-2",
                     n_concurrent_trials=5,
                     n_attempts=1,
-                    n_tasks=89,
-                    # The model card runs Terminal-Bench 2.0 with 32 CPUs / 48 GB RAM.
-                    # QB2 runners have 16 CPUs and Docker refuses a container asking for more.
-                    override_cpus=16,
-                    override_memory_mb=48 * 1024,
-                    agent_timeout_sec=3 * 60 * 60,
+                    n_tasks=5,
+                    task_names=list(_QB2_TERMINAL_BENCH_2_1_SUBSET),
+                    # 2 h per task, as on IFM/K2-Horizon-7B: the 5 tasks run as one
+                    # wave, so the slowest task sets the wall time.
+                    agent_timeout_sec=2 * 60 * 60,
+                    # The Qwen3.6 model-card Terminal-Bench harness (temperature 1.0, top_p
+                    # 0.95, top_k 20, 80K output, 256K context); thinking on explicitly,
+                    # since the qwen36-27b-qb2 server defaults it off.
                     agent_kwargs={
                         "parser_name": "json",
                         "temperature": 1.0,
@@ -3178,94 +3264,158 @@ _eval_config_list = [
                             "timeout": 60 * 60,
                             "extra_body": {
                                 "top_k": 20,
+                                "chat_template_kwargs": {"enable_thinking": True},
                             },
                         },
                     },
                     task_names_map={
-                        EvalLimitMode.CI_NIGHTLY: [
-                            "terminal-bench/break-filter-js-from-html",
-                            "terminal-bench/cobol-modernization",
-                            "terminal-bench/compile-compcert",
-                            "terminal-bench/feal-differential-cryptanalysis",
-                            "terminal-bench/qemu-startup",
-                        ],
+                        EvalLimitMode.CI_NIGHTLY: list(_QB2_TERMINAL_BENCH_2_1_SUBSET),
                     },
                 ),
                 limit_samples_map={
-                    EvalLimitMode.SMOKE_TEST: 5,
+                    EvalLimitMode.SMOKE_TEST: 2,
+                    EvalLimitMode.CI_NIGHTLY: 5,
                 },
             ),
-            # TODO: swe_bench_verified disabled due to timeouts from model limitations,
-            # re-enable once prefix cache or equivalent is enabled.
-            # timeout: https://github.com/tenstorrent/tt-shield/actions/runs/29363864010/job/87190489361#step:11:5880
-            # ticket to re-enable: https://github.com/tenstorrent/tt-inference-server/issues/4675
-            # EvalTask(
-            #     task_name="swe_bench_verified",
-            #     workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
-            #     score=EvalTaskScore(
-            #         published_score=77.2,
-            #         published_score_ref="https://huggingface.co/Qwen/Qwen3.6-27B",
-            #         gpu_reference_score=62.0,
-            #         gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/3359#issuecomment-4427941401",
-            #         score_func=score_task_single_key,
-            #         score_func_kwargs={
-            #             "result_keys": ["accuracy"],
-            #             "unit": "percent",
-            #         },
-            #     ),
-            #     agentic_eval_config=HarborEvalConfig(
-            #         dataset="swebench-verified",
-            #         agent="mini-swe-agent",
-            #         n_concurrent_trials=5,
-            #         n_attempts=1,
-            #         n_tasks=None,
-            #         agent_timeout_sec=2 * 60 * 60,
-            #         agent_kwargs={
-            #             "version": MINI_SWE_AGENT_VERSION,
-            #             # max output tokens is not specifed in Qwen docs btw
-            #             "max_tokens": 32 * 1024,
-            #             "config": {
-            #                 "model": {
-            #                     "model_kwargs": {
-            #                         "temperature": 1.0,
-            #                         "top_p": 0.95,
-            #                         "extra_body": {"top_k": 20},
-            #                     }
-            #                 }
-            #             },
-            #         },
-            #         task_names_map={
-            #             EvalLimitMode.CI_NIGHTLY: [
-            #                 "django__django-11299",
-            #                 "astropy__astropy-14096",
-            #                 "matplotlib__matplotlib-25332",
-            #                 "sympy__sympy-13551",
-            #                 "scikit-learn__scikit-learn-14629",
-            #             ],
-            #         },
-            #     ),
-            #     limit_samples_map={
-            #         EvalLimitMode.SMOKE_TEST: 5,
-            #     },
-            # ),
+            EvalTask(
+                # SWE-bench Verified, the five-instance QB2 subset in every mode.
+                task_name="swe_bench_verified",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    # The subset is not comparable to a full-set published score.
+                    published_score=None,
+                    published_score_ref=None,
+                    # CI gate on the 5-task subset: at least one solved, floor(5 * 20%)
+                    # = 1; min_correct keeps it at 1 when an errored trial shrinks n.
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=20.0,
+                            ref="CI gate: at least 1 of 5 tasks solved",
+                            tolerance=0.0,
+                            min_correct=1,
+                        ),
+                    },
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=HarborEvalConfig(
+                    dataset="swebench-verified",
+                    agent="mini-swe-agent",
+                    n_concurrent_trials=5,
+                    n_attempts=1,
+                    n_tasks=5,
+                    task_names=list(_QB2_SWE_BENCH_VERIFIED_SUBSET),
+                    agent_timeout_sec=3 * 60 * 60,
+                    llm_timeout_sec=60 * 60,
+                    agent_kwargs={
+                        "version": MINI_SWE_AGENT_VERSION,
+                        "max_tokens": 32 * 1024,
+                        "config": {
+                            "model": {
+                                "model_kwargs": {
+                                    "temperature": 1.0,
+                                    "top_p": 0.95,
+                                    "extra_body": {
+                                        "top_k": 20,
+                                        "chat_template_kwargs": {
+                                            "enable_thinking": True
+                                        },
+                                    },
+                                }
+                            }
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: list(_QB2_SWE_BENCH_VERIFIED_SUBSET),
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 2,
+                    EvalLimitMode.CI_NIGHTLY: 5,
+                },
+            ),
         ],
     ),
-    # Quetzal (impl=quetzal) candidate on P300X2; task family and harness as Qwen/Qwen3.6-27B. Published score from
-    # this checkpoint's model card (revision 995ad96e), Coding Agent table, Terminal-Bench 2.0 column Qwen3.6-35BA3B;
-    # the card's footnote states the same harness (Harbor/Terminus-2, 3 h timeout, temp 1.0, top_p 0.95, top_k 20,
-    # max_tokens 80K, 256K ctx). GPU reference TBD. swe_bench_verified (card: 73.4) stays disabled as on Qwen3.6-27B
-    # (https://github.com/tenstorrent/tt-inference-server/issues/4675).
+    # Qwen/Qwen3.6-35B-A3B (qwen36-35b-a3b-qb2): GPQA Diamond plus the five-task Terminal-Bench
+    # 2.1 and SWE-bench Verified subsets of the QB2 agentic-models configs, each gated at 1 of 5
+    # in CI.
     EvalConfig(
         hf_model_repo="Qwen/Qwen3.6-35B-A3B",
         tasks=[
+            # The bring-up's GPQA Diamond setting (168/198 = 84.8, thinking on, card sampling
+            # incl. presence_penalty 1.5). max_gen_toks is the full 262144 context minus ~2K
+            # for the GPQA prompt and chat template (the server 400s when prompt + output
+            # exceed max_model_len).
             EvalTask(
-                task_name="terminal_bench_2",
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    # Without a limit mode: graded against the card at 0.95 x card.
+                    published_score=86.0,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3.6-35B-A3B",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    # ci-nightly runs the first 40 questions (lm-eval --limit, dataset order)
+                    # against the local QB2 accuracy on exactly those questions; tolerance
+                    # 0.10 keeps P(fail) under 5% for a binomial at the local rate.
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=88.8,
+                            ref="local QB2 GPQA on the first 40 questions: 71/80 over 2 runs; needs 31/40",
+                            tolerance=0.10,
+                        ),
+                    },
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                thinking=True,
+                model_kwargs={
+                    "max_length": 262144,
+                    "timeout": 28800,
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 254 * 1024,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                    "top_k": 20,
+                    "presence_penalty": 1.5,
+                },
+                # ci-nightly: the first 40 questions; all 198 without a limit mode.
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 40,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                # Terminal-Bench 2.1, the five-task QB2 subset in every mode.
+                task_name="terminal_bench_2_1",
                 workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
                 score=EvalTaskScore(
-                    published_score=51.5,
-                    published_score_ref="https://huggingface.co/Qwen/Qwen3.6-35B-A3B (Coding Agent table, Terminal-Bench 2.0)",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    # The subset is not comparable to a full-set published score.
+                    published_score=None,
+                    published_score_ref=None,
+                    # CI gate on the 5-task subset: at least one solved, floor(5 * 20%)
+                    # = 1; min_correct keeps it at 1 when an errored trial shrinks n.
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=20.0,
+                            ref="CI gate: at least 1 of 5 tasks solved",
+                            tolerance=0.0,
+                            min_correct=1,
+                        ),
+                    },
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["accuracy"],
@@ -3273,16 +3423,18 @@ _eval_config_list = [
                     },
                 ),
                 agentic_eval_config=TerminalBenchEvalConfig(
-                    dataset="terminal-bench/terminal-bench-2",
+                    dataset="terminal-bench/terminal-bench-2-1",
                     agent="terminus-2",
                     n_concurrent_trials=5,
                     n_attempts=1,
-                    n_tasks=89,
-                    # The model card runs Terminal-Bench 2.0 with 32 CPUs / 48 GB RAM.
-                    # QB2 runners have 16 CPUs and Docker refuses a container asking for more.
-                    override_cpus=16,
-                    override_memory_mb=48 * 1024,
-                    agent_timeout_sec=3 * 60 * 60,
+                    n_tasks=5,
+                    task_names=list(_QB2_TERMINAL_BENCH_2_1_SUBSET),
+                    # 2 h per task, as on IFM/K2-Horizon-7B: the 5 tasks run as one
+                    # wave, so the slowest task sets the wall time.
+                    agent_timeout_sec=2 * 60 * 60,
+                    # The Qwen3.6 model-card Terminal-Bench harness (temperature 1.0, top_p
+                    # 0.95, top_k 20, 80K output, 256K context); thinking on explicitly,
+                    # since the qwen36-27b-qb2 server defaults it off.
                     agent_kwargs={
                         "parser_name": "json",
                         "temperature": 1.0,
@@ -3296,21 +3448,77 @@ _eval_config_list = [
                             "timeout": 60 * 60,
                             "extra_body": {
                                 "top_k": 20,
+                                "chat_template_kwargs": {"enable_thinking": True},
                             },
                         },
                     },
                     task_names_map={
-                        EvalLimitMode.CI_NIGHTLY: [
-                            "terminal-bench/break-filter-js-from-html",
-                            "terminal-bench/cobol-modernization",
-                            "terminal-bench/compile-compcert",
-                            "terminal-bench/feal-differential-cryptanalysis",
-                            "terminal-bench/qemu-startup",
-                        ],
+                        EvalLimitMode.CI_NIGHTLY: list(_QB2_TERMINAL_BENCH_2_1_SUBSET),
                     },
                 ),
                 limit_samples_map={
-                    EvalLimitMode.SMOKE_TEST: 5,
+                    EvalLimitMode.SMOKE_TEST: 2,
+                    EvalLimitMode.CI_NIGHTLY: 5,
+                },
+            ),
+            EvalTask(
+                # SWE-bench Verified, the five-instance QB2 subset in every mode.
+                task_name="swe_bench_verified",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    # The subset is not comparable to a full-set published score.
+                    published_score=None,
+                    published_score_ref=None,
+                    # CI gate on the 5-task subset: at least one solved, floor(5 * 20%)
+                    # = 1; min_correct keeps it at 1 when an errored trial shrinks n.
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=20.0,
+                            ref="CI gate: at least 1 of 5 tasks solved",
+                            tolerance=0.0,
+                            min_correct=1,
+                        ),
+                    },
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=HarborEvalConfig(
+                    dataset="swebench-verified",
+                    agent="mini-swe-agent",
+                    n_concurrent_trials=5,
+                    n_attempts=1,
+                    n_tasks=5,
+                    task_names=list(_QB2_SWE_BENCH_VERIFIED_SUBSET),
+                    agent_timeout_sec=3 * 60 * 60,
+                    llm_timeout_sec=60 * 60,
+                    agent_kwargs={
+                        "version": MINI_SWE_AGENT_VERSION,
+                        "max_tokens": 32 * 1024,
+                        "config": {
+                            "model": {
+                                "model_kwargs": {
+                                    "temperature": 1.0,
+                                    "top_p": 0.95,
+                                    "extra_body": {
+                                        "top_k": 20,
+                                        "chat_template_kwargs": {
+                                            "enable_thinking": True
+                                        },
+                                    },
+                                }
+                            }
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: list(_QB2_SWE_BENCH_VERIFIED_SUBSET),
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 2,
+                    EvalLimitMode.CI_NIGHTLY: 5,
                 },
             ),
         ],
@@ -12527,6 +12735,691 @@ _eval_config_list = [
             ),
         ],
     ),
+    # ornith-ai/Ornith-1.5-9B (ornith15-9b-qb2): GPQA Diamond plus the five-task Terminal-Bench
+    # 2.1 and SWE-bench Verified subsets of the QB2 agentic-models configs, each gated at 1 of 5
+    # in CI. The server defaults enable_thinking=false, so every task turns it on.
+    EvalConfig(
+        hf_model_repo="ornith-ai/Ornith-1.5-9B",
+        tasks=[
+            # Model-card general sampling (T 1.0, top_p 0.95, top_k 20, presence 1.5), thinking
+            # on, 131072-token generation cap (bring-up 87.5 mean; a 32K cap scores ~81).
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                capture_reasoning=True,
+                score=EvalTaskScore(
+                    # Without a limit mode: graded against the card at 0.95 x card.
+                    published_score=86.4,
+                    published_score_ref="https://huggingface.co/ornith-ai/Ornith-1.5-9B (GPQA Diamond, avg of 5 runs)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    # ci-nightly runs the first 40 questions (lm-eval --limit, dataset order)
+                    # against the local QB2 accuracy on exactly those questions; tolerance
+                    # 0.10 keeps P(fail) under 5% for a binomial at the local rate.
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=87.5,
+                            ref="local QB2 GPQA on the first 40 questions: 105/120 over 3 runs; needs 31/40",
+                            tolerance=0.10,
+                        ),
+                    },
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                max_concurrent=32,
+                use_chat_api=True,
+                thinking=True,
+                model_kwargs={
+                    "max_length": 262144,
+                    "timeout": 14400,
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 131072,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                    "presence_penalty": 1.5,
+                },
+                # ci-nightly: the first 40 questions; all 198 without a limit mode.
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 40,
+                    EvalLimitMode.SMOKE_TEST: 2,
+                },
+            ),
+            EvalTask(
+                # Terminal-Bench 2.1, the five-task QB2 subset in every mode.
+                task_name="terminal_bench_2_1",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    # The subset is not comparable to a full-set published score.
+                    published_score=None,
+                    published_score_ref=None,
+                    # CI gate on the 5-task subset: at least one solved, floor(5 * 20%)
+                    # = 1; min_correct keeps it at 1 when an errored trial shrinks n.
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=20.0,
+                            ref="CI gate: at least 1 of 5 tasks solved",
+                            tolerance=0.0,
+                            min_correct=1,
+                        ),
+                    },
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="terminal-bench/terminal-bench-2-1",
+                    agent="terminus-2",
+                    n_concurrent_trials=5,
+                    n_attempts=1,
+                    n_tasks=5,
+                    task_names=list(_QB2_TERMINAL_BENCH_2_1_SUBSET),
+                    # 2 h per task, as on IFM/K2-Horizon-7B: the 5 tasks run as one
+                    # wave, so the slowest task sets the wall time.
+                    agent_timeout_sec=2 * 60 * 60,
+                    # Model-card coding sampling (temperature 0.6, top_p 0.95, top_k 20,
+                    # presence 0), thinking on (the server defaults it off).
+                    agent_kwargs={
+                        "parser_name": "json",
+                        "temperature": 0.6,
+                        "model_info": {
+                            "max_input_tokens": 224 * 1024,
+                            "max_output_tokens": 32 * 1024,
+                        },
+                        "llm_kwargs": {
+                            "top_p": 0.95,
+                            "presence_penalty": 0.0,
+                            "max_tokens": 32 * 1024,
+                            "timeout": 60 * 60,
+                            "extra_body": {
+                                "top_k": 20,
+                                "chat_template_kwargs": {"enable_thinking": True},
+                            },
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: list(_QB2_TERMINAL_BENCH_2_1_SUBSET),
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 2,
+                    EvalLimitMode.CI_NIGHTLY: 5,
+                },
+            ),
+            EvalTask(
+                # SWE-bench Verified, the five-instance QB2 subset in every mode.
+                task_name="swe_bench_verified",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    # The subset is not comparable to a full-set published score.
+                    published_score=None,
+                    published_score_ref=None,
+                    # CI gate on the 5-task subset: at least one solved, floor(5 * 20%)
+                    # = 1; min_correct keeps it at 1 when an errored trial shrinks n.
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=20.0,
+                            ref="CI gate: at least 1 of 5 tasks solved",
+                            tolerance=0.0,
+                            min_correct=1,
+                        ),
+                    },
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=HarborEvalConfig(
+                    dataset="swebench-verified",
+                    agent="mini-swe-agent",
+                    n_concurrent_trials=5,
+                    n_attempts=1,
+                    n_tasks=5,
+                    task_names=list(_QB2_SWE_BENCH_VERIFIED_SUBSET),
+                    agent_timeout_sec=3 * 60 * 60,
+                    llm_timeout_sec=60 * 60,
+                    agent_kwargs={
+                        "version": MINI_SWE_AGENT_VERSION,
+                        "max_tokens": 32 * 1024,
+                        "config": {
+                            "model": {
+                                "model_kwargs": {
+                                    "temperature": 0.6,
+                                    "top_p": 0.95,
+                                    "presence_penalty": 0.0,
+                                    "extra_body": {
+                                        "top_k": 20,
+                                        "chat_template_kwargs": {
+                                            "enable_thinking": True
+                                        },
+                                    },
+                                }
+                            }
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: list(_QB2_SWE_BENCH_VERIFIED_SUBSET),
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 2,
+                    EvalLimitMode.CI_NIGHTLY: 5,
+                },
+            ),
+        ],
+    ),
+    # ornith-ai/Ornith-1.5-35B-A3B (ornith15-35b-a3b-qb2): GPQA Diamond plus the five-task
+    # Terminal-Bench 2.1 and SWE-bench Verified subsets of the QB2 agentic-models configs, each
+    # gated at 1 of 5 in CI.
+    EvalConfig(
+        hf_model_repo="ornith-ai/Ornith-1.5-35B-A3B",
+        tasks=[
+            # The bring-up's GPQA Diamond setting (186/198 = 93.9, thinking on, card sampling,
+            # 0 truncations; a 32K cap would truncate 26/198). Long answers (max 248,568 tokens)
+            # at ~12 tok/s/user: the full set takes ~8 h. max_gen_toks is the full 262144
+            # context minus ~2K for the GPQA prompt and chat template (the server 400s when
+            # prompt + output exceed max_model_len).
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    # Without a limit mode: graded against the card at 0.95 x card.
+                    published_score=89.2,
+                    published_score_ref="https://huggingface.co/ornith-ai/Ornith-1.5-35B-A3B",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    # ci-nightly runs the first 40 questions (lm-eval --limit, dataset order)
+                    # against the local QB2 accuracy on exactly those questions; tolerance
+                    # 0.10 keeps P(fail) under 5% for a binomial at the local rate.
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=95.0,
+                            ref="local QB2 GPQA on the first 40 questions: 38/40, 1 run; needs 34/40",
+                            tolerance=0.10,
+                        ),
+                    },
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                thinking=True,
+                model_kwargs={
+                    "max_length": 262144,
+                    "timeout": 28800,
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 254 * 1024,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                    "top_k": 20,
+                },
+                # ci-nightly: the first 40 questions; all 198 without a limit mode.
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 40,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                # Terminal-Bench 2.1, the five-task QB2 subset in every mode.
+                task_name="terminal_bench_2_1",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    # The subset is not comparable to a full-set published score.
+                    published_score=None,
+                    published_score_ref=None,
+                    # CI gate on the 5-task subset: at least one solved, floor(5 * 20%)
+                    # = 1; min_correct keeps it at 1 when an errored trial shrinks n.
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=20.0,
+                            ref="CI gate: at least 1 of 5 tasks solved",
+                            tolerance=0.0,
+                            min_correct=1,
+                        ),
+                    },
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="terminal-bench/terminal-bench-2-1",
+                    agent="terminus-2",
+                    n_concurrent_trials=5,
+                    n_attempts=1,
+                    n_tasks=5,
+                    task_names=list(_QB2_TERMINAL_BENCH_2_1_SUBSET),
+                    # 2 h per task, as on IFM/K2-Horizon-7B: the 5 tasks run as one
+                    # wave, so the slowest task sets the wall time.
+                    agent_timeout_sec=2 * 60 * 60,
+                    # Model-card coding sampling (temperature 0.6, top_p 0.95, top_k 20,
+                    # presence 0), thinking on (the server defaults it off).
+                    agent_kwargs={
+                        "parser_name": "json",
+                        "temperature": 0.6,
+                        "model_info": {
+                            "max_input_tokens": 224 * 1024,
+                            "max_output_tokens": 32 * 1024,
+                        },
+                        "llm_kwargs": {
+                            "top_p": 0.95,
+                            "presence_penalty": 0.0,
+                            "max_tokens": 32 * 1024,
+                            "timeout": 60 * 60,
+                            "extra_body": {
+                                "top_k": 20,
+                                "chat_template_kwargs": {"enable_thinking": True},
+                            },
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: list(_QB2_TERMINAL_BENCH_2_1_SUBSET),
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 2,
+                    EvalLimitMode.CI_NIGHTLY: 5,
+                },
+            ),
+            EvalTask(
+                # SWE-bench Verified, the five-instance QB2 subset in every mode.
+                task_name="swe_bench_verified",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    # The subset is not comparable to a full-set published score.
+                    published_score=None,
+                    published_score_ref=None,
+                    # CI gate on the 5-task subset: at least one solved, floor(5 * 20%)
+                    # = 1; min_correct keeps it at 1 when an errored trial shrinks n.
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=20.0,
+                            ref="CI gate: at least 1 of 5 tasks solved",
+                            tolerance=0.0,
+                            min_correct=1,
+                        ),
+                    },
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=HarborEvalConfig(
+                    dataset="swebench-verified",
+                    agent="mini-swe-agent",
+                    n_concurrent_trials=5,
+                    n_attempts=1,
+                    n_tasks=5,
+                    task_names=list(_QB2_SWE_BENCH_VERIFIED_SUBSET),
+                    agent_timeout_sec=3 * 60 * 60,
+                    llm_timeout_sec=60 * 60,
+                    agent_kwargs={
+                        "version": MINI_SWE_AGENT_VERSION,
+                        "max_tokens": 32 * 1024,
+                        "config": {
+                            "model": {
+                                "model_kwargs": {
+                                    "temperature": 0.6,
+                                    "top_p": 0.95,
+                                    "presence_penalty": 0.0,
+                                    "extra_body": {
+                                        "top_k": 20,
+                                        "chat_template_kwargs": {
+                                            "enable_thinking": True
+                                        },
+                                    },
+                                }
+                            }
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: list(_QB2_SWE_BENCH_VERIFIED_SUBSET),
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 2,
+                    EvalLimitMode.CI_NIGHTLY: 5,
+                },
+            ),
+        ],
+    ),
+    # nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16 (nemotron35-lightning-qb2): GPQA
+    # Diamond plus the five-task Terminal-Bench 2.1 and SWE-bench Verified subsets of the QB2
+    # agentic-models configs, each gated at 1 of 5 in CI.
+    EvalConfig(
+        hf_model_repo="nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16",
+        tasks=[
+            # The bring-up's GPQA Diamond setting (76.09 mean of 3 runs, thinking on, card
+            # sampling T 1.0 / top_p 0.95 with top_k unset, 0 truncations, max answer 74.2K
+            # tokens). The server defaults enable_thinking=false; thinking=True turns it on.
+            # max_gen_toks is the full 262144 context minus ~2K for the GPQA prompt and chat
+            # template (the server 400s when prompt + output exceed max_model_len).
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    # Without a limit mode: graded against the card at 0.95 x card.
+                    published_score=75.44,
+                    published_score_ref="https://huggingface.co/nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    # ci-nightly runs the first 80 questions (lm-eval --limit, dataset order)
+                    # against the local QB2 accuracy on exactly those questions; tolerance
+                    # 0.10 keeps P(fail) under 5% for a binomial at the local rate.
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=81.7,
+                            ref="local QB2 GPQA on the first 80 questions: 196/240 over 3 runs; needs 58/80",
+                            tolerance=0.10,
+                        ),
+                    },
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                thinking=True,
+                model_kwargs={
+                    "max_length": 262144,
+                    "timeout": 28800,
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 254 * 1024,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                },
+                # ci-nightly: the first 80 questions; all 198 without a limit mode.
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 80,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                # Terminal-Bench 2.1, the five-task QB2 subset in every mode.
+                task_name="terminal_bench_2_1",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    # The subset is not comparable to a full-set published score.
+                    published_score=None,
+                    published_score_ref=None,
+                    # CI gate on the 5-task subset: at least one solved, floor(5 * 20%)
+                    # = 1; min_correct keeps it at 1 when an errored trial shrinks n.
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=20.0,
+                            ref="CI gate: at least 1 of 5 tasks solved",
+                            tolerance=0.0,
+                            min_correct=1,
+                        ),
+                    },
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="terminal-bench/terminal-bench-2-1",
+                    agent="terminus-2",
+                    n_concurrent_trials=5,
+                    n_attempts=1,
+                    n_tasks=5,
+                    # Nemotron runs its own five tasks, the set its bring-up ran
+                    # locally: 2/5 in both rounds (fix-git and crack-7z-hash solved
+                    # each time, 0 timeouts, about 2 h for all five run one at a time).
+                    # On the shared subset with Ornith sampling it solved 0/5 (run
+                    # 45834526097: three near misses, two 2 h timeouts).
+                    task_names=list(_QB2_NEMOTRON_TERMINAL_BENCH_2_1_SUBSET),
+                    # 2 h per task, as on IFM/K2-Horizon-7B: the 5 tasks run as one
+                    # wave, so the slowest task sets the wall time.
+                    agent_timeout_sec=2 * 60 * 60,
+                    # Model-card sampling as in the local runs (temperature 1.0,
+                    # top_p 0.95, top_k unset), thinking on (the server defaults it
+                    # off) and force_nonempty_content so a turn never ends with only
+                    # reasoning and no JSON for terminus-2 to parse.
+                    agent_kwargs={
+                        "parser_name": "json",
+                        "temperature": 1.0,
+                        "model_info": {
+                            "max_input_tokens": 192 * 1024,
+                            "max_output_tokens": 64 * 1024,
+                        },
+                        "llm_kwargs": {
+                            "top_p": 0.95,
+                            "max_tokens": 64 * 1024,
+                            "timeout": 60 * 60,
+                            "extra_body": {
+                                "chat_template_kwargs": {
+                                    "enable_thinking": True,
+                                    "force_nonempty_content": True,
+                                },
+                            },
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: list(
+                            _QB2_NEMOTRON_TERMINAL_BENCH_2_1_SUBSET
+                        ),
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 2,
+                    EvalLimitMode.CI_NIGHTLY: 5,
+                },
+            ),
+            EvalTask(
+                # SWE-bench Verified, the five-instance QB2 subset in every mode.
+                task_name="swe_bench_verified",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    # The subset is not comparable to a full-set published score.
+                    published_score=None,
+                    published_score_ref=None,
+                    # CI gate on the 5-task subset: at least one solved, floor(5 * 20%)
+                    # = 1; min_correct keeps it at 1 when an errored trial shrinks n.
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=20.0,
+                            ref="CI gate: at least 1 of 5 tasks solved",
+                            tolerance=0.0,
+                            min_correct=1,
+                        ),
+                    },
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=HarborEvalConfig(
+                    dataset="swebench-verified",
+                    agent="mini-swe-agent",
+                    n_concurrent_trials=5,
+                    n_attempts=1,
+                    n_tasks=5,
+                    task_names=list(_QB2_SWE_BENCH_VERIFIED_SUBSET),
+                    agent_timeout_sec=3 * 60 * 60,
+                    llm_timeout_sec=60 * 60,
+                    agent_kwargs={
+                        "version": MINI_SWE_AGENT_VERSION,
+                        "max_tokens": 32 * 1024,
+                        "config": {
+                            "model": {
+                                "model_kwargs": {
+                                    "temperature": 0.6,
+                                    "top_p": 0.95,
+                                    "presence_penalty": 0.0,
+                                    "extra_body": {
+                                        "top_k": 20,
+                                        "chat_template_kwargs": {
+                                            "enable_thinking": True
+                                        },
+                                    },
+                                }
+                            }
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: list(_QB2_SWE_BENCH_VERIFIED_SUBSET),
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 2,
+                    EvalLimitMode.CI_NIGHTLY: 5,
+                },
+            ),
+        ],
+    ),
+    # IFM/K2-Horizon-MoVA-36B-A4B (TP4/EP4, P300X2): GPQA Diamond (evals workflow) and a
+    # 5-task Terminal-Bench 2.1 subset (agentic workflow, --ci-mode). Model-card settings:
+    # reasoning_effort=high (the chat template default), temperature 1.0, top_p 0.95; 32768
+    # output tokens as in the card's HF example.
+    EvalConfig(
+        hf_model_repo="IFM/K2-Horizon-MoVA-36B-A4B",
+        tasks=[
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    published_score=80.8,
+                    published_score_ref="https://huggingface.co/IFM/K2-Horizon-MoVA-36B-A4B#benchmark-results",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    # ci-nightly runs the first 40 questions (lm-eval --limit, dataset order)
+                    # against this model's QB2 CI accuracy on exactly those questions;
+                    # tolerance 0.10 keeps P(fail) under 5% for a binomial at that rate.
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=80.0,
+                            ref="QB2 CI GPQA on the first 40 questions: 32/40 (tt-shield run 45616714055, 160/198 on the full set); needs 28/40",
+                            tolerance=0.10,
+                        ),
+                    },
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                model_kwargs={
+                    "max_length": 524288,
+                    # A 32768-token answer at 32 users (~20 tok/s/user) takes ~30 min;
+                    # the margin covers queueing when the KV pool is full.
+                    "timeout": 14400,
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 32768,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                },
+                # ci-nightly: the first 40 questions; all 198 with run-full-evals (no --ci-mode).
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 40,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                # Terminal-Bench 2.1 with terminus-2 (JSON-in-text actions, no server tool
+                # parser), set up as the K2-Horizon-7B row: dispatch the agentic workflow
+                # with --ci-mode for its 5-task subset only.
+                task_name="terminal_bench_2_1",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    # The 5-task CI subset is not comparable to a full-set score.
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=20.0,
+                            ref="CI gate: at least 1 of 5 tasks solved",
+                            tolerance=0.0,
+                            min_correct=1,
+                        ),
+                    },
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="terminal-bench/terminal-bench-2-1",
+                    agent="terminus-2",
+                    # 5 tasks at 5 concurrent: one wave, the slowest task sets the wall time.
+                    n_concurrent_trials=5,
+                    n_attempts=1,
+                    n_tasks=89,
+                    agent_timeout_sec=2 * 60 * 60,
+                    # Model-card sampling (temperature 1.0, top_p 0.95), host-sampled; 128K
+                    # input plus 32K output; prefix caching serves the repeated history.
+                    agent_kwargs={
+                        "parser_name": "json",
+                        "temperature": 1.0,
+                        # The MoVA chat template rejects assistant history turns without a
+                        # thinking field, so feed reasoning_content back into the history.
+                        "interleaved_thinking": True,
+                        "model_info": {
+                            "max_input_tokens": 128 * 1024,
+                            "max_output_tokens": 32 * 1024,
+                        },
+                        "llm_kwargs": {
+                            "top_p": 0.95,
+                            "max_tokens": 32 * 1024,
+                            "timeout": 60 * 60,
+                        },
+                    },
+                    # The K2-Horizon-7B CI subset (tasks it usually finishes in about an hour).
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "terminal-bench/fix-git",
+                            "terminal-bench/break-filter-js-from-html",
+                            "terminal-bench/crack-7z-hash",
+                            "terminal-bench/nginx-request-logging",
+                            "terminal-bench/overfull-hbox",
+                        ],
+                    },
+                ),
+                limit_samples_map={EvalLimitMode.SMOKE_TEST: 5},
+            ),
+        ],
+    ),
     EvalConfig(
         hf_model_repo="google/gemma-4-26B-A4B-it",
         tasks=[
@@ -13838,3 +14731,150 @@ EVAL_CONFIGS = {
 # RequirementsTargetPack._find_task_template) read this instead, so dropping a
 # task from one model's run set cannot make it unreachable catalog-wide.
 ALL_EVAL_CONFIGS = _eval_config_map
+
+
+def _gemma4_12b_qb2_agentic_tasks() -> List[EvalTask]:
+    """Terminal-Bench 2.1 and SWE-bench Verified five-task QB2 subsets for gemma4_12b_qb2.
+
+    The same subsets and >= 1/5 gates as the other QB2 agentic-models profiles, with the
+    sampling of the shared gemma-4-12B-it Terminal-Bench 2 task (T 1.0, top_p 0.95,
+    top_k 20, thinking on per request, 96K input / 32K output). On that task's full
+    89-task CI run (tt-shield 45719501496) this profile solved 4 of the 5 Terminal-Bench
+    subset tasks (TB 2.0 versions): openssl-selfsigned-cert, fix-git,
+    nginx-request-logging and overfull-hbox; sqlite-db-truncate failed.
+    """
+    one_of_five = {
+        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+            score=20.0,
+            ref="CI gate: at least 1 of 5 tasks solved",
+            tolerance=0.0,
+            min_correct=1,
+        ),
+    }
+    sampling = {
+        "top_p": 0.95,
+        "extra_body": {
+            "top_k": 20,
+            "chat_template_kwargs": {"enable_thinking": True},
+        },
+    }
+    return [
+        EvalTask(
+            task_name="terminal_bench_2_1",
+            workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+            score=EvalTaskScore(
+                # The subset is not comparable to a full-set published score.
+                published_score=None,
+                published_score_ref=None,
+                mode_reference_scores=dict(one_of_five),
+                score_func=score_task_single_key,
+                score_func_kwargs={"result_keys": ["accuracy"], "unit": "percent"},
+            ),
+            agentic_eval_config=TerminalBenchEvalConfig(
+                dataset="terminal-bench/terminal-bench-2-1",
+                agent="terminus-2",
+                n_concurrent_trials=5,
+                n_attempts=1,
+                n_tasks=5,
+                task_names=list(_QB2_TERMINAL_BENCH_2_1_SUBSET),
+                agent_timeout_sec=2 * 60 * 60,
+                agent_kwargs={
+                    "parser_name": "json",
+                    "temperature": 1.0,
+                    "model_info": {
+                        "max_input_tokens": 96 * 1024,
+                        "max_output_tokens": 32 * 1024,
+                    },
+                    "llm_kwargs": {
+                        **sampling,
+                        "max_tokens": 32 * 1024,
+                        "timeout": 60 * 60,
+                    },
+                },
+                task_names_map={
+                    EvalLimitMode.CI_NIGHTLY: list(_QB2_TERMINAL_BENCH_2_1_SUBSET),
+                },
+            ),
+            limit_samples_map={
+                EvalLimitMode.SMOKE_TEST: 2,
+                EvalLimitMode.CI_NIGHTLY: 5,
+            },
+        ),
+        EvalTask(
+            task_name="swe_bench_verified",
+            workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+            score=EvalTaskScore(
+                published_score=None,
+                published_score_ref=None,
+                mode_reference_scores=dict(one_of_five),
+                score_func=score_task_single_key,
+                score_func_kwargs={"result_keys": ["accuracy"], "unit": "percent"},
+            ),
+            agentic_eval_config=HarborEvalConfig(
+                dataset="swebench-verified",
+                agent="mini-swe-agent",
+                n_concurrent_trials=5,
+                n_attempts=1,
+                n_tasks=5,
+                task_names=list(_QB2_SWE_BENCH_VERIFIED_SUBSET),
+                agent_timeout_sec=3 * 60 * 60,
+                llm_timeout_sec=60 * 60,
+                agent_kwargs={
+                    "version": MINI_SWE_AGENT_VERSION,
+                    "max_tokens": 32 * 1024,
+                    "config": {
+                        "model": {
+                            "model_kwargs": {"temperature": 1.0, **sampling},
+                        }
+                    },
+                },
+                task_names_map={
+                    EvalLimitMode.CI_NIGHTLY: list(_QB2_SWE_BENCH_VERIFIED_SUBSET),
+                },
+            ),
+            limit_samples_map={
+                EvalLimitMode.SMOKE_TEST: 2,
+                EvalLimitMode.CI_NIGHTLY: 5,
+            },
+        ),
+    ]
+
+
+# Per-profile eval configs. A model spec selects one with the catalog metadata key
+# ``eval_config_variant: <name>``; for that profile it replaces the HF repo's shared
+# EvalConfig, so other implementations of the same checkpoint keep the shared one.
+EVAL_CONFIG_VARIANTS: Dict[str, EvalConfig] = {
+    # gemma4_12b_qb2: the shared gemma-4-12B-it lm-eval tasks (its GPQA / LiveCodeBench
+    # gates come from eval_task_score_overrides), with the QB2 five-task agentic subsets
+    # in place of the shared 24-task Terminal-Bench 2 wave.
+    "gemma4-12b-qb2": EvalConfig(
+        hf_model_repo="google/gemma-4-12B-it",
+        tasks=[
+            t
+            for t in _eval_config_map["google/gemma-4-12B-it"].tasks
+            if t.workflow_venv_type != WorkflowVenvType.EVALS_AGENTIC
+        ]
+        + _gemma4_12b_qb2_agentic_tasks(),
+    ),
+}
+
+
+def resolve_eval_config(hf_model_repo: str, model_spec: Any = None):
+    """The EvalConfig a run of ``model_spec`` uses: its variant if it names one, else the repo's."""
+    metadata = getattr(model_spec, "metadata", None) or {}
+    variant = (
+        metadata.get("eval_config_variant") if isinstance(metadata, dict) else None
+    )
+    if variant:
+        cfg = EVAL_CONFIG_VARIANTS.get(variant)
+        if cfg is None:
+            raise ValueError(
+                f"eval_config_variant {variant!r} of "
+                f"{getattr(model_spec, 'model_name', hf_model_repo)} is not in EVAL_CONFIG_VARIANTS"
+            )
+        if cfg.hf_model_repo != hf_model_repo:
+            raise ValueError(
+                f"eval_config_variant {variant!r} is for {cfg.hf_model_repo}, not {hf_model_repo}"
+            )
+        return cfg
+    return EVAL_CONFIGS.get(hf_model_repo)

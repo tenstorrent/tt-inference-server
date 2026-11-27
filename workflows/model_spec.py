@@ -461,6 +461,15 @@ kolibri_1_qb2_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/autoports/aleph_alpha_kolibri_1_bf16",
 )
+# google/gemma-4-12B-it TP4 on QB2 served from the tenstorrent/agentic-models package
+# gemma_4_12b_it (architecture TTGemma4_12BQB2ForCausalLM, registered from the package's
+# vllm_metadata.json through EXTRA_MODELS_DIR), produced by the tt-model-bringup pipeline.
+gemma4_12b_qb2_impl = ImplSpec(
+    impl_id="gemma4_12b_qb2",
+    impl_name="gemma4-12b-qb2",
+    repo_url="https://github.com/tenstorrent/agentic-models",
+    code_path="src/agentic_models/models/gemma_4_12b_it/vllm",
+)
 # C++ Blaze media server. Remote SUPER_CLUSTER catalog entries use this.
 blaze_impl = ImplSpec(
     impl_id="blaze",
@@ -477,6 +486,55 @@ k2_horizon_7b_qb2_impl = ImplSpec(
     impl_name="k2-horizon-7b-qb2",
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/k2_horizon_7b_qb2",
+)
+# IFM/K2-Horizon-MoVA-36B-A4B TP4/EP4 on QB2 served from the tenstorrent/agentic-models package
+# k2_horizon_mova_36b_a4b (architecture TTK2HorizonMoVAQB2ForCausalLM, registered from the
+# package's vllm_metadata.json through EXTRA_MODELS_DIR), produced by the tt-model-bringup pipeline.
+k2_horizon_mova_qb2_impl = ImplSpec(
+    impl_id="k2_horizon_mova_qb2",
+    impl_name="k2-horizon-mova-qb2",
+    repo_url="https://github.com/tenstorrent/agentic-models",
+    code_path="src/agentic_models/models/k2_horizon_mova_36b_a4b/vllm",
+)
+
+# Five QB2 (P300X2, 1x4 mesh) tt-model-bringup ports served from tenstorrent/agentic-models
+# packages (src/agentic_models/models/<package>/vllm). Each registers through
+# TT_MODEL_CLASS_OVERRIDES on the checkpoint's own TT-prefixed architecture (dev/llm.yaml),
+# not EXTRA_MODELS_DIR.
+# Qwen/Qwen3.6-35B-A3B TP4/EP4
+qwen36_35b_a3b_qb2_impl = ImplSpec(
+    impl_id="qwen36_35b_a3b_qb2",
+    impl_name="qwen36-35b-a3b-qb2",
+    repo_url="https://github.com/tenstorrent/agentic-models",
+    code_path="src/agentic_models/models/qwen3_6_35b_a3b/vllm",
+)
+# ornith-ai/Ornith-1.5-9B TP4
+ornith15_9b_qb2_impl = ImplSpec(
+    impl_id="ornith15_9b_qb2",
+    impl_name="ornith15-9b-qb2",
+    repo_url="https://github.com/tenstorrent/agentic-models",
+    code_path="src/agentic_models/models/ornith_1_5_9b/vllm",
+)
+# Qwen/Qwen3.6-27B TP4 (a separate code path from qwen36_blackhole)
+qwen36_27b_qb2_impl = ImplSpec(
+    impl_id="qwen36_27b_qb2",
+    impl_name="qwen36-27b-qb2",
+    repo_url="https://github.com/tenstorrent/agentic-models",
+    code_path="src/agentic_models/models/qwen3_6_27b/vllm",
+)
+# ornith-ai/Ornith-1.5-35B-A3B TP4/EP4
+ornith15_35b_a3b_qb2_impl = ImplSpec(
+    impl_id="ornith15_35b_a3b_qb2",
+    impl_name="ornith15-35b-a3b-qb2",
+    repo_url="https://github.com/tenstorrent/agentic-models",
+    code_path="src/agentic_models/models/ornith_1_5_35b_a3b/vllm",
+)
+# nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16 TP4
+nemotron35_lightning_qb2_impl = ImplSpec(
+    impl_id="nemotron35_lightning_qb2",
+    impl_name="nemotron35-lightning-qb2",
+    repo_url="https://github.com/tenstorrent/agentic-models",
+    code_path="src/agentic_models/models/nemotron_3_5_lightning_30b_a3b/vllm",
 )
 
 # meta-models/Muse-Glimmer-30B TP4 on QB2 under models/demos/muse_glimmer_30b_qb2,
@@ -552,11 +610,18 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "tt_transformers": tt_transformers_impl,
     "gemma4_dflash_contract": gemma4_dflash_contract_impl,
     "gemma4_31b_qb2": gemma4_31b_qb2_impl,
+    "gemma4_12b_qb2": gemma4_12b_qb2_impl,
     "gemma4_26b_a4b_qb2": gemma4_26b_a4b_qb2_impl,
     "granite42_30b_qb2": granite42_30b_qb2_impl,
     "qwen38_27b_qb2": qwen38_27b_qb2_impl,
     "kolibri_1_qb2": kolibri_1_qb2_impl,
     "k2_horizon_7b_qb2": k2_horizon_7b_qb2_impl,
+    "k2_horizon_mova_qb2": k2_horizon_mova_qb2_impl,
+    "qwen36_35b_a3b_qb2": qwen36_35b_a3b_qb2_impl,
+    "ornith15_9b_qb2": ornith15_9b_qb2_impl,
+    "qwen36_27b_qb2": qwen36_27b_qb2_impl,
+    "ornith15_35b_a3b_qb2": ornith15_35b_a3b_qb2_impl,
+    "nemotron35_lightning_qb2": nemotron35_lightning_qb2_impl,
     "muse_glimmer_30b_qb2": muse_glimmer_30b_qb2_impl,
     "glm53_flash": glm53_flash_impl,
     "glm53_flash_128k": glm53_flash_128k_impl,
