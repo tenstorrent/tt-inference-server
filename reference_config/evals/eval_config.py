@@ -13299,14 +13299,64 @@ _eval_config_list = [
             ),
         ],
     ),
-    # Nanbeige/Nanbeige4.3-33B (nanbeige43-33b-qb2): the five-task Terminal-Bench 2.1 and SWE-bench
-    # Verified subsets of the QB2 agentic-models configs, each gated at 1 of 5 in CI. GPQA Diamond is
-    # not configured until tt-shield dispatch carries an HF token (local QB2 reference: the first 40
-    # questions 36/40, which would gate at 32/40). The server defaults thinking on; the agents use the
-    # bring-up's agentic sampling (T 1.0, top_p 0.95, top_k unset, presence 0) within the 131072 context.
+    # Nanbeige/Nanbeige4.3-33B (nanbeige43-33b-qb2): GPQA Diamond plus the five-task Terminal-Bench
+    # 2.1 and SWE-bench Verified subsets of the QB2 agentic-models configs, each gated at 1 of 5 in
+    # CI. The server defaults thinking on; the agents use the bring-up's agentic sampling (T 1.0,
+    # top_p 0.95, top_k unset, presence 0) within the 131072 context.
     EvalConfig(
         hf_model_repo="Nanbeige/Nanbeige4.3-33B",
         tasks=[
+            EvalTask(
+                # Card sampling (T 0.6, top_p 0.95), thinking on (the server default), up to
+                # ~120K generated tokens as in the bring-up's local run.
+                task_name="r1_gpqa_diamond",
+                capture_reasoning=True,
+                score=EvalTaskScore(
+                    # Without a limit mode: graded against the card at 0.95 x card.
+                    published_score=89.5,
+                    published_score_ref="https://huggingface.co/Nanbeige/Nanbeige4.3-33B (GPQA Diamond)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    # ci-nightly runs the first 40 questions (lm-eval --limit, dataset order)
+                    # against the local QB2 accuracy on exactly those questions; tolerance
+                    # 0.10 keeps P(fail) under 5% for a binomial at the local rate.
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=90.0,
+                            ref="local QB2 GPQA on the first 40 questions: 36/40 (1 run, m5 2026-11-26); needs 32/40",
+                            tolerance=0.10,
+                        ),
+                    },
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                max_concurrent=16,
+                use_chat_api=True,
+                thinking=True,
+                model_kwargs={
+                    "max_length": 131072,
+                    "timeout": 14400,
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 120000,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 0.6,
+                    "top_p": 0.95,
+                },
+                # ci-nightly: the first 40 questions; all 198 without a limit mode.
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 40,
+                    EvalLimitMode.SMOKE_TEST: 2,
+                },
+            ),
             EvalTask(
                 # Terminal-Bench 2.1, the five-task QB2 subset in every mode.
                 task_name="terminal_bench_2_1",
