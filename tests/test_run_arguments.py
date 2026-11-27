@@ -30,6 +30,7 @@ from workflows.validate_setup import (
 from workflows.device_utils import _get_tt_smi_board_type_counts, infer_default_device
 from workflows.model_spec import get_runtime_model_spec
 from workflows.run_docker_server import (
+    format_docker_command,
     generate_docker_run_command,
     get_media_server_docker_env_vars,
 )
@@ -728,6 +729,41 @@ class TestModelSpecCliArgsCompatibility:
 
         assert args.quetzal_package_root == "/mnt/models/sha256-package"
 
+    def test_kernel_cache_dir_parsing(self, base_args, tmp_path):
+        """--kernel-cache-dir is off by default and stored as an absolute path."""
+        with patch("sys.argv", ["run.py"] + base_args + ["--docker-server"]):
+            args = parse_arguments()
+        assert args.kernel_cache_dir is None
+
+        cache_dir = tmp_path / "kernel_cache"
+        relative = os.path.relpath(cache_dir)
+        full_args = base_args + ["--docker-server", "--kernel-cache-dir", relative]
+        with patch("sys.argv", ["run.py"] + full_args):
+            args = parse_arguments()
+        assert args.kernel_cache_dir == str(cache_dir.resolve())
+
+    def test_kernel_cache_dir_requires_docker_server(self, base_args, capsys):
+        full_args = base_args + ["--kernel-cache-dir", "/tmp/kernel_cache"]
+        with patch("sys.argv", ["run.py"] + full_args):
+            with pytest.raises(SystemExit):
+                parse_arguments()
+        assert "--kernel-cache-dir requires --docker-server" in capsys.readouterr().err
+
+    def test_kernel_cache_dir_refuses_a_comma(
+        self, base_args, tmp_path, monkeypatch, capsys
+    ):
+        """A comma in the resolved path is refused, also one the current directory adds."""
+        folder = tmp_path / "a,b"
+        folder.mkdir()
+        monkeypatch.chdir(folder)
+        for value in (str(folder / "kernel_cache"), "kernel_cache"):
+            full_args = base_args + ["--docker-server", "--kernel-cache-dir", value]
+            with patch("sys.argv", ["run.py"] + full_args):
+                with pytest.raises(SystemExit):
+                    parse_arguments()
+            error = capsys.readouterr().err
+            assert "docker --mount separates its fields with commas" in error
+
     def test_service_port_defaults_to_443_for_https_server_url(self, base_args):
         """--server-url https://host without a port targets 443 by default."""
         full_args = base_args + ["--server-url", "https://example.com"]
@@ -1022,6 +1058,23 @@ class TestRuntimeValidation:
 
         with patch.dict("workflows.validate_setup.MODEL_SPECS", {}):
             validate_runtime_args(mock_model_spec, mock_runtime_config)
+
+    def test_kernel_cache_dir_rejected_for_multihost_device(
+        self, mock_model_spec, mock_runtime_config
+    ):
+        """The multi-host launch path does not mount the kernel cache."""
+        mock_runtime_config.workflow = "server"
+        mock_runtime_config.docker_server = True
+        mock_runtime_config.kernel_cache_dir = "/tmp/kernel_cache"
+        with patch.dict(
+            "workflows.validate_setup.MODEL_SPECS",
+            {mock_model_spec.model_id: mock_model_spec},
+        ):
+            validate_runtime_args(mock_model_spec, mock_runtime_config)
+
+            mock_runtime_config.device = "dual_galaxy"
+            with pytest.raises(ValueError, match="--kernel-cache-dir is not supported"):
+                validate_runtime_args(mock_model_spec, mock_runtime_config)
 
 
 class TestOverrideArgsIntegration:
@@ -1346,6 +1399,43 @@ class TestOverrideArgsIntegration:
                     assert not env_setting.startswith("CACHE_ROOT=")
                     assert not env_setting.startswith("TT_MODEL_SPEC_JSON_PATH=")
                     assert not env_setting.startswith("RUNTIME_MODEL_SPEC_JSON_PATH=")
+
+    def test_kernel_cache_dir_mounts_host_dir_as_tt_metal_cache(
+        self, mock_setup_config
+    ):
+        """--kernel-cache-dir adds a read-write bind mount and TT_METAL_CACHE; without it neither appears."""
+        mock_model_spec = self._make_mock_model_spec()
+        mock_runtime_config = self._make_mock_runtime_config()
+        container_dir = "/home/container_app_user/tt_metal_kernel_cache"
+        mount = f"type=bind,src=/host/kernel_cache,dst={container_dir}"
+        env_setting = f"TT_METAL_CACHE={container_dir}"
+
+        with patch(
+            "workflows.run_docker_server.get_repo_root_path", return_value=Path("/tmp")
+        ), patch("workflows.run_docker_server.DeviceTypes"), patch(
+            "workflows.run_docker_server.short_uuid", return_value="test123"
+        ):
+            default_command, _ = generate_docker_run_command(
+                mock_model_spec, mock_runtime_config, mock_setup_config
+            )
+            mock_runtime_config.kernel_cache_dir = "/host/kernel_cache"
+            docker_command, _ = generate_docker_run_command(
+                mock_model_spec, mock_runtime_config, mock_setup_config
+            )
+
+        assert not any(
+            container_dir in arg or arg.startswith("TT_METAL_CACHE=")
+            for arg in default_command
+        )
+        image_index = docker_command.index("test:image")
+        mount_index = docker_command.index(mount)
+        env_index = docker_command.index(env_setting)
+        assert docker_command[mount_index - 1] == "--mount"
+        assert docker_command[env_index - 1] == "-e"
+        assert mount_index < image_index and env_index < image_index
+        printed_command = format_docker_command(docker_command)
+        assert f"--mount {mount}" in printed_command
+        assert f"-e {env_setting}" in printed_command
 
 
 class TestMediaServerDockerEnvVars:

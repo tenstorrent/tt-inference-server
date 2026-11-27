@@ -248,6 +248,14 @@ def validate_runtime_args(model_spec, runtime_config):
             "--local-server requires --tt-metal-home or TT_METAL_HOME to be set"
         )
 
+    if (
+        getattr(args, "kernel_cache_dir", None)
+        and DeviceTypes.from_string(args.device).is_multihost()
+    ):
+        raise ValueError(
+            "--kernel-cache-dir is not supported for multi-host deployments"
+        )
+
     # Validate mutual exclusivity of weight source options
     weight_source_args = [
         args.host_volume,
@@ -485,11 +493,20 @@ def _try_fix_path_permissions_for_uid(path, uid, need_write=False):
         return False
 
 
+def _read_write_mount_check(flag, host_path):
+    """Permission check entry for a read-write bind mount; the directory is created if missing."""
+    path = Path(host_path)
+    if not path.exists():
+        logger.info(f"Creating {flag} directory: {path}")
+        path.mkdir(parents=True, exist_ok=True)
+    return (flag, host_path, True, True)
+
+
 def validate_bind_mount_permissions(args, quetzal_package_mount=None):
     """Validate that --image-user UID can access bind-mounted host paths.
 
     Checks read permission for --host-hf-cache and --host-weights-dir (readonly mounts),
-    and read+write permission for --host-volume (read-write mount).
+    and read+write permission for --host-volume and --kernel-cache-dir (read-write mounts).
 
     If a check fails, attempts to fix permissions via chmod (no sudo).
     Raises ValueError with actionable guidance if the fix is not possible.
@@ -498,11 +515,7 @@ def validate_bind_mount_permissions(args, quetzal_package_mount=None):
     checks = []
 
     if args.host_volume:
-        host_volume_path = Path(args.host_volume)
-        if not host_volume_path.exists():
-            logger.info(f"Creating host volume directory: {host_volume_path}")
-            host_volume_path.mkdir(parents=True, exist_ok=True)
-        checks.append(("--host-volume", args.host_volume, True, True))
+        checks.append(_read_write_mount_check("--host-volume", args.host_volume))
     if args.host_hf_cache:
         checks.append(("--host-hf-cache", args.host_hf_cache, False, True))
     if getattr(args, "host_weights_dir", None):
@@ -511,6 +524,9 @@ def validate_bind_mount_permissions(args, quetzal_package_mount=None):
         checks.append(
             ("--quetzal-package-root", args.quetzal_package_root, False, True)
         )
+    kernel_cache_dir = getattr(args, "kernel_cache_dir", None)
+    if kernel_cache_dir:
+        checks.append(_read_write_mount_check("--kernel-cache-dir", kernel_cache_dir))
     if quetzal_package_mount:
         for auxiliary in quetzal_package_mount.auxiliary:
             checks.append(

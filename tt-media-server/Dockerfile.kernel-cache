@@ -1,0 +1,30 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+
+# Adds a captured tt-metal kernel cache to an existing tt-media-server image, so
+# a server start loads the compiled kernels instead of compiling them.
+#
+# Build it with scripts/prebuilt_artifacts.py kernel-cache build-image, which
+# adds the ENV lines of the capture run and stages the build context:
+#   kernel_cache/                cache tree captured with run.py --kernel-cache-dir
+#   kernel_cache_manifest.json   output of kernel-cache manifest
+#   tt_weights_download.py       scripts/tt_weights_download.py
+#
+# tt-metal reuses a kernel cache only at the absolute path it was written at, so
+# the tree goes to the capture path and TT_METAL_CACHE points there. tt-metal
+# writes into the cache on every start, so the tree belongs to the image user.
+# The server runs as container_app_user or as root; both can write to the tree.
+# The fixed mode keeps the tree read-only for other users under any build umask.
+# User, entrypoint and cmd come from the base image.
+
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+
+COPY --chown=container_app_user:container_app_user --chmod=755 kernel_cache/ /home/container_app_user/tt_metal_kernel_cache/
+COPY --chmod=644 kernel_cache_manifest.json /home/container_app_user/kernel_cache_manifest.json
+# Downloads the converted weights of a model variant. It runs alone, with the
+# Python environment of the image.
+COPY --chmod=755 tt_weights_download.py /home/container_app_user/tt_weights_download.py
+
+ENV TT_METAL_CACHE=/home/container_app_user/tt_metal_kernel_cache

@@ -302,6 +302,33 @@ templates:
         - repo: lightx2v/Minimax-h3-Turbo
           filename: minimax_h3_fl2v_turbo_4step_v1.2_768p_bf16.safetensors
           local_subdir: lightx2v
+      # What scripts/prebuilt_artifacts.py needs to know of this model.
+      prebuilt_artifacts:
+        # Env vars of this model that change the compiled kernels.
+        kernel_build_env:
+          - MINIMAX_H3_TOPOLOGY
+          - MINIMAX_H3_VAE_OUTPUT
+        # Files a start with converted weights reads, as globs relative to the checkpoint folder.
+        original_files:
+          - "model_index.json"
+          - "transformer/config.json"
+          - "vae/config.json"
+          - "vae/*"
+          - "audio_vae/*.json"
+          - "audio_vae/*.safetensors"  # audio encoder; only a request with a soundtrack loads it
+          - "text_encoder/config.json"
+          - "text_encoder/*.json"
+          - "tokenizer/**/*"
+        # Also read: each index file and its safetensors shards that hold tensors with the prefix.
+        original_shards:
+          - index: text_encoder/model.safetensors.index.json
+            tensor_prefix: model.visual.
+        # Folders that must exist in the destination, even when empty.
+        original_folders:
+          - transformer
+          - text_encoder
+          - vae
+          - audio_vae
   device_model_specs:
     - device: BLACKHOLE_GALAXY
       max_concurrency: 1
@@ -354,6 +381,33 @@ templates:
         - repo: lightx2v/Minimax-h3-Turbo
           filename: minimax_h3_ref2v_turbo_4step_v1.0_768p_bf16.safetensors
           local_subdir: lightx2v
+      # What scripts/prebuilt_artifacts.py needs to know of this model.
+      prebuilt_artifacts:
+        # Env vars of this model that change the compiled kernels.
+        kernel_build_env:
+          - MINIMAX_H3_TOPOLOGY
+          - MINIMAX_H3_VAE_OUTPUT
+        # Files a start with converted weights reads, as globs relative to the checkpoint folder.
+        original_files:
+          - "model_index.json"
+          - "transformer_ref/config.json"
+          - "vae/config.json"
+          - "vae/*"
+          - "audio_vae/*.json"
+          - "audio_vae/*.safetensors"  # audio encoder; only a request with a soundtrack loads it
+          - "text_encoder/config.json"
+          - "text_encoder/*.json"
+          - "tokenizer/**/*"
+        # Also read: each index file and its safetensors shards that hold tensors with the prefix.
+        original_shards:
+          - index: text_encoder/model.safetensors.index.json
+            tensor_prefix: model.visual.
+        # Folders that must exist in the destination, even when empty.
+        original_folders:
+          - transformer_ref
+          - text_encoder
+          - vae
+          - audio_vae
   device_model_specs:
     - device: BLACKHOLE_GALAXY
       max_concurrency: 1

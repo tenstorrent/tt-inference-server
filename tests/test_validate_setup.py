@@ -299,6 +299,25 @@ class TestValidateBindMountPermissions:
         validate_bind_mount_permissions(args)
         assert nested.is_dir()
 
+    def test_nonexistent_kernel_cache_dir_is_created(self, tmp_path):
+        missing = tmp_path / "runner_temp" / "kernel_cache"
+        args = self._make_args(kernel_cache_dir=str(missing))
+        validate_bind_mount_permissions(args)
+        assert missing.is_dir()
+
+    def test_kernel_cache_dir_requires_write_access(self, tmp_path):
+        d = tmp_path / "kernel_cache"
+        d.mkdir()
+        args = self._make_args(kernel_cache_dir=str(d))
+
+        with patch(
+            "workflows.validate_setup.check_path_permissions_for_uid",
+            return_value=(True, ""),
+        ) as check_permissions:
+            validate_bind_mount_permissions(args)
+
+        check_permissions.assert_called_once_with(str(d), os.getuid(), need_write=True)
+
     def test_other_uid_volume_auto_fixed(self, tmp_path):
         """Auto-fix adds other rwx bits when container UID is not owner/group."""
         d = tmp_path / "other_fix"
