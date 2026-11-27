@@ -74,6 +74,12 @@ class TargetPack(Protocol):
         """Narrow a benchmark config to its smoke-test shape for ``device``."""
         ...
 
+    def concurrency_sweep_benchmark_config(
+        self, config: Any, model_spec: Any, device: Any
+    ) -> Any:
+        """Widen a benchmark config's concurrencies for ``--concurrency-sweeps``."""
+        ...
+
     # --- agentic traces ---
     def agentic_traces_config(self, model_spec: Any) -> Optional[Any]:
         """The model's agentic-traces config, or None if not onboarded."""

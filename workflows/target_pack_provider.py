@@ -65,6 +65,15 @@ class TenstorrentTargetPack(TargetPack):
 
         return select_smoke_test_benchmark_config(config, device)
 
+    def concurrency_sweep_benchmark_config(
+        self, config: Any, model_spec: Any, device: Any
+    ) -> Any:
+        from reference_config.benchmarking.benchmark_config import (
+            apply_concurrency_sweeps,
+        )
+
+        return apply_concurrency_sweeps(config, model_spec, device)
+
     # --- agentic traces ---
     def agentic_traces_config(self, model_spec: Any) -> Optional[Any]:
         from reference_config.agentic_traces.agentic_traces_config import (

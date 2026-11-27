@@ -22,6 +22,7 @@ def get_llm_configs(
     device,
     *,
     limit_samples_mode: Optional[str] = None,
+    concurrency_sweeps: bool = False,
 ) -> List[LLMRunConfig]:
     """Return the text-benchmark sweep for ``model_spec`` on ``device``.
 
@@ -29,6 +30,8 @@ def get_llm_configs(
     and media (CNN/image/VLM) params are skipped — the LLM runner is
     text-only, so any param without both ``isl`` and ``osl`` is dropped.
     ``limit_samples_mode`` honours v1's smoke-test selection when set.
+    ``concurrency_sweeps`` adds every power-of-two concurrency up to each
+    point's maximum; a smoke test ignores it.
     """
     from workflow_module.engine_types import EvalLimitMode
     from workflow_module.target_pack import get_target_pack
@@ -41,6 +44,12 @@ def get_llm_configs(
         and EvalLimitMode.from_string(limit_samples_mode) == EvalLimitMode.SMOKE_TEST
     ):
         benchmark_config = pack.smoke_test_benchmark_config(benchmark_config, device)
+        if concurrency_sweeps:
+            logger.info("Ignoring --concurrency-sweeps in smoke-test mode.")
+    elif concurrency_sweeps:
+        benchmark_config = pack.concurrency_sweep_benchmark_config(
+            benchmark_config, model_spec, device
+        )
 
     configured_devices = {
         dev for task in benchmark_config.tasks for dev in task.param_map
