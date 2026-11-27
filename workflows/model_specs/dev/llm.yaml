@@ -1742,7 +1742,7 @@ templates:
         enable_chunked_prefill: true
         max_num_batched_tokens: "525312"
         long_prefill_token_threshold: "16384"
-        no-async-scheduling: true  # chained verifies with DP are not run yet
+        async-scheduling: true
         limit-mm-per-prompt: '{"image": 1, "video": 1}'
         mm-processor-cache-gb: 0
         mm-processor-kwargs: '{"max_pixels": 1048576}'
