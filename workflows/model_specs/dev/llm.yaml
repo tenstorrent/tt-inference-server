@@ -812,6 +812,83 @@ templates:
       reasoning_parser_name: gemma4
       tool_call_parser_name: gemma4
 
+# google/gemma-4-12B-it (text decoder only) TP4 on QB2 from the tenstorrent/agentic-models
+# package gemma_4_12b_it (tenstorrent/agentic-models#278; tt-model-bringup multigoal pipeline,
+# Claude Opus 5.5 high). Selectable with --impl gemma4-12b-qb2; the P300X2 default stays the
+# tt_transformers entry. The adapter registers through EXTRA_MODELS_DIR from the package's
+# vllm_metadata.json; the path assumes the image layout the five agentic-models specs below
+# use (the agentic_models package at the tt-metal checkout root).
+# Server settings are the bring-up's validated stage-10/11 ones (1M-token vLLM-owned KV, full
+# 262144 context). Precision bfp8_gelu_tanh (the package's tt/precision_config.json): BFP8
+# weights on every layer and the exact GELU; GPQA Diamond 144 / 145 / 144 at seeds 42 / 43 / 44.
+- weights:
+    - google/gemma-4-12B-it
+  impl: gemma4_12b_qb2
+  inference_engine: VLLM
+  model_type: LLM
+  supported_modalities:
+    - text
+  device_model_specs:
+    - device: P300X2
+      max_concurrency: 32
+      max_context: 262144
+      default_impl: false  # selectable with --impl gemma4-12b-qb2
+      env_vars:
+        MESH_DEVICE: P300x2
+        EXTRA_MODELS_DIR: ../../tt-metal/agentic_models/models/gemma_4_12b_it
+        VLLM_RPC_TIMEOUT: "300000"
+      override_tt_config:
+        sample_on_device_mode: all
+        trace_region_size: 0
+        fabric_config: FABRIC_1D_RING
+        prefill_chunk_alignment: 8192
+      vllm_args:
+        block_size: "64"
+        max_num_seqs: "32"
+        max-logprobs: "-1"
+        no-enable-prefix-caching: true
+        enable-chunked-prefill: true
+        max_num_batched_tokens: "8192"
+        # The device sampler covers top_k 1..32; the checkpoint default top_k 64 would
+        # send every request that omits top_k to the host path.
+        override_generation_config: '{"top_k": 32}'
+        reasoning-parser: gemma4
+        hf-overrides: '{"architectures":["TTGemma4_12BQB2ForCausalLM"]}'
+        # Thinking on for the card evals (the chat template suppresses it otherwise).
+        default-chat-template-kwargs: '{"enable_thinking": true}'
+  status: COMPLETE
+  has_builtin_warmup: true
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    google/gemma-4-12B-it:
+      # The eval tasks are shared with the tt_transformers profiles, which keep their gates.
+      # In ci-nightly this profile is graded against its own QB2 results at tolerance 0.10
+      # (P(fail) under 5% for a binomial at the measured rate):
+      # - GPQA Diamond (all 198): CI 144 / 145 / 144 at seeds 42 / 43 / 44 = 72.9%; needs 129/198.
+      # - LiveCodeBench v6 (131): CI 73.28 (96/131, tt-shield run 45719501496); needs 86/131.
+      # - Terminal-Bench 2: CI 31.46 (28/89, run 45719501496); the 24-task ci-nightly wave at
+      #   tolerance 0.40 needs 4/24 (0.10 would need 6/24, P(fail) ~20% at 31%).
+      eval_task_score_overrides:
+        r1_gpqa_diamond:
+          mode_reference_scores:
+            ci_nightly:
+              score: 72.9
+              tolerance: 0.10
+              ref: "QB2 CI GPQA Diamond, 433/594 over 3 seeds (runs 41834786537 / 41845983159 / 41845991057); needs 129/198"
+        livecodebench:
+          mode_reference_scores:
+            ci_nightly:
+              score: 73.28
+              tolerance: 0.10
+              ref: "QB2 CI LiveCodeBench v6, 96/131 (tt-shield run 45719501496); needs 86/131"
+        terminal_bench_2:
+          mode_reference_scores:
+            ci_nightly:
+              score: 31.46
+              tolerance: 0.40
+              ref: "QB2 CI Terminal-Bench 2, 28/89 (tt-shield run 45719501496); needs 4/24 on the ci-nightly wave"
+
 # Dedicated Gemma 4 26B A4B implementation (single user): selectable with --impl gemma4-26b-a4b-qb2; the QB2 default
 # is the tt_transformers entry below (32 users, the MTP speculative contract).
 - weights:
@@ -2000,6 +2077,66 @@ templates:
     nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16:
       reasoning_parser_name: nemotron_v3
       tool_call_parser_name: qwen3_coder
+
+# IFM/K2-Horizon-MoVA-36B-A4B TP4/EP4 from the tenstorrent/agentic-models package
+# k2_horizon_mova_36b_a4b (tenstorrent/agentic-models#279; tt-model-bringup pipeline on a
+# 4x p300c QB2). EXTRA_MODELS_DIR assumes the same image layout as gemma-4-12B-it above. The TT plugin registers
+# TTK2HorizonMoVAQB2ForCausalLM from the model's vllm_metadata.json via EXTRA_MODELS_DIR;
+# hf-overrides selects it (the plugin's TTK2HorizonForCausalLM, the TT-prefixed name of the
+# checkpoint's own K2HorizonForCausalLM, belongs to K2-Horizon-7B).
+# Precision dense8_hifi2_bfp4experts (BFP8 attention/dense/value, HiFi2; experts BFP4):
+# 96.5% HF top-1 over a 3000-token reasoning trace vs 85.2% for the bring-up's
+# head4_ccl4_norm4_lofi, which scored 38.4 on GPQA-diamond. Prefix caching needs
+# 128-token blocks (64-token resumes perturb logits); 4096-token scheduler budget
+# matches the model's prefill chunk.
+# The model's device sampler serves top_k 1..64. K2_VLLM_HOST_COMPAT=1 admits the plugin's
+# host-sampling route for requests outside that range (top_k unset or > 64) and for prefill
+# steps with an intermediate chunk. GPQA keeps the lm-eval task's top_k 40, so it samples on
+# device; Terminal-Bench sends no top_k, so it samples on the host.
+- weights:
+    - IFM/K2-Horizon-MoVA-36B-A4B
+  impl: k2_horizon_mova_qb2
+  inference_engine: VLLM
+  model_type: LLM
+  supported_modalities:
+    - text
+  device_model_specs:
+    - device: P300X2
+      max_concurrency: 32
+      max_context: 524288
+      default_impl: true
+      env_vars:
+        MESH_DEVICE: P300x2
+        EXTRA_MODELS_DIR: ../../tt-metal/agentic_models/models/k2_horizon_mova_36b_a4b
+        K2_VLLM_HOST_COMPAT: "1"
+        VLLM_RPC_TIMEOUT: "300000"
+      override_tt_config:
+        sample_on_device_mode: all
+        trace_mode: all
+        trace_region_size: 0
+        fabric_config: FABRIC_1D_RING
+      vllm_args:
+        block_size: "128"
+        max_num_seqs: "32"
+        max_num_batched_tokens: "4096"
+        max-logprobs: "-1"
+        enable-prefix-caching: true
+        trust-remote-code: true
+        hf-overrides: '{"architectures":["TTK2HorizonMoVAQB2ForCausalLM"]}'
+        chat-template-content-format: string
+        revision: e9ce717642b2074082875be233c02c729ba47960
+        tokenizer_revision: e9ce717642b2074082875be233c02c729ba47960
+        reasoning-parser: k2_horizon
+        enable-auto-tool-choice: true
+        tool-call-parser: k2_horizon
+  status: FUNCTIONAL
+  has_builtin_warmup: true
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    IFM/K2-Horizon-MoVA-36B-A4B:
+      reasoning_parser_name: k2_horizon
+      tool_call_parser_name: k2_horizon
 
 # IFM/K2-Horizon-7B TP4 (models/demos/k2_horizon_7b_qb2): dedicated implementation from
 # the tt-model-bringup pipeline, 512K context on a 4x p300c QB2. The TT plugin registers
