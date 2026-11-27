@@ -32,6 +32,7 @@ DISPLAY_NAMES: Dict[str, str] = {
     "mean_ttft_ms": "TTFT (ms)",
     "std_ttft_ms": "TTFT Std (ms)",
     "ttft": "TTFT",
+    "end_to_end_latency_s": "End-to-end latency (s)",
     "ttft_ms": "TTFT (ms)",
     "ttft_p50": "TTFT P50 (s)",
     "ttft_p90": "TTFT P90 (s)",

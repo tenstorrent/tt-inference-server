@@ -261,6 +261,11 @@ def _generate_video(
             )
 
         if video_path:
+            if timings is not None:
+                try:
+                    timings["video_bytes"] = os.path.getsize(video_path)
+                except OSError:
+                    pass
             logger.info(f"✅ Video generated successfully: {video_path}")
             return True, elapsed, job_id, video_path
 
@@ -311,6 +316,7 @@ def _run_video_generation_benchmark(
                 prompt=VIDEO_BENCHMARK_PROMPT,
                 generation_seconds=timings.get("generation_seconds"),
                 phases={k: timings[k] for k in VIDEO_PHASES if k in timings} or None,
+                video_bytes=timings.get("video_bytes"),
             )
         )
     return status_list
@@ -373,22 +379,28 @@ def _burst_jobs_from_env() -> int:
         return 0
 
 
-def _video_ttft(status_list: list[VideoGenerationTestStatus]) -> float:
-    logger.info("Calculating TTFT value")
+def _video_end_to_end_latency(status_list: list[VideoGenerationTestStatus]) -> float:
+    """Mean seconds of a whole request: from the POST until the mp4 is downloaded."""
+    logger.info("Calculating the end to end latency")
     return sum(s.elapsed for s in status_list) / len(status_list) if status_list else 0
 
 
 def _video_target_checks(
-    ctx: MediaContext, ttft_seconds: float, tput_user: float
+    ctx: MediaContext, latency_seconds: float, tput_user: float
 ) -> tuple[dict, ReportCheckTypes]:
-    # ttft is captured in seconds (time.time() deltas); targets.ttft_ms is ms.
-    ttft_ms = ttft_seconds * 1000 if ttft_seconds else None
-    logger.info("Computing 3-tier target checks for TTFT, tput_user")
+    # The latency is captured in seconds (time.time() deltas); the target is in ms
+    # (end_to_end_latency_ms of the reference file).
+    latency_ms = latency_seconds * 1000 if latency_seconds else None
+    logger.info("Computing 3-tier target checks for end_to_end_latency, tput_user")
     return run_tiered_check(
         ctx,
         [
             MetricSpec(
-                "TTFT", ttft_ms, "ttft_ms", lower_is_better=True, field_name="ttft"
+                "end_to_end_latency",
+                latency_ms,
+                "e2el_ms",
+                lower_is_better=True,
+                field_name="end_to_end_latency",
             ),
             MetricSpec(
                 "tput_user",
@@ -436,7 +448,7 @@ def run_video_benchmark(ctx: MediaContext) -> Block:
     num_successful = len(successful)
     all_succeeded = num_total > 0 and num_successful == num_total
 
-    ttft_value = _video_ttft(successful)
+    latency_value = _video_end_to_end_latency(successful)
     inference_steps_per_second = (
         sum(s.inference_steps_per_second for s in successful) / num_successful
         if successful
@@ -444,7 +456,7 @@ def run_video_benchmark(ctx: MediaContext) -> Block:
     )
     # Sequential single-user benchmark, so tput_user = total throughput.
     target_checks, target_check = _video_target_checks(
-        ctx, ttft_value, inference_steps_per_second
+        ctx, latency_value, inference_steps_per_second
     )
 
     generation_times = [
@@ -457,7 +469,7 @@ def run_video_benchmark(ctx: MediaContext) -> Block:
             "num_inference_steps": (
                 status_list[0].num_inference_steps if status_list else 0
             ),
-            "ttft": ttft_value,
+            "end_to_end_latency_s": latency_value,
             "inference_steps_per_second": inference_steps_per_second,
             "tput_user": inference_steps_per_second,
             "target_check": target_check,
@@ -466,10 +478,13 @@ def run_video_benchmark(ctx: MediaContext) -> Block:
     }
     phase_values = [s.phases for s in successful if s.phases]
     if generation_times:
-        # Until the job reported `completed`: ttft above also holds the download.
+        # Until the job reported `completed`: the latency above also holds the download.
         block_data["Benchmarks"]["generation_seconds"] = sum(generation_times) / len(
             generation_times
         )
+    video_sizes = [s.video_bytes for s in successful if s.video_bytes is not None]
+    if video_sizes:
+        block_data["Benchmarks"]["video_bytes"] = sum(video_sizes) / len(video_sizes)
     if phase_values:
         # The same keys for every server: the mean over the requests, and each request.
         block_data["Benchmarks"]["phases"] = {

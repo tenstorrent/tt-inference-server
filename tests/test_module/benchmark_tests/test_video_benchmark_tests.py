@@ -640,3 +640,58 @@ def test_a_server_without_metrics_adds_nothing_to_the_report(monkeypatch):
     ctx.base_url = "http://localhost:8000"
     data = mod.run_video_benchmark(ctx).data["Benchmarks"]
     assert "server_side" not in data and "burst_server_side" not in data
+
+
+def test_the_whole_request_is_reported_as_end_to_end_latency_not_ttft(monkeypatch):
+    status = mod.VideoGenerationTestStatus(
+        status=True, elapsed=130.0, num_inference_steps=40, video_bytes=3_000_000
+    )
+    monkeypatch.setattr(mod, "require_health", lambda ctx: None)
+    monkeypatch.setattr(mod, "get_num_calls", lambda ctx: 1)
+    monkeypatch.setattr(mod, "_run_video_generation_benchmark", lambda c, n: [status])
+    seen = {}
+
+    def _checks(ctx, latency, tput):
+        seen["latency"] = latency
+        return {}, "n/a"
+
+    monkeypatch.setattr(mod, "_video_target_checks", _checks)
+    monkeypatch.setattr(mod, "block_id", lambda ctx: "id")
+    monkeypatch.setattr(mod, "scrape_video_metrics", lambda base_url: {})
+    monkeypatch.delenv(mod.VIDEO_BENCHMARK_BURST_JOBS_ENV, raising=False)
+    ctx = _ctx("Wan-AI/Wan2.2-T2V-A14B-Diffusers")
+    ctx.base_url = "http://localhost:8000"
+    data = mod.run_video_benchmark(ctx).data["Benchmarks"]
+    assert data["end_to_end_latency_s"] == pytest.approx(130.0)
+    assert "ttft" not in data
+    assert data["video_bytes"] == 3_000_000
+    assert seen["latency"] == pytest.approx(130.0)
+
+
+def test_the_video_reference_targets_use_the_end_to_end_latency_key():
+    from test_module._test_common.target_check import PerformanceTargets
+
+    targets = PerformanceTargets.from_device_config(
+        {"targets": {"theoretical": {"end_to_end_latency_ms": 321490}}}
+    )
+    assert targets.e2el_ms == 321490
+    # an entry that already says e2el_ms keeps it
+    other = PerformanceTargets.from_device_config(
+        {"targets": {"theoretical": {"e2el_ms": 5, "end_to_end_latency_ms": 9}}}
+    )
+    assert other.e2el_ms == 5
+
+
+def test_the_latency_target_is_checked_in_milliseconds(monkeypatch):
+    captured = {}
+
+    def _run(ctx, specs):
+        captured["specs"] = specs
+        return {}, "n/a"
+
+    monkeypatch.setattr(mod, "run_tiered_check", _run)
+    mod._video_target_checks(object(), 125.0, 0.3)
+    latency = captured["specs"][0]
+    assert latency.field_name == "end_to_end_latency"
+    assert latency.target_attr == "e2el_ms"
+    assert latency.actual == pytest.approx(125000.0)
