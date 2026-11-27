@@ -27,7 +27,7 @@ def _gemma4_26b_specs():
 
 def test_the_mtp_entry_is_the_qb2_default_and_the_dedicated_profile_uses_the_demo_bundle():
     """The release scope resolves the QB2 default without an impl pin: the tt-transformers entry
-    (32 users, the MTP speculative contract class). The single-user dedicated profile stays
+    (8 users, the AgentX peak of a 4-chip engine; the MTP speculative contract class). The single-user dedicated profile stays
     selectable with ``--impl gemma4-26b-a4b-qb2`` and keeps its demo bundle."""
     specs = _gemma4_26b_specs()
     default = resolve_model_spec(
@@ -46,7 +46,7 @@ def test_the_mtp_entry_is_the_qb2_default_and_the_dedicated_profile_uses_the_dem
 
     assert default.impl.impl_name == "tt-transformers"
     assert default.device_model_spec.default_impl is True
-    assert default.device_model_spec.max_concurrency == 32
+    assert default.device_model_spec.max_concurrency == 8
     assert (
         "Gemma4MTPContract"
         in default.device_model_spec.env_vars["TT_MODEL_CLASS_OVERRIDES"]

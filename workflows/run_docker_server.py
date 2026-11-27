@@ -19,6 +19,11 @@ from pathlib import Path
 from typing import List, Tuple
 
 from utils.pinned_artifacts import get_pinned_revision
+from utils.submesh_engines import (
+    SUBMESH_ENGINE_HOST_ENV,
+    submesh_engine_count,
+    submesh_engine_port,
+)
 from workflows.log_setup import clean_log_file
 from workflows.multihost_orchestrator import (
     MultiHostOrchestrator,
@@ -629,6 +634,7 @@ def generate_docker_run_command(
         "--mount", "type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G",
     ]
 
+    submesh_engines = 0
     if model_spec.inference_engine in (
         InferenceEngine.MEDIA.value,
         InferenceEngine.FORGE.value,
@@ -644,6 +650,14 @@ def generate_docker_run_command(
             "--publish",
             f"{runtime_config.bind_host}:{runtime_config.service_port}:{runtime_config.service_port}",
         ]
+        # Submesh engines (utils.submesh_engines): vllm-router on service_port does not proxy the engines' /metrics,
+        # so each engine port is published on the host's loopback only, for the metric scrapes.
+        submesh_engines = (
+            submesh_engine_count(model_spec.device_model_spec.vllm_args) or 0
+        )
+        for index in range(submesh_engines):
+            engine_port = submesh_engine_port(runtime_config.service_port, index)
+            docker_command += ["--publish", f"127.0.0.1:{engine_port}:{engine_port}"]
 
     # setup_config-dependent mounts (cache_root volume)
     if setup_config:
@@ -691,6 +705,9 @@ def generate_docker_run_command(
     # fmt: on
 
     docker_env_vars = {}
+    if submesh_engines:
+        # A published port reaches the container's address, not its loopback: the engines bind all its interfaces.
+        docker_env_vars[SUBMESH_ENGINE_HOST_ENV] = "0.0.0.0"
     if quetzal_package_mount:
         docker_env_vars.update(
             quetzal_package_env(quetzal_package_mount, local_server=False)

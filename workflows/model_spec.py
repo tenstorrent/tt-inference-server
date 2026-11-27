@@ -665,7 +665,17 @@ class DeviceModelSpec:
 
     def validate_data(self):
         """Validate that required specification is present."""
-        pass
+        # vllm_args.data_parallel_external_lb (vLLM's one server per DP rank behind an external load balancer): the
+        # launcher (vllm-tt-metal/src/run_vllm_api_server.py) runs data_parallel_size independent engines, one per
+        # device group it discovers as vllm-tt-plugin's standard DP does (a Galaxy's 1 x 8 rows for 4), behind
+        # vllm-router on the service port. vllm_args keep the whole server's data_parallel_size and each engine's
+        # max_num_seqs.
+        if self.vllm_args.get("data_parallel_external_lb"):
+            data_parallel_size = self.vllm_args.get("data_parallel_size")
+            assert isinstance(data_parallel_size, int) and data_parallel_size >= 2, (
+                "data_parallel_external_lb runs one engine per data-parallel rank: vllm_args.data_parallel_size "
+                f"must be at least 2 (got {data_parallel_size})"
+            )
 
     def _infer_data(self):
         """Infer missing data fields from other specification values."""

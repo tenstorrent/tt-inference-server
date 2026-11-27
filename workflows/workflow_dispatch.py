@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import logging
 import shlex
@@ -11,6 +12,8 @@ import sys
 from pathlib import Path
 from typing import List
 
+from utils.submesh_engines import submesh_engine_metrics_urls
+from utils.url_helpers import is_remote_server
 from workflows.workflow_result import WorkflowResult
 from workflows.utils import (
     ensure_readwriteable_dir,
@@ -221,6 +224,7 @@ def build_engine_commands(model_spec, runtime_config, json_fpath) -> list:
     - Everything else runs ``run_workflows.py`` in WORKFLOW_RUN_SCRIPT (plus its
       dependency venvs, provisioned by the command).
     """
+    runtime_config = _with_submesh_engine_metrics_urls(model_spec, runtime_config)
     wf = WorkflowType.from_string(runtime_config.workflow)
     engine_workflow = _ENGINE_WORKFLOW_NAMES.get(wf)
     if engine_workflow is None:
@@ -347,6 +351,41 @@ def build_engine_commands(model_spec, runtime_config, json_fpath) -> list:
             ),
         )
     ]
+
+
+_WORKER_METRICS_URL_FIELDS = (
+    "prefix_cache_metrics_url",
+    "spec_decode_metrics_url",
+    "agentic_traces_metrics_url",
+)
+
+
+def _with_submesh_engine_metrics_urls(model_spec, runtime_config):
+    """``runtime_config`` with each unset ``--*-metrics-url`` list (prefix cache, spec decode, agentic traces)
+    defaulting to the submesh engines' ``/metrics`` (utils.submesh_engines) when the spec serves engines behind
+    vllm-router, which does not proxy them. A copy: the caller's config is unchanged. A remote server keeps the lists
+    as given, since the engine ports are loopback-only on the server's host."""
+    if is_remote_server(runtime_config):
+        return runtime_config
+    urls = list(
+        submesh_engine_metrics_urls(
+            model_spec.device_model_spec.vllm_args, runtime_config.service_port
+        )
+    )
+    unset = [
+        name for name in _WORKER_METRICS_URL_FIELDS if not getattr(runtime_config, name)
+    ]
+    if not urls or not unset:
+        return runtime_config
+    defaulted = copy.copy(runtime_config)
+    for name in unset:
+        setattr(defaulted, name, list(urls))
+    logger.info(
+        "Worker metrics default to the %d submesh engines' /metrics: %s",
+        len(urls),
+        ", ".join(urls),
+    )
+    return defaulted
 
 
 def dispatch_workflows(model_spec, runtime_config, json_fpath) -> List[WorkflowResult]:

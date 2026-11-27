@@ -1,3 +1,5 @@
 # additional inference server and client script requirements
 pyjwt==2.7.0
 requests==2.32.3
+# routes the engines of a data_parallel_external_lb spec (run_vllm_api_server.py)
+vllm-router==0.1.17

@@ -458,3 +458,28 @@ def test_vision_tokens_per_image_follow_the_model_family():
         "google/gemma-4-26B-A4B-it",
     ):
         assert calculate_vision_tokens(896, 896, 2, repo) == 560, repo
+
+
+def test_gemma4_default_entries_gate_at_their_max_users():
+    """Every default Gemma 4 dev entry on the Blackhole QB2 and Galaxy resolves benchmark gating rows
+    (get_perf_reference keys them by the entry's data_parallel_size), and its multi-user rows run at the entry's
+    max users."""
+    specs = [
+        spec
+        for spec in MODEL_SPECS.values()
+        if spec.hf_model_repo.startswith("google/gemma-4-")
+        and spec.device_type in (DeviceTypes.P300X2, DeviceTypes.BLACKHOLE_GALAXY)
+        and spec.device_model_spec.default_impl
+    ]
+    assert len(specs) == 6, sorted(spec.model_id for spec in specs)
+    for spec in specs:
+        dms = spec.device_model_spec
+        rows = [t for t in dms.perf_reference if t.task_type == "text"]
+        assert rows, (
+            f"{spec.model_id}: no gating rows resolve for data_parallel_size "
+            f"{dms.vllm_args.get('data_parallel_size')}"
+        )
+        multi = {t.max_concurrency for t in rows if t.max_concurrency > 1}
+        assert multi == {dms.max_concurrency}, (
+            f"{spec.model_id}: multi-user rows at {multi}, max users {dms.max_concurrency}"
+        )

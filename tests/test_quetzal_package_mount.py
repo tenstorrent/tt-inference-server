@@ -43,6 +43,7 @@ def _model_spec(impl_id="quetzal", env_vars=None):
         model_type=SimpleNamespace(name="LLM"),
         subdevice_type=None,
         docker_image="ghcr.io/tenstorrent/tt-inference-server/test:latest",
+        device_model_spec=SimpleNamespace(vllm_args={}),
     )
 
 
