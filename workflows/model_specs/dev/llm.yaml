@@ -2050,6 +2050,62 @@ templates:
       reasoning_parser_name: nemotron_v3
       tool_call_parser_name: qwen3_coder
 
+# Nanbeige/Nanbeige4.3-33B TP4, dense Llama (agentic-models nanbeige_4_3_33b; bring-up tt-metal
+# 2f0c96ea on v0.83.0-dev20261123, m5 Nov 24-26). The bring-up's production server: 16 slots,
+# 131072 context, 589,824-token BFP8 KV pool, 896-token prefill chunks, prefix caching, async
+# scheduling, thinking on by default, card sampling (T 0.6, top_p 0.95, top_k unset). The adapter
+# switches on its tt-metal patches (64-candidate sampler; FP32 precision paths, TTNN_NANBEIGE_PRECISION).
+- weights:
+    - Nanbeige/Nanbeige4.3-33B
+  impl: nanbeige43_33b_qb2
+  inference_engine: VLLM
+  model_type: LLM
+  supported_modalities:
+    - text
+  device_model_specs:
+    - device: P300X2
+      max_concurrency: 16
+      max_context: 131072
+      max_tokens_all_users_override: 589824
+      default_impl: true
+      tensor_cache_timeout: 5400
+      env_vars:
+        MESH_DEVICE: P300x2
+        TT_MODEL_CLASS_OVERRIDES: "TTLlamaForCausalLM=agentic_models.models.nanbeige_4_3_33b.vllm.tt.generator_vllm:NanbeigeVLLM"
+        TTNN_NANBEIGE_PRECISION: "1"
+        VLLM_RPC_TIMEOUT: "7200000"
+        TT_METAL_TRACE_ALLOC_TRACKING: "0"
+      override_tt_config:
+        trace_mode: decode_only
+        enable_model_warmup: true
+        sample_on_device_mode: all
+        seeded_sampling_policy: auto
+        trace_region_size: 536870912
+        fabric_config: FABRIC_1D
+      vllm_args:
+        revision: df919e1e2cf077a22204c78b6c826bf3db18bc08
+        tokenizer_revision: df919e1e2cf077a22204c78b6c826bf3db18bc08
+        block_size: "32"
+        max_num_seqs: "16"
+        max_model_len: "131072"
+        max_num_batched_tokens: "896"
+        dtype: bfloat16
+        async_scheduling: true
+        enable-chunked-prefill: true
+        enable-prefix-caching: true
+        reasoning_parser: qwen3
+        enable_auto_tool_choice: true
+        tool_call_parser: qwen3_coder
+        chat_template_content_format: string
+        default_chat_template_kwargs: '{"enable_thinking": true, "preserve_thinking": true, "tool_call_format": "xml"}'
+        override_generation_config: '{"temperature": 0.6, "top_p": 0.95, "top_k": -1}'
+  status: FUNCTIONAL
+  has_builtin_warmup: true
+  metadata:
+    Nanbeige/Nanbeige4.3-33B:
+      reasoning_parser_name: qwen3
+      tool_call_parser_name: qwen3_coder
+
 # IFM/K2-Horizon-MoVA-36B-A4B TP4/EP4 (models/demos/k2_horizon_mova_36b_a4b_qb2) from the
 # tt-model-bringup pipeline on a 4x p300c QB2. The TT plugin registers
 # TTK2HorizonMoVAQB2ForCausalLM from the model's vllm_metadata.json via EXTRA_MODELS_DIR;

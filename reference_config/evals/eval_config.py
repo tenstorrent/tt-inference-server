@@ -13299,6 +13299,128 @@ _eval_config_list = [
             ),
         ],
     ),
+    # Nanbeige/Nanbeige4.3-33B (nanbeige43-33b-qb2): the five-task Terminal-Bench 2.1 and SWE-bench
+    # Verified subsets of the QB2 agentic-models configs, each gated at 1 of 5 in CI. GPQA Diamond is
+    # not configured until tt-shield dispatch carries an HF token (local QB2 reference: the first 40
+    # questions 36/40, which would gate at 32/40). The server defaults thinking on; the agents use the
+    # bring-up's agentic sampling (T 1.0, top_p 0.95, top_k unset, presence 0) within the 131072 context.
+    EvalConfig(
+        hf_model_repo="Nanbeige/Nanbeige4.3-33B",
+        tasks=[
+            EvalTask(
+                # Terminal-Bench 2.1, the five-task QB2 subset in every mode.
+                task_name="terminal_bench_2_1",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    # The subset is not comparable to a full-set published score.
+                    published_score=None,
+                    published_score_ref=None,
+                    # CI gate on the 5-task subset: at least one solved, floor(5 * 20%)
+                    # = 1; min_correct keeps it at 1 when an errored trial shrinks n.
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=20.0,
+                            ref="CI gate: at least 1 of 5 tasks solved",
+                            tolerance=0.0,
+                            min_correct=1,
+                        ),
+                    },
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="terminal-bench/terminal-bench-2-1",
+                    agent="terminus-2",
+                    n_concurrent_trials=5,
+                    n_attempts=1,
+                    n_tasks=5,
+                    task_names=list(_QB2_TERMINAL_BENCH_2_1_SUBSET),
+                    # 2 h per task, as for the other QB2 models: the 5 tasks run as one
+                    # wave, so the slowest task sets the wall time.
+                    agent_timeout_sec=2 * 60 * 60,
+                    agent_kwargs={
+                        "parser_name": "json",
+                        "temperature": 1.0,
+                        "model_info": {
+                            "max_input_tokens": 96 * 1024,
+                            "max_output_tokens": 32 * 1024,
+                        },
+                        "llm_kwargs": {
+                            "top_p": 0.95,
+                            "presence_penalty": 0.0,
+                            "max_tokens": 32 * 1024,
+                            "timeout": 60 * 60,
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: list(_QB2_TERMINAL_BENCH_2_1_SUBSET),
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 2,
+                    EvalLimitMode.CI_NIGHTLY: 5,
+                },
+            ),
+            EvalTask(
+                # SWE-bench Verified, the five-instance QB2 subset in every mode.
+                task_name="swe_bench_verified",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    # The subset is not comparable to a full-set published score.
+                    published_score=None,
+                    published_score_ref=None,
+                    # CI gate on the 5-task subset: at least one solved, floor(5 * 20%)
+                    # = 1; min_correct keeps it at 1 when an errored trial shrinks n.
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=20.0,
+                            ref="CI gate: at least 1 of 5 tasks solved",
+                            tolerance=0.0,
+                            min_correct=1,
+                        ),
+                    },
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=HarborEvalConfig(
+                    dataset="swebench-verified",
+                    agent="mini-swe-agent",
+                    n_concurrent_trials=5,
+                    n_attempts=1,
+                    n_tasks=5,
+                    task_names=list(_QB2_SWE_BENCH_VERIFIED_SUBSET),
+                    agent_timeout_sec=3 * 60 * 60,
+                    llm_timeout_sec=60 * 60,
+                    agent_kwargs={
+                        "version": MINI_SWE_AGENT_VERSION,
+                        "max_tokens": 32 * 1024,
+                        "config": {
+                            "model": {
+                                "model_kwargs": {
+                                    "temperature": 1.0,
+                                    "top_p": 0.95,
+                                    "presence_penalty": 0.0,
+                                }
+                            }
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: list(_QB2_SWE_BENCH_VERIFIED_SUBSET),
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 2,
+                    EvalLimitMode.CI_NIGHTLY: 5,
+                },
+            ),
+        ],
+    ),
     # IFM/K2-Horizon-MoVA-36B-A4B (TP4/EP4, P300X2): GPQA Diamond (evals workflow) and a
     # 5-task Terminal-Bench 2.1 subset (agentic workflow, --ci-mode). Model-card settings:
     # reasoning_effort=high (the chat template default), temperature 1.0, top_p 0.95; 32768

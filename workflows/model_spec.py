@@ -538,6 +538,14 @@ nemotron35_lightning_qb2_impl = ImplSpec(
     code_path="src/agentic_models/models/nemotron_3_5_lightning_30b_a3b/vllm",
 )
 
+# Nanbeige/Nanbeige4.3-33B TP4 (dense Llama)
+nanbeige43_33b_qb2_impl = ImplSpec(
+    impl_id="nanbeige43_33b_qb2",
+    impl_name="nanbeige43-33b-qb2",
+    repo_url="https://github.com/tenstorrent/agentic-models",
+    code_path="src/agentic_models/models/nanbeige_4_3_33b/vllm",
+)
+
 # meta-models/Muse-Glimmer-30B TP4 on QB2 under models/demos/muse_glimmer_30b_qb2,
 # produced by the tt-model-bringup pipeline.
 muse_glimmer_30b_qb2_impl = ImplSpec(
@@ -564,6 +572,7 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "qwen36_27b_qb2": qwen36_27b_qb2_impl,
     "ornith15_35b_a3b_qb2": ornith15_35b_a3b_qb2_impl,
     "nemotron35_lightning_qb2": nemotron35_lightning_qb2_impl,
+    "nanbeige43_33b_qb2": nanbeige43_33b_qb2_impl,
     "muse_glimmer_30b_qb2": muse_glimmer_30b_qb2_impl,
     "llama3_70b_galaxy": llama3_70b_galaxy_impl,
     "llama31_8b_qb2": llama31_8b_qb2_impl,

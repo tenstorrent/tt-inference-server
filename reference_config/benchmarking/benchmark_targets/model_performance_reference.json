@@ -8836,5 +8836,44 @@
                 }
             }
         ]
+    },
+    "Nanbeige/Nanbeige4.3-33B": {
+        "p300x2": [
+            {
+                "_comment": [
+                    "One gated point, 128/128 at 1 user, like the other QB2 agentic-models entries; the release sweep is reported ungated.",
+                    "Theoretical: bf16 weight-streaming roofline on the 4-chip mesh at ~560 GB/s per chip, the P300X2 convention, over the decoder plus the untied LM head (input embedding excluded); config.json arithmetic:",
+                    "attention 6.11B (52 x 117.4M: q 51.4M + k 7.3M + v 7.3M + o 51.4M) + MLP 24.62B (52 x 473.4M) + LM head 1.20B",
+                    "= 31.92B params (HF total 33.12B incl. the 1.20B embedding table) = 63.8 GB bf16, 16.0 GB per chip = 28.5 ms per step",
+                    "= 35.1 t/s/u; dense TTFT floor two step-times = 57 ms. The deployed BFP8 weights stream fewer bytes.",
+                    "theoretical sets the functional (10% decode, 10x TTFT) and complete (50%, 2x) tiers; the measured block gates only at TOP_PERF (tolerance 0.3).",
+                    "Measured: the bring-up's local bench on m5 (2026-11-26, 16-slot production server, tt-metal v0.83.0-dev20261123 + bring-up commits) at 128/128 c1 n=4:",
+                    "TTFT 389 ms, TPOT 38.15 ms (26.2 t/s/u), 24.5 tok/s. To be replaced by the first tt-shield release run at the pins.",
+                    "Tier: COMPLETE on decode (26.2 >= 17.5 t/s/u); TTFT 389 ms is within functional (<= 570) but not complete (<= 114), so FUNCTIONAL overall."
+                ],
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "impl": "nanbeige43_33b_qb2",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 57,
+                        "tput_user": 35.1,
+                        "tput": 35.1
+                    },
+                    "measured": {
+                        "ttft_ms": 389,
+                        "tput_user": 26.2,
+                        "tput": 24.5,
+                        "tolerance": 0.3
+                    }
+                }
+            }
+        ]
     }
 }
