@@ -119,7 +119,7 @@ struct VideoGenerateRequest : BaseRequest {
       if (slot) {
         throw std::invalid_argument(
             "duplicate frame_pos=" + std::to_string(framePos) +
-            " in image_prompts");
+            " in image_prompts; each image must target a distinct frame");
       }
       slot = true;
       Json::Value item;
@@ -135,22 +135,24 @@ struct VideoGenerateRequest : BaseRequest {
     Json::Value out(Json::objectValue);
     size_t total = 0;
     for (const auto& key : value.getMemberNames()) {
-      if (key != "images" && key != "videos" && key != "audios") {
-        throw std::invalid_argument("references." + key +
-                                    " is not supported; use images, videos "
-                                    "or audios");
-      }
+      // Python ignores a group it does not know (an extra field of the model).
+      if (key != "images" && key != "videos" && key != "audios") continue;
       const std::string field = "references." + key;
       json_field::checkArray(value[key], field.c_str());
       Json::Value list(Json::arrayValue);
       for (const auto& source : value[key]) {
         json_field::checkObject(source, field.c_str());
-        if (source.isMember("url")) {
+        const bool hasB64 = source.isMember("b64") && !source["b64"].isNull();
+        const bool hasUrl = source.isMember("url") && !source["url"].isNull();
+        // Python's MediaSource: exactly one of the two.
+        if (hasB64 == hasUrl) {
+          throw std::invalid_argument("provide exactly one of b64 or url");
+        }
+        if (hasUrl) {
           throw std::invalid_argument(
               field + "[].url is not supported by this server; send b64");
         }
-        if (!source.isMember("b64") ||
-            json_field::getString(source["b64"], "b64").empty()) {
+        if (json_field::getString(source["b64"], "b64").empty()) {
           throw std::invalid_argument(field + "[].b64 must not be empty");
         }
         Json::Value item;
@@ -161,7 +163,10 @@ struct VideoGenerateRequest : BaseRequest {
       out[key] = list;
     }
     if (total == 0) {
-      throw std::invalid_argument("references must contain at least one item");
+      // Python's check_reference_kinds
+      throw std::invalid_argument(
+          "ref2va needs at least one reference; use a t2va call for text-only "
+          "requests");
     }
     return out;
   }

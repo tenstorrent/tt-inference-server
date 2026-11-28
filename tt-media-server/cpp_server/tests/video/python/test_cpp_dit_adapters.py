@@ -301,3 +301,16 @@ def test_wan_i2v_turns_image_prompts_into_pipeline_objects(monkeypatch):
 # --------------------------------------------------------------------------
 # Mochi, LTX, MiniMax, images
 # --------------------------------------------------------------------------
+
+
+def test_i2v_dbcache_switch(monkeypatch):
+    """WAN22_I2V_DBCACHE=0 builds the I2V pipeline without its default DBCache
+    (it does not fit the DRAM of a T3K); unset or any other value keeps the default."""
+    from cpp_dit_adapters import wan
+
+    monkeypatch.delenv("WAN22_I2V_DBCACHE", raising=False)
+    assert wan.i2v_cache_kwargs() == {}
+    monkeypatch.setenv("WAN22_I2V_DBCACHE", "1")
+    assert wan.i2v_cache_kwargs() == {}
+    monkeypatch.setenv("WAN22_I2V_DBCACHE", "0")
+    assert wan.i2v_cache_kwargs() == {"config_overrides": {"cache_config": None}}

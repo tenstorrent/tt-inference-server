@@ -6,10 +6,14 @@
 #include <gtest/gtest.h>
 #include <json/json.h>
 
+#include <sstream>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
+#include "domain/video/video_deployment.hpp"
 #include "domain/video/video_job.hpp"
+#include "domain/video/video_media.hpp"
 #include "domain/video/video_mode.hpp"
 #include "domain/video/video_response.hpp"
 
@@ -285,7 +289,10 @@ TEST(VideoGenerateRequestParseTest, ImagePromptsPassThroughAndAreChecked) {
 
   Json::Value duplicate = json;
   duplicate["image_prompts"][1]["frame_pos"] = 0;
-  expectReject(duplicate, "duplicate frame_pos=0 in image_prompts");
+  expectReject(
+      duplicate,
+      "duplicate frame_pos=0 in image_prompts; each image must target a "
+      "distinct frame");
   Json::Value outOfRange = json;
   outOfRange["image_prompts"][1]["frame_pos"] = 81;
   expectReject(outOfRange, "image_prompts[].frame_pos must be in [-1, 81)");
@@ -314,12 +321,253 @@ TEST(VideoGenerateRequestParseTest, ReferencesTakeBase64Only) {
   expectReject(url,
                "references.videos[].url is not supported by this server; send "
                "b64");
+  // Python ignores a group it does not know, so a request with only that is
+  // empty
   Json::Value unknown = promptJson();
   unknown["references"]["masks"] = Json::arrayValue;
   expectReject(unknown,
-               "references.masks is not supported; use images, videos or "
-               "audios");
+               "ref2va needs at least one reference; use a t2va call for "
+               "text-only requests");
   Json::Value none = promptJson();
   none["references"] = Json::objectValue;
-  expectReject(none, "references must contain at least one item");
+  expectReject(none,
+               "ref2va needs at least one reference; use a t2va call for "
+               "text-only requests");
+  // exactly one of b64 and url, as in Python's MediaSource
+  Json::Value both = promptJson();
+  both["references"]["images"][0]["b64"] = "aGVsbG8=";
+  both["references"]["images"][0]["url"] = "https://example.com/a.png";
+  expectReject(both, "provide exactly one of b64 or url");
+  Json::Value neither = promptJson();
+  neither["references"]["images"][0] = Json::objectValue;
+  expectReject(neither, "provide exactly one of b64 or url");
+  // a group Python does not know is ignored next to a real one
+  Json::Value extra = promptJson();
+  extra["references"]["images"][0]["b64"] = "aGVsbG8=";
+  extra["references"]["masks"][0]["b64"] = "aGVsbG8=";
+  EXPECT_NO_THROW(VideoGenerateRequest::fromJson(extra, TEST_TASK_ID));
+}
+
+// ---- image-to-video: routes, media rules ---------------------------
+
+namespace media_test {
+
+using namespace tt::domain::video;
+
+std::string toBase64(const std::vector<uint8_t>& bytes) {
+  static const char* alphabet =
+      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  std::string out;
+  for (size_t i = 0; i < bytes.size(); i += 3) {
+    const uint32_t chunk =
+        (uint32_t(bytes[i]) << 16) |
+        (i + 1 < bytes.size() ? uint32_t(bytes[i + 1]) << 8 : 0) |
+        (i + 2 < bytes.size() ? uint32_t(bytes[i + 2]) : 0);
+    out += alphabet[(chunk >> 18) & 63];
+    out += alphabet[(chunk >> 12) & 63];
+    out += i + 1 < bytes.size() ? alphabet[(chunk >> 6) & 63] : '=';
+    out += i + 2 < bytes.size() ? alphabet[chunk & 63] : '=';
+  }
+  return out;
+}
+
+/** The first bytes of a PNG: signature and IHDR with the given size. */
+std::vector<uint8_t> pngHeader(uint32_t width, uint32_t height) {
+  std::vector<uint8_t> b = {0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A,
+                            0,    0,   0,   13,  'I',  'H',  'D',  'R'};
+  for (uint32_t v : {width, height}) {
+    b.push_back(uint8_t(v >> 24));
+    b.push_back(uint8_t(v >> 16));
+    b.push_back(uint8_t(v >> 8));
+    b.push_back(uint8_t(v));
+  }
+  b.insert(b.end(), {8, 2, 0, 0, 0});
+  return b;
+}
+
+Json::Value requestWithPrompts(
+    const std::vector<std::pair<std::string, int>>& list) {
+  Json::Value json;
+  json["prompt"] = "a stream";
+  for (const auto& [image, framePos] : list) {
+    Json::Value entry;
+    entry["image"] = image;
+    entry["frame_pos"] = framePos;
+    json["image_prompts"].append(entry);
+  }
+  return json;
+}
+
+int statusOf(const VideoGenerateRequest& request, VideoDeployment d,
+             std::string* message = nullptr) {
+  try {
+    checkRequestMedia(request, d);
+  } catch (const MediaRequestError& e) {
+    if (message != nullptr) *message = e.what();
+    return e.status();
+  }
+  return 0;
+}
+
+}  // namespace media_test
+
+TEST(VideoDeploymentTest, RunnerNamesAreClassifiedLikePython) {
+  using namespace tt::domain::video;
+  EXPECT_EQ(classifyVideoRunner("tt-wan2.2"), VideoDeployment::Text);
+  EXPECT_EQ(classifyVideoRunner(""), VideoDeployment::Text);
+  EXPECT_EQ(classifyVideoRunner("tt-wan2.2-i2v"), VideoDeployment::ImageOnly);
+  EXPECT_EQ(classifyVideoRunner("TT-WAN2.2-I2V"), VideoDeployment::ImageOnly);
+}
+
+TEST(VideoDeploymentTest, RoutesAreRefusedWherePythonRefusesThem) {
+  using namespace tt::domain::video;
+  // text-only route: refused on the image-conditioned deployment
+  EXPECT_FALSE(routeRefusal(VideoRoute::Text, VideoDeployment::Text));
+  EXPECT_TRUE(routeRefusal(VideoRoute::Text, VideoDeployment::ImageOnly));
+  // i2v route: allowed on Wan (also the T2V runner, which ignores the image)
+  EXPECT_FALSE(routeRefusal(VideoRoute::I2V, VideoDeployment::Text));
+  EXPECT_FALSE(routeRefusal(VideoRoute::I2V, VideoDeployment::ImageOnly));
+  EXPECT_NE(routeRefusal(VideoRoute::Text, VideoDeployment::ImageOnly)
+                ->find("/generations/i2v"),
+            std::string::npos);
+}
+
+TEST(VideoMediaTest, Base64DecodeAcceptsLineBreaksAndRejectsGarbage) {
+  using namespace tt::domain::video;
+  const auto ok = base64Decode("aGVs\nbG8=");
+  ASSERT_TRUE(ok.has_value());
+  EXPECT_EQ(std::string(ok->begin(), ok->end()), "hello");
+  EXPECT_FALSE(base64Decode("").has_value());
+  EXPECT_FALSE(base64Decode("aGVs*G8=").has_value());
+  EXPECT_FALSE(base64Decode("aGVs=bG8").has_value());   // data after padding
+  EXPECT_FALSE(base64Decode("aGVsb").has_value());      // 1 symbol over a group
+  EXPECT_FALSE(base64Decode("aGVsbG8==").has_value());  // padding does not fit
+}
+
+TEST(VideoMediaTest, Base64DecodeLikePython) {
+  using namespace tt::domain::video;
+  const auto text = [](const std::optional<std::vector<uint8_t>>& bytes) {
+    return bytes ? std::string(bytes->begin(), bytes->end()) : "<none>";
+  };
+  // Missing padding (JSON transport may strip it).
+  EXPECT_EQ(text(base64Decode("aGVsbG8")), "hello");
+  EXPECT_EQ(text(base64Decode("aGVsbG8=")), "hello");
+  EXPECT_EQ(text(base64Decode("aGk")), "hi");
+  // A data URI prefix is skipped.
+  EXPECT_EQ(text(base64Decode("data:image/png;base64,aGVsbG8=")), "hello");
+  EXPECT_EQ(text(base64Decode("data:image/png;base64,aGVsbG8")), "hello");
+  EXPECT_FALSE(base64Decode("data:image/png;base64").has_value());   // no comma
+  EXPECT_FALSE(base64Decode("data:image/png;base64,").has_value());  // no data
+}
+
+TEST(VideoMediaTest, BmpHeightOfInt32MinIsRefusedNotUndefined) {
+  using namespace tt::domain::video;
+  std::vector<uint8_t> bmp(26, 0);
+  bmp[0] = 'B';
+  bmp[1] = 'M';
+  bmp[18] = 2;  // width 2
+  bmp[22] = 3;  // height 3
+  const auto ok = imageSize(bmp);
+  ASSERT_TRUE(ok.has_value());
+  EXPECT_EQ(*ok, std::make_pair(2, 3));
+  bmp[22] = 0xFD;  // height -3: a top-down bitmap
+  bmp[23] = bmp[24] = bmp[25] = 0xFF;
+  EXPECT_EQ(*imageSize(bmp), std::make_pair(2, 3));
+  bmp[22] = bmp[23] = bmp[24] = 0;
+  bmp[25] = 0x80;  // height 0x80000000
+  EXPECT_FALSE(imageSize(bmp).has_value());
+}
+
+TEST(VideoMediaTest, ImageSizeIsReadFromThePngJpegWebpHeaders) {
+  using namespace tt::domain::video;
+  auto png = imageSize(media_test::pngHeader(832, 480));
+  ASSERT_TRUE(png.has_value());
+  EXPECT_EQ(*png, std::make_pair(832, 480));
+
+  // SOI, an APP0 segment, then SOF0 with height 6 and width 10
+  std::vector<uint8_t> jpeg = {0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x04, 0x4A,
+                               0x46, 0xFF, 0xC0, 0x00, 0x0B, 0x08, 0x00,
+                               0x06, 0x00, 0x0A, 0x03, 0x01, 0x22, 0x00};
+  auto j = imageSize(jpeg);
+  ASSERT_TRUE(j.has_value());
+  EXPECT_EQ(*j, std::make_pair(10, 6));
+
+  // A real lossy WebP of 12x8 (VP8 chunk) written by PIL.
+  const auto webp = base64Decode(
+      "UklGRjoAAABXRUJQVlA4IC4AAACwAQCdASoMAAgAAUAmJaACdLoABDAAAP7x3I/4DdfFtMv/"
+      "vYL/3YL/3YL/WwAA");
+  ASSERT_TRUE(webp.has_value());
+  auto w = imageSize(*webp);
+  ASSERT_TRUE(w.has_value());
+  EXPECT_EQ(*w, std::make_pair(12, 8));
+
+  // VP8X (extended) header: canvas size minus one in 24 bits
+  std::vector<uint8_t> vp8x = {
+      'R', 'I', 'F', 'F', 0, 0, 0, 0, 'W', 'E',  'B',  'P',  'V',  'P',  '8',
+      'X', 10,  0,   0,   0, 0, 0, 0, 0,   0x1F, 0x03, 0x00, 0xDF, 0x01, 0x00};
+  auto x = imageSize(vp8x);
+  ASSERT_TRUE(x.has_value());
+  EXPECT_EQ(*x, std::make_pair(800, 480));
+
+  EXPECT_FALSE(imageSize({}).has_value());
+  EXPECT_FALSE(
+      imageSize({'n', 'o', 't', ' ', 'a', 'n', ' ', 'i', 'm', 'a', 'g', 'e'})
+          .has_value());
+}
+
+TEST(VideoMediaTest, ImagePromptsAreCheckedAtSubmit) {
+  using namespace tt::domain::video;
+  using media_test::statusOf;
+  const std::string good = media_test::toBase64(media_test::pngHeader(64, 64));
+  const std::string tiny =
+      media_test::toBase64(media_test::pngHeader(100, 100));
+
+  auto parse = [](const Json::Value& json) {
+    return VideoGenerateRequest::fromJson(json, 1);
+  };
+  // Wan: any decodable image is accepted, whatever its size
+  EXPECT_EQ(
+      statusOf(parse(media_test::requestWithPrompts({{good, 0}, {tiny, 80}})),
+               VideoDeployment::ImageOnly),
+      0);
+  // not an image: 422 and the field named
+  std::string message;
+  EXPECT_EQ(
+      statusOf(parse(media_test::requestWithPrompts({{"bm90IGFuIGltYWdl", 0}})),
+               VideoDeployment::ImageOnly, &message),
+      422);
+  EXPECT_NE(message.find("image_prompts[0] is not a decodable image"),
+            std::string::npos);
+  EXPECT_EQ(statusOf(parse(media_test::requestWithPrompts({{"!!!", 0}})),
+                     VideoDeployment::ImageOnly),
+            422);
+}
+
+TEST(VideoMediaTest, InlineMediaOverTheCapIs413AndOneImageOverItsCapIs422) {
+  using namespace tt::domain::video;
+  using media_test::statusOf;
+  // Over the per-image cap (40,000,000 base64 chars): 422, named
+  Json::Value one = media_test::requestWithPrompts(
+      {{std::string(kMaxBase64ImageLen + 4, 'A'), 0}});
+  std::string message;
+  EXPECT_EQ(statusOf(VideoGenerateRequest::fromJson(one, 1),
+                     VideoDeployment::ImageOnly, &message),
+            422);
+  EXPECT_NE(message.find("exceeds the 40000000-char cap"), std::string::npos);
+  // Two images that each fit but together pass 64,000,000 chars: 413
+  const std::string big(kMaxBase64ImageLen - 8, 'A');
+  Json::Value two = media_test::requestWithPrompts({{big, 0}, {big, 1}});
+  EXPECT_EQ(statusOf(VideoGenerateRequest::fromJson(two, 1),
+                     VideoDeployment::ImageOnly, &message),
+            413);
+  EXPECT_NE(message.find("Inline media totals"), std::string::npos);
+}
+
+TEST(VideoMediaTest, MediaUrlsAreRecognised) {
+  using namespace tt::domain::video;
+  EXPECT_TRUE(
+      isMediaUrl("https://bucket.s3.amazonaws.com/a.png?X-Amz-Signature=1"));
+  EXPECT_TRUE(isMediaUrl("HTTP://example.com/a.png"));
+  EXPECT_FALSE(isMediaUrl("iVBORw0KGgo="));
+  EXPECT_FALSE(isMediaUrl("ftp://example.com/a.png"));
 }

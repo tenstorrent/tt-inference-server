@@ -338,6 +338,10 @@ void registerVideo() {
   const auto video = config::ModelService::VIDEO;
   routes.registerRoute(video, "POST", "/v1/videos/generations",
                        "Create a text-to-video job (returns job id)");
+  routes.registerRoute(video, "POST", "/v1/videos/generations/i2v",
+                       "Create an image-to-video job (image_prompts)");
+  routes.registerRoute(video, "POST", "/v1/videos/generations/i2v/upload",
+                       "Create an image-to-video job from an uploaded image");
   routes.registerRoute(video, "GET", "/v1/videos/generations/{job_id}",
                        "Poll video job status");
   routes.registerRoute(video, "GET", "/v1/videos/jobs", "List video jobs");

@@ -3,6 +3,7 @@
 
 #include "api/video_controller.hpp"
 
+#include <drogon/MultiPart.h>
 #include <json/json.h>
 
 #include <filesystem>
@@ -13,11 +14,14 @@
 #include <sstream>
 
 #include "config/settings.hpp"
+#include "domain/video/video_deployment.hpp"
+#include "domain/video/video_media.hpp"
 #include "domain/video/video_mode.hpp"
 #include "domain/video_generate_request.hpp"
 #include "services/service_container.hpp"
 #include "utils/http_range.hpp"
 #include "utils/id_generator.hpp"
+#include "utils/image_codec.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::api {
@@ -128,12 +132,151 @@ VideoController::~VideoController() = default;
 
 void VideoController::generate(const drogon::HttpRequestPtr& req,
                                Callback&& callback) {
-  auto json = req->getJsonObject();
-  if (!json) {
-    // 422 like FastAPI/pydantic for every malformed or invalid body.
-    callback(videoError(drogon::k422UnprocessableEntity, "Invalid JSON body",
-                        "invalid_request_error"));
+  handle(req, std::move(callback), domain::video::VideoRoute::Text, nullptr);
+}
+
+void VideoController::generateI2V(const drogon::HttpRequestPtr& req,
+                                  Callback&& callback) {
+  handle(req, std::move(callback), domain::video::VideoRoute::I2V, nullptr);
+}
+
+namespace {
+
+/** "png", "jpeg" or "webp" from the magic bytes; empty for anything else. */
+std::string imageFormat(const std::string& content) {
+  auto at = [&](size_t i) { return static_cast<uint8_t>(content[i]); };
+  if (content.size() >= 8 && at(0) == 0x89 && content.compare(1, 3, "PNG") == 0)
+    return "png";
+  if (content.size() >= 3 && at(0) == 0xFF && at(1) == 0xD8 && at(2) == 0xFF)
+    return "jpeg";
+  if (content.size() >= 12 && content.compare(0, 4, "RIFF") == 0 &&
+      content.compare(8, 4, "WEBP") == 0)
+    return "webp";
+  return "";
+}
+
+/** A refused request. The 4xx statuses are Python's. */
+drogon::HttpResponsePtr refusal(int status, const std::string& message) {
+  const auto code = static_cast<drogon::HttpStatusCode>(status);
+  return videoError(code, message,
+                    status >= 500 ? "server_error" : "invalid_request_error");
+}
+
+/** URLs are refused with 400 unless the operator enables downloads: with the
+ *  Python default (no allowed domains, no public hosts) every URL-valued media
+ *  field is refused the same way. Downloading is a separate step. */
+std::optional<std::string> mediaUrlRefusal(const Json::Value& body) {
+  const char* message =
+      "Media URL downloads are not enabled on this server; send the media "
+      "as base64";
+  const Json::Value& prompts = body["image_prompts"];
+  if (prompts.isArray()) {
+    for (const auto& entry : prompts) {
+      if (entry.isObject() && entry["image"].isString() &&
+          domain::video::isMediaUrl(entry["image"].asString())) {
+        return message;
+      }
+    }
+  }
+  return std::nullopt;
+}
+
+}  // namespace
+
+void VideoController::generateI2VUpload(const drogon::HttpRequestPtr& req,
+                                        Callback&& callback) {
+  namespace dv = domain::video;
+  if (const auto no = dv::routeRefusal(dv::VideoRoute::I2V, deployment_)) {
+    callback(refusal(422, *no));
     return;
+  }
+  drogon::MultiPartParser parser;
+  if (parser.parse(req) != 0 || parser.getFiles().empty()) {
+    callback(refusal(422,
+                     "Request must be multipart/form-data with an "
+                     "`image` file and a `prompt` field"));
+    return;
+  }
+  const auto& params = parser.getParameters();
+  const auto prompt = params.find("prompt");
+  const drogon::HttpFile* image = nullptr;
+  for (const auto& file : parser.getFiles()) {
+    if (file.getItemName() == "image") image = &file;
+  }
+  if (prompt == params.end() || image == nullptr) {
+    callback(refusal(422, "Fields `prompt` and `image` are required"));
+    return;
+  }
+  const std::string_view content = image->fileContent();
+  if (content.size() > dv::kMaxUploadBytes) {
+    callback(refusal(413, "Image exceeds " +
+                              std::to_string(dv::kMaxUploadBytes) +
+                              "-byte upload cap"));
+    return;
+  }
+  const std::string format = imageFormat(std::string(content.substr(0, 16)));
+  if (format.empty()) {
+    callback(refusal(415,
+                     "Unsupported image content_type; allowed: "
+                     "['image/jpeg', 'image/png', 'image/webp']"));
+    return;
+  }
+  Json::Value body;
+  body["prompt"] = prompt->second;
+  Json::Value entry;
+  entry["image"] = tt::utils::image_codec::base64Encode(
+      reinterpret_cast<const uint8_t*>(content.data()), content.size());
+  try {
+    auto number = [&](const char* name) -> std::optional<long long> {
+      const auto it = params.find(name);
+      if (it == params.end() || it->second.empty()) return std::nullopt;
+      return std::stoll(it->second);
+    };
+    entry["frame_pos"] =
+        static_cast<Json::Int64>(number("frame_pos").value_or(0));
+    body["image_prompts"].append(entry);
+    body["num_inference_steps"] =
+        static_cast<Json::Int64>(number("num_inference_steps").value_or(12));
+    if (const auto seed = number("seed")) {
+      body["seed"] = static_cast<Json::Int64>(*seed);
+    }
+  } catch (const std::exception&) {
+    callback(refusal(422,
+                     "frame_pos, num_inference_steps and seed must be "
+                     "integers"));
+    return;
+  }
+  const auto negative = params.find("negative_prompt");
+  if (negative != params.end() && !negative->second.empty()) {
+    body["negative_prompt"] = negative->second;
+  }
+  handle(req, std::move(callback), dv::VideoRoute::I2V, &body);
+}
+
+void VideoController::handle(const drogon::HttpRequestPtr& req,
+                             Callback&& callback,
+                             domain::video::VideoRoute route,
+                             const Json::Value* prepared) {
+  namespace dv = domain::video;
+  // The deployment decides which route it serves (422, Python's wording).
+  if (const auto no = dv::routeRefusal(route, deployment_)) {
+    callback(refusal(422, *no));
+    return;
+  }
+  Json::Value body;
+  if (prepared != nullptr) {
+    body = *prepared;
+  } else {
+    auto json = req->getJsonObject();
+    if (!json || !json->isObject()) {
+      // 422 like FastAPI/pydantic for every malformed or invalid body; valid
+      // JSON that is not an object (`[]`, `123`) would make the member calls
+      // below throw.
+      callback(videoError(drogon::k422UnprocessableEntity, "Invalid JSON body",
+                          "invalid_request_error"));
+      return;
+    }
+    body = *json;
   }
   if (!service->isModelReady()) {
     auto resp = videoError(
@@ -156,10 +299,29 @@ void VideoController::generate(const drogon::HttpRequestPtr& req,
     return;
   }
 
+  // Each route reads only its own media field, like the Python request
+  // classes: `/generations` ignores image_prompts, `/i2v` needs them.
+  if (const auto no = mediaUrlRefusal(body)) {
+    callback(refusal(400, *no));
+    return;
+  }
+  Json::Value shaped = body;
+  if (route != dv::VideoRoute::I2V) shaped.removeMember("image_prompts");
+  shaped.removeMember("references");
+  if (route == dv::VideoRoute::I2V &&
+      (!shaped.isMember("image_prompts") || shaped["image_prompts"].isNull())) {
+    callback(refusal(422, "Missing required field: image_prompts"));
+    return;
+  }
+
   std::optional<domain::VideoGenerateRequest> request;
   try {
     request = domain::VideoGenerateRequest::fromJson(
-        *json, tt::utils::TaskIDGenerator::generate());
+        shaped, tt::utils::TaskIDGenerator::generate());
+    dv::checkRequestMedia(*request, deployment_);
+  } catch (const dv::MediaRequestError& e) {
+    callback(refusal(e.status(), e.what()));
+    return;
   } catch (const std::exception& e) {
     callback(videoError(drogon::k422UnprocessableEntity, e.what(),
                         "invalid_request_error"));
@@ -170,7 +332,7 @@ void VideoController::generate(const drogon::HttpRequestPtr& req,
   bool asyncMode = true;
   try {
     asyncMode = tt::domain::video::videoRequestIsAsync(
-        req->getParameter("async"), *json);
+        req->getParameter("async"), body);
   } catch (const std::invalid_argument& e) {
     callback(videoError(drogon::k422UnprocessableEntity, e.what(),
                         "invalid_request_error"));
