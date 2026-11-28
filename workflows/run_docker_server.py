@@ -114,6 +114,7 @@ _CPP_EMBEDDING_DEVICE_IDS = {
 # name of the C++ mesh table, so "blackhole_galaxy" becomes "bh-galaxy".
 _CPP_VIDEO_RUNNER_BY_MODEL_NAME = {
     "Wan2.2-T2V-A14B-Diffusers": "tt-wan2.2",
+    "Wan2.2-I2V-A14B-Diffusers": "tt-wan2.2-i2v",
 }
 
 # device.name.lower() -> (DEVICE of the C++ server, DEVICE_IDS: one group)

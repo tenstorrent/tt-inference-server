@@ -1449,10 +1449,37 @@ class TestMediaServerDockerEnvVars:
         assert "MODEL" not in env_vars
 
     @pytest.mark.parametrize(
+        ("device", "cpp_device", "chips"),
+        [
+            ("t3k", "t3k", 4),
+            ("galaxy", "galaxy", 32),
+            ("blackhole_galaxy", "bh-galaxy", 32),
+        ],
+    )
+    def test_wan22_image_to_video_uses_cpp_server(self, device, cpp_device, chips):
+        # The I2V spec lives in the dev catalog (the workflows run with
+        # --dev-mode), which this module does not load: a stand-in spec.
+        model_spec = SimpleNamespace(
+            inference_engine="media",
+            model_name="Wan2.2-I2V-A14B-Diffusers",
+            device_type=SimpleNamespace(name=device.upper()),
+        )
+        assert _is_cpp_media_spec(model_spec) is True
+
+        env_vars = get_media_server_docker_env_vars(model_spec)
+
+        assert env_vars["SERVER_MODE"] == "cpp"
+        assert env_vars["MODEL_SERVICE"] == "video"
+        assert env_vars["MODEL_RUNNER"] == "tt-wan2.2-i2v"
+        assert env_vars["DEVICE"] == cpp_device
+        device_ids = env_vars["DEVICE_IDS"]
+        assert device_ids.count("(") == 1
+        assert len(device_ids.strip("()").split(",")) == chips
+        assert "MODEL" not in env_vars
+
+    @pytest.mark.parametrize(
         ("model_name", "device"),
         [
-            # The C++ server has no image-to-video routes in this build.
-            ("Wan2.2-I2V-A14B-Diffusers", "GALAXY"),
             # No entry in the C++ video device table.
             ("Wan2.2-T2V-A14B-Diffusers", "N150"),
         ],
