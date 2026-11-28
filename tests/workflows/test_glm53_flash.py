@@ -114,3 +114,19 @@ def test_the_build_holds_every_user_and_every_speculative_step(impl_id):
             rows = max(rows, alt_users * (alt_k + 1))
         assert 0 < rows <= SPEC_MULTI_BUILD_ROWS
         assert build_b >= SPEC_MULTI_BUILD_ROWS
+
+    if env.get("GLM53_SPEC_W8_VERIFY") == "1":
+        # the width-8 verify runs the 8-row half of a 16-row multi-user step on the shared MTP state; tt-metal refuses
+        # it otherwise (generator.spec_w8_env: GLM53_SPEC_MULTI + GLM53_SPEC_MTP_SPARSE on the B 16 build;
+        # spec_w8_verify: a 16-row step with an even user count to halve)
+        assert (
+            env.get("GLM53_SPEC_MULTI") == "1"
+            and env.get("GLM53_SPEC_MTP_SPARSE") == "1"
+        )
+        assert build_b == SPEC_MULTI_BUILD_ROWS
+        steps = [(int(env.get("GLM53_SPEC_MULTI_USERS", "0")), k)]
+        if "GLM53_SPEC_MULTI_ALT" in env:
+            steps.append(tuple(int(v) for v in env["GLM53_SPEC_MULTI_ALT"].split(":")))
+        assert any(
+            g % 2 == 0 and g * (kk + 1) == SPEC_MULTI_BUILD_ROWS for g, kk in steps
+        ), steps

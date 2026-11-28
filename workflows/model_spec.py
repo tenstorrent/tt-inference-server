@@ -539,7 +539,8 @@ glm53_flash_mtp_mu_impl = ImplSpec(
 )
 
 # the 1 M agentic-loop profile: the B 16 1 M build with narrow width 4, exact prefix snapshots + the host tier, and the
-# sparse multi-user MTP steps (4 x 3, 8 x 1, a lone user's 1 x 3; the MTP state in the snapshots; synchronous)
+# sparse multi-user MTP steps (4 x 3, 8 x 1, a lone user's 1 x 3, and the 8-row halves 2 x 3 / 4 x 1 when the live
+# users all sit on one half; the MTP state in the snapshots; synchronous)
 glm53_flash_1m_impl = ImplSpec(
     impl_id="glm53_flash_1m",
     impl_name="glm53-flash-1m",
