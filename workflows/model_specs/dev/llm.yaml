@@ -7643,8 +7643,8 @@ templates:
 #   glm53_flash_mtp      1 M x 4 users (B 4 build); MTP speculation for a lone greedy request, up to 256 K
 #   glm53_flash_mtp_mu   1 M x 16 users (B 16 build); multi-user MTP steps (4 users x 3 drafts, 8 x 1)
 #   glm53_flash_1m       default; 1 M x 8 users (B 16 build); narrow width 4, exact-position prefix snapshots with
-#                        a 64 GiB host tier, lone / 4-user / 8-user MTP steps, 4 device steps per verify, one prefill
-#                        chunk per 4 decode steps (the others: 8)
+#                        a 64 GiB host tier, lone / 4-user / 8-user MTP steps and their 8-row halves (2 x 3, 4 x 1),
+#                        4 device steps per verify, one prefill chunk per 4 decode steps (the others: 8)
 #   glm53_flash_128k     128 K x 16 users (B 16 build); plain decode; packed short prefills; async scheduling
 #   glm53_flash_128k_mm  glm53_flash_128k with image input
 # Sampling: top_k 10 (the default) keeps a request on the device sampler; a request with top_k above 10, 0 or -1
@@ -7879,6 +7879,7 @@ templates:
         GLM53_PF_SPARSE_RESHARD: "a2a"
         GLM53_DSA_SHARD_PREFILTER: "1"
         GLM53_SPEC_STEPS_PER_CALL: "4"
+        GLM53_SPEC_W8_VERIFY: "1"  # users all on one half (2 on 0/4, K 3; up to 4 on 0/2/4/6, K 1): 8-row verify
       override_tt_config:
         fabric_config: FABRIC_1D
         fabric_reliability_mode: RELAXED_INIT
